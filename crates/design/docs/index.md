@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0010 | Lykn v0.1.0 — Implementation Plan | Active | 2026-03-24 |
 | 0009 | DD-09: v0.1.0 Scope and Phasing | Active | 2026-03-24 |
 | 0008 | DD-08: Special Atoms, Update Operators, and Miscellaneous Forms | Active | 2026-03-24 |
 | 0007 | DD-07: Class Syntax | Active | 2026-03-24 |
@@ -20,6 +21,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
+- [0010 - Lykn v0.1.0 — Implementation Plan](05-active/0010-lykn-v0.1.0-implementation-plan.md)
 - [0009 - DD-09: v0.1.0 Scope and Phasing](05-active/0009-dd-09-v0.1.0-scope-and-phasing.md)
 - [0008 - DD-08: Special Atoms, Update Operators, and Miscellaneous Forms](05-active/0008-dd-08-special-atoms-update-operators-and-miscellaneous-forms.md)
 - [0007 - DD-07: Class Syntax](05-active/0007-dd-07-class-syntax.md)
