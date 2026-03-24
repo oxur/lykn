@@ -29,7 +29,5 @@
         "type": "git",
         "url": "https://github.com/oxur/lykn"
     },
-    "dependencies": {
-        "astring": "^1.9.0"
-    }
+    "dependencies": {}
 }
