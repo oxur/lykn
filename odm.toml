@@ -1,0 +1,14 @@
+# ODM Configuration for the ECL/Fabryk Workspace
+# This configuration is specific to the project's repository structure
+
+# Documentation directory (workspace-specific)
+docs_directory = "./crates/design/docs"
+
+# Development documents directory (workspace-specific)
+dev_directory = "./crates/design/dev"
+
+# Preserve state directory structure in dustbin
+preserve_dustbin_structure = true
+
+# Automatically stage changes with git
+auto_stage_git = true
