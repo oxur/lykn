@@ -1,0 +1,7 @@
+node_modules/
+target/
+*.js.map
+/bin
+/workbench
+/.claude
+/assets/images/logo/drafts

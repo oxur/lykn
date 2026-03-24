@@ -1,0 +1,25 @@
+; lykn example — main.lykn
+; A small demo showing s-expression syntax compiling to clean JS.
+
+; Variable declarations
+(const greeting "hello, world")
+
+; Function definition using arrow syntax
+(const greet (=> (name)
+  ((. console log) (+ greeting ", " name "!"))))
+
+; Call the function
+(greet "lykn")
+
+; A slightly more involved example: rotating taglines
+; (just like the LFE site, but compiled instead of interpreted)
+(const taglines (array
+  "S-expression syntax for JavaScript"
+  "Good luck — lykn"
+  "Closure, in every sense"))
+
+(const pick (=> ()
+  (let idx ((. Math floor) (* ((. Math random)) (. taglines length))))
+  (return ((. taglines at) idx))))
+
+((. console log) (pick))
