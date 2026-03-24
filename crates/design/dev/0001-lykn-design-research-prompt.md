@@ -3,10 +3,10 @@
 ## Context
 
 Lykn is a new s-expression syntax for JavaScript. It compiles `.lykn` files
-to clean, readable JS. There's a v0.1.0 PoC already published at
+to clean, readable JS. There's a v0.0.1 PoC already published at
 github.com/oxur/lykn, npmjs.com/package/lykn, jsr.io/@lykn, and crates.io.
 
-We're now in a research/analysis phase before designing v0.2. No code changes
+We're now in a research/analysis phase before designing v0.1. No code changes
 yet — just reading, cataloging, and producing structured analysis that will
 guide design decisions.
 
@@ -15,10 +15,11 @@ guide design decisions.
 Clone these into a working directory:
 
 ```sh
-git clone https://github.com/estree/estree.git
-git clone https://github.com/davidbonnet/astring.git
-git clone https://github.com/anko/eslisp.git
-git clone https://github.com/oxur/lykn.git
+git clone https://github.com/estree/estree.git ./workbench/estree
+git clone https://github.com/davidbonnet/astring.git ./workbench/astring
+git clone https://github.com/anko/eslisp.git ./workbench/eslisp
+git clone https://github.com:biwascheme/biwascheme.git ./workbench/biwascheme
+git clone https://github.com/tc39/ecma262.git ./workspace/ecma262
 ```
 
 ## Task 1: ESTree Node Inventory
@@ -82,14 +83,14 @@ Save as: `research/03-eslisp-macros.md`
 
 Cross-reference Tasks 1, 2, and 3 to produce:
 
-### 4a: What lykn 0.1.0 handles today
+### 4a: What lykn 0.0.1 handles today
 
 Read `lykn/src/compiler.js`. List every macro/form currently implemented
 and what ESTree node it produces.
 
 ### 4b: What's missing for modern JS
 
-Compare lykn 0.1.0's coverage against the full ESTree spec (filtered to
+Compare lykn 0.0.1's coverage against the full ESTree spec (filtered to
 only nodes astring supports). Produce a prioritized list of missing
 forms, grouped by theme:
 
@@ -155,13 +156,10 @@ Save as: `research/05-browser-shim.md`
 
 ## Output
 
-All output goes in a `research/` directory inside the lykn repo clone.
-Each file should be well-structured markdown. Don't write any code —
-this is analysis only.
-
-When complete, push to a branch called `research/design-analysis` on
-the oxur/lykn repo (or just have the files ready for review if you
-don't have push access).
+All output goes in the `docs/research/` directory inside the lykn repo clone.
+Each file should be well-structured markdown. Don't write any new code —
+this is analysis only. Any code present should ONLY be from existing projects to
+help clarify points that might otherwise be misunderstood.
 
 ## What NOT to do
 
