@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lykn Browser Test — API</title>
+  <script src="../dist/lykn-browser.dev.js"></script>
+</head>
+<body>
+  <h1>lykn Browser Test — API</h1>
+  <div id="output"></div>
+
+  <script>
+    // Test the programmatic API
+    const js = lykn.compile('(+ 1 2)');
+    document.getElementById('output').innerHTML = `
+      <p>Compiled: <code>${js.trim()}</code></p>
+      <p>Result: <code>${lykn.run('(+ 1 2)')}</code></p>
+    `;
+  </script>
+
+  <p>If you see compiled output and "3" above, the API works.</p>
+</body>
+</html>

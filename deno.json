@@ -5,5 +5,9 @@
     "nodeModulesDir": "none",
     "imports": {
         "astring": "npm:astring@^1.9.0"
+    },
+    "tasks": {
+        "build:browser": "deno run -A build.js",
+        "test": "deno test test/"
     }
 }

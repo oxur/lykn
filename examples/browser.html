@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lykn Browser Test — Inline</title>
+  <script src="../dist/lykn-browser.dev.js"></script>
+</head>
+<body>
+  <h1>lykn Browser Test</h1>
+  <div id="output"></div>
+
+  <script type="text/lykn">
+  (const el (document:get-element-by-id "output"))
+  (const items (array "one" "two" "three"))
+  (const html (items:map (=> (item i)
+    (template "<p>" (+ i 1) ". " item "</p>"))))
+  (= el:inner-HTML (html:join ""))
+  </script>
+
+  <p>If you see a numbered list above, the inline script worked.</p>
+</body>
+</html>
