@@ -4,6 +4,58 @@
 
 import { generate } from 'astring';
 
+/** Build an ImportSpecifier from a reader node (atom or alias list). */
+function buildImportSpecifier(node) {
+  if (node.type === 'atom') {
+    const name = toCamelCase(node.value);
+    return {
+      type: 'ImportSpecifier',
+      imported: { type: 'Identifier', name },
+      local: { type: 'Identifier', name },
+    };
+  }
+  if (node.type === 'list' && node.values.length >= 2 &&
+      node.values[0].type === 'atom' && node.values[0].value === 'alias') {
+    return {
+      type: 'ImportSpecifier',
+      imported: { type: 'Identifier', name: toCamelCase(node.values[1].value) },
+      local: { type: 'Identifier', name: toCamelCase(node.values[2].value) },
+    };
+  }
+  throw new Error('import: each specifier must be a name or (alias original local)');
+}
+
+/** Build an ExportNamedDeclaration from a (names ...) list. */
+function buildExportNames(namesNode, sourceNode) {
+  const items = namesNode.values.slice(1); // skip the 'names' head
+  const specifiers = items.map(item => {
+    if (item.type === 'atom') {
+      const name = toCamelCase(item.value);
+      return {
+        type: 'ExportSpecifier',
+        local: { type: 'Identifier', name },
+        exported: { type: 'Identifier', name },
+      };
+    }
+    if (item.type === 'list' && item.values.length >= 2 &&
+        item.values[0].type === 'atom' && item.values[0].value === 'alias') {
+      return {
+        type: 'ExportSpecifier',
+        local: { type: 'Identifier', name: toCamelCase(item.values[1].value) },
+        exported: { type: 'Identifier', name: toCamelCase(item.values[2].value) },
+      };
+    }
+    throw new Error('export names: each item must be a name or (alias local exported)');
+  });
+
+  return {
+    type: 'ExportNamedDeclaration',
+    declaration: null,
+    specifiers,
+    source: sourceNode ? { type: 'Literal', value: sourceNode.value } : null,
+  };
+}
+
 /** Convert lisp-case to camelCase via single-pass character walk. */
 function toCamelCase(str) {
   let out = '';
@@ -103,6 +155,7 @@ const macros = {
         params,
         body: compiled,
         expression: true,
+        async: false,
       };
     }
     return {
@@ -113,6 +166,7 @@ const macros = {
         body: bodyExprs.map(e => toStatement(compileExpr(e))),
       },
       expression: false,
+      async: false,
     };
   },
 
@@ -130,6 +184,7 @@ const macros = {
         type: 'BlockStatement',
         body: bodyExprs.map(e => toStatement(compileExpr(e))),
       },
+      async: false,
     };
   },
 
@@ -186,6 +241,485 @@ const macros = {
     };
   },
 
+  // Function declaration: (function name (params) body...)
+  'function'(args) {
+    if (args.length < 3) {
+      throw new Error('function requires a name, params list, and body: (function name (params) body...)');
+    }
+    if (args[0].type !== 'atom') {
+      throw new Error('function name must be an identifier, not a ' + args[0].type);
+    }
+    if (args[1].type !== 'list') {
+      throw new Error('function params must be a list: (function name (params) body...)');
+    }
+    const params = args[1].values.map(compileExpr);
+    const bodyExprs = args.slice(2);
+    return {
+      type: 'FunctionDeclaration',
+      id: { type: 'Identifier', name: toCamelCase(args[0].value) },
+      params,
+      body: {
+        type: 'BlockStatement',
+        body: bodyExprs.map(e => toStatement(compileExpr(e))),
+      },
+      async: false,
+      generator: false,
+    };
+  },
+
+  // Async wrapper: (async (function/lambda/=> ...))
+  'async'(args) {
+    if (args.length !== 1) {
+      throw new Error('async takes exactly one argument: (async (function/lambda/=> ...))');
+    }
+    const child = args[0];
+    if (child.type !== 'list' || child.values.length === 0) {
+      throw new Error('async argument must be a function form: (async (function/lambda/=> ...))');
+    }
+    const head = child.values[0];
+    if (head.type !== 'atom' || !['function', 'lambda', '=>'].includes(head.value)) {
+      throw new Error(
+        'async can only wrap function, lambda, or =>: got ' +
+        (head.type === 'atom' ? head.value : head.type)
+      );
+    }
+    const compiled = compileExpr(child);
+    compiled.async = true;
+    return compiled;
+  },
+
+  // Await expression: (await expr)
+  'await'(args) {
+    if (args.length !== 1) {
+      throw new Error('await takes exactly one argument');
+    }
+    return {
+      type: 'AwaitExpression',
+      argument: compileExpr(args[0]),
+    };
+  },
+
+  // Import: (import "mod" ...) — various forms
+  'import'(args) {
+    if (args.length === 0) {
+      throw new Error('import requires at least a module path');
+    }
+    if (args[0].type !== 'string') {
+      throw new Error('import: first argument must be a module path string');
+    }
+    const source = { type: 'Literal', value: args[0].value };
+    const specifiers = [];
+
+    if (args.length === 1) {
+      // (import "mod") → side-effect import
+    } else if (args.length === 2) {
+      if (args[1].type === 'atom') {
+        // (import "mod" name) → default import
+        specifiers.push({
+          type: 'ImportDefaultSpecifier',
+          local: { type: 'Identifier', name: toCamelCase(args[1].value) },
+        });
+      } else if (args[1].type === 'list') {
+        // (import "mod" (a b)) → named imports
+        for (const spec of args[1].values) {
+          specifiers.push(buildImportSpecifier(spec));
+        }
+      } else {
+        throw new Error('import: second argument must be a name or list of names');
+      }
+    } else if (args.length === 3) {
+      // (import "mod" name (a b)) → default + named
+      if (args[1].type !== 'atom') {
+        throw new Error('import: default import name must be an identifier');
+      }
+      if (args[2].type !== 'list') {
+        throw new Error('import: named imports must be a list');
+      }
+      specifiers.push({
+        type: 'ImportDefaultSpecifier',
+        local: { type: 'Identifier', name: toCamelCase(args[1].value) },
+      });
+      for (const spec of args[2].values) {
+        specifiers.push(buildImportSpecifier(spec));
+      }
+    } else {
+      throw new Error('import: too many arguments');
+    }
+
+    return {
+      type: 'ImportDeclaration',
+      specifiers,
+      source,
+    };
+  },
+
+  // Export: (export ...) — various forms
+  'export'(args) {
+    if (args.length === 0) {
+      throw new Error('export requires an argument');
+    }
+
+    // Case 1: (export default expr)
+    if (args[0].type === 'atom' && args[0].value === 'default') {
+      if (args.length !== 2) {
+        throw new Error('export default takes exactly one expression');
+      }
+      return {
+        type: 'ExportDefaultDeclaration',
+        declaration: compileExpr(args[1]),
+      };
+    }
+
+    // Case 2: (export "mod" (names ...)) → re-export
+    if (args[0].type === 'string') {
+      if (args.length !== 2 || args[1].type !== 'list') {
+        throw new Error('export re-export: (export "mod" (names ...))');
+      }
+      return buildExportNames(args[1], args[0]);
+    }
+
+    // Case 3: (export (names ...)) → export existing bindings
+    if (args[0].type === 'list' && args[0].values.length > 0 &&
+        args[0].values[0].type === 'atom' && args[0].values[0].value === 'names') {
+      return buildExportNames(args[0], null);
+    }
+
+    // Case 4: (export (const/let/var/function ...)) → export declaration
+    if (args.length === 1) {
+      const decl = compileExpr(args[0]);
+      return {
+        type: 'ExportNamedDeclaration',
+        declaration: decl,
+        specifiers: [],
+        source: null,
+      };
+    }
+
+    throw new Error('export: unrecognized form');
+  },
+
+  // Dynamic import expression: (dynamic-import expr)
+  'dynamic-import'(args) {
+    if (args.length !== 1) {
+      throw new Error('dynamic-import takes exactly one argument');
+    }
+    return {
+      type: 'ImportExpression',
+      source: compileExpr(args[0]),
+    };
+  },
+
+  // Throw: (throw expr)
+  'throw'(args) {
+    if (args.length !== 1) {
+      throw new Error('throw takes exactly one argument');
+    }
+    return {
+      type: 'ThrowStatement',
+      argument: compileExpr(args[0]),
+    };
+  },
+
+  // Try/catch/finally: (try body... (catch e body...) (finally body...))
+  'try'(args) {
+    if (args.length === 0) {
+      throw new Error('try requires a body');
+    }
+
+    let handler = null;
+    let finalizer = null;
+    let bodyEnd = args.length;
+
+    // Check last arg for finally
+    const lastArg = args[args.length - 1];
+    if (lastArg.type === 'list' && lastArg.values.length > 0 &&
+        lastArg.values[0].type === 'atom' && lastArg.values[0].value === 'finally') {
+      finalizer = {
+        type: 'BlockStatement',
+        body: lastArg.values.slice(1).map(e => toStatement(compileExpr(e))),
+      };
+      bodyEnd--;
+    }
+
+    // Check the (possibly new) last arg for catch
+    if (bodyEnd > 0) {
+      const catchArg = args[bodyEnd - 1];
+      if (catchArg.type === 'list' && catchArg.values.length > 0 &&
+          catchArg.values[0].type === 'atom' && catchArg.values[0].value === 'catch') {
+        const catchParam = catchArg.values[1];
+        handler = {
+          type: 'CatchClause',
+          param: compileExpr(catchParam),
+          body: {
+            type: 'BlockStatement',
+            body: catchArg.values.slice(2).map(e => toStatement(compileExpr(e))),
+          },
+        };
+        bodyEnd--;
+      }
+    }
+
+    if (!handler && !finalizer) {
+      throw new Error('try requires at least a catch or finally clause');
+    }
+
+    return {
+      type: 'TryStatement',
+      block: {
+        type: 'BlockStatement',
+        body: args.slice(0, bodyEnd).map(e => toStatement(compileExpr(e))),
+      },
+      handler,
+      finalizer,
+    };
+  },
+
+  // While: (while test body...)
+  'while'(args) {
+    if (args.length < 2) {
+      throw new Error('while requires a test and body');
+    }
+    return {
+      type: 'WhileStatement',
+      test: compileExpr(args[0]),
+      body: {
+        type: 'BlockStatement',
+        body: args.slice(1).map(e => toStatement(compileExpr(e))),
+      },
+    };
+  },
+
+  // Do-while: (do-while test body...) — test first for consistency with while
+  'do-while'(args) {
+    if (args.length < 2) {
+      throw new Error('do-while requires a test and body');
+    }
+    return {
+      type: 'DoWhileStatement',
+      test: compileExpr(args[0]),
+      body: {
+        type: 'BlockStatement',
+        body: args.slice(1).map(e => toStatement(compileExpr(e))),
+      },
+    };
+  },
+
+  // C-style for: (for init test update body...)
+  'for'(args) {
+    if (args.length < 4) {
+      throw new Error('for requires init, test, update, and body: (for init test update body...)');
+    }
+    const init = args[0].type === 'list' && args[0].values.length === 0
+      ? null
+      : compileExpr(args[0]);
+    const test = args[1].type === 'list' && args[1].values.length === 0
+      ? null
+      : compileExpr(args[1]);
+    const update = args[2].type === 'list' && args[2].values.length === 0
+      ? null
+      : compileExpr(args[2]);
+    return {
+      type: 'ForStatement',
+      init,
+      test,
+      update,
+      body: {
+        type: 'BlockStatement',
+        body: args.slice(3).map(e => toStatement(compileExpr(e))),
+      },
+    };
+  },
+
+  // For-of: (for-of binding iterable body...)
+  'for-of'(args) {
+    if (args.length < 3) {
+      throw new Error('for-of requires binding, iterable, and body');
+    }
+    const binding = compileExpr(args[0]);
+    return {
+      type: 'ForOfStatement',
+      left: {
+        type: 'VariableDeclaration',
+        kind: 'const',
+        declarations: [{
+          type: 'VariableDeclarator',
+          id: binding,
+          init: null,
+        }],
+      },
+      right: compileExpr(args[1]),
+      body: {
+        type: 'BlockStatement',
+        body: args.slice(2).map(e => toStatement(compileExpr(e))),
+      },
+      await: false,
+    };
+  },
+
+  // For-in: (for-in binding object body...)
+  'for-in'(args) {
+    if (args.length < 3) {
+      throw new Error('for-in requires binding, object, and body');
+    }
+    const binding = compileExpr(args[0]);
+    return {
+      type: 'ForInStatement',
+      left: {
+        type: 'VariableDeclaration',
+        kind: 'const',
+        declarations: [{
+          type: 'VariableDeclarator',
+          id: binding,
+          init: null,
+        }],
+      },
+      right: compileExpr(args[1]),
+      body: {
+        type: 'BlockStatement',
+        body: args.slice(2).map(e => toStatement(compileExpr(e))),
+      },
+    };
+  },
+
+  // Break: (break) or (break label)
+  'break'(args) {
+    return {
+      type: 'BreakStatement',
+      label: args.length > 0
+        ? { type: 'Identifier', name: toCamelCase(args[0].value) }
+        : null,
+    };
+  },
+
+  // Continue: (continue) or (continue label)
+  'continue'(args) {
+    return {
+      type: 'ContinueStatement',
+      label: args.length > 0
+        ? { type: 'Identifier', name: toCamelCase(args[0].value) }
+        : null,
+    };
+  },
+
+  // Switch: (switch expr (test body...) ... (default body...))
+  'switch'(args) {
+    if (args.length < 2) {
+      throw new Error('switch requires a discriminant and at least one case');
+    }
+    const discriminant = compileExpr(args[0]);
+    const cases = args.slice(1).map(caseNode => {
+      if (caseNode.type !== 'list' || caseNode.values.length === 0) {
+        throw new Error('switch: each case must be a list (test body...)');
+      }
+      const headNode = caseNode.values[0];
+      const isDefault = headNode.type === 'atom' && headNode.value === 'default';
+      const test = isDefault ? null : compileExpr(headNode);
+      const consequent = caseNode.values.slice(1)
+        .map(e => toStatement(compileExpr(e)));
+      return {
+        type: 'SwitchCase',
+        test,
+        consequent,
+      };
+    });
+    return {
+      type: 'SwitchStatement',
+      discriminant,
+      cases,
+    };
+  },
+
+  // Ternary: (? test consequent alternate)
+  '?'(args) {
+    if (args.length !== 3) {
+      throw new Error('? (ternary) requires exactly 3 arguments: (? test then else)');
+    }
+    return {
+      type: 'ConditionalExpression',
+      test: compileExpr(args[0]),
+      consequent: compileExpr(args[1]),
+      alternate: compileExpr(args[2]),
+    };
+  },
+
+  // Prefix increment: (++ x)
+  '++'(args) {
+    if (args.length !== 1) {
+      throw new Error('++ takes exactly one argument');
+    }
+    return {
+      type: 'UpdateExpression',
+      operator: '++',
+      argument: compileExpr(args[0]),
+      prefix: true,
+    };
+  },
+
+  // Prefix decrement: (-- x)
+  '--'(args) {
+    if (args.length !== 1) {
+      throw new Error('-- takes exactly one argument');
+    }
+    return {
+      type: 'UpdateExpression',
+      operator: '--',
+      argument: compileExpr(args[0]),
+      prefix: true,
+    };
+  },
+
+  // Label: (label name body)
+  'label'(args) {
+    if (args.length !== 2) {
+      throw new Error('label requires a name and body: (label name body)');
+    }
+    return {
+      type: 'LabeledStatement',
+      label: { type: 'Identifier', name: toCamelCase(args[0].value) },
+      body: toStatement(compileExpr(args[1])),
+    };
+  },
+
+  // Debugger: (debugger)
+  'debugger'(args) {
+    if (args.length !== 0) {
+      throw new Error('debugger takes no arguments');
+    }
+    return {
+      type: 'DebuggerStatement',
+    };
+  },
+
+  // Sequence expression: (seq expr1 expr2 ...)
+  'seq'(args) {
+    if (args.length < 2) {
+      throw new Error('seq requires at least 2 expressions');
+    }
+    return {
+      type: 'SequenceExpression',
+      expressions: args.map(compileExpr),
+    };
+  },
+
+  // Regex literal: (regex pattern) or (regex pattern flags)
+  'regex'(args) {
+    if (args.length < 1 || args.length > 2) {
+      throw new Error('regex takes 1 or 2 arguments: (regex pattern) or (regex pattern flags)');
+    }
+    if (args[0].type !== 'string') {
+      throw new Error('regex pattern must be a string');
+    }
+    const pattern = args[0].value;
+    const flags = args.length === 2
+      ? (args[1].type === 'string' ? args[1].value : String(args[1].value))
+      : '';
+    return {
+      type: 'Literal',
+      value: null,
+      regex: { pattern, flags },
+    };
+  },
+
   // Object literal: (object key1 val1 key2 val2)
   'object'(args) {
     const properties = [];
@@ -207,7 +741,7 @@ const macros = {
 };
 
 // Binary/logical operators
-const binaryOps = ['+', '-', '*', '/', '%', '===', '!==', '==', '!=',
+const binaryOps = ['+', '-', '*', '/', '%', '**', '===', '!==', '==', '!=',
                     '<', '>', '<=', '>=', '&&', '||', '??',
                     '&', '|', '^', '<<', '>>', '>>>'];
 for (const op of binaryOps) {
@@ -237,6 +771,27 @@ for (const op of ['!', '~', 'typeof', 'void', 'delete']) {
     prefix: true,
     argument: compileExpr(args[0]),
   });
+}
+
+// Compound assignment operators
+const compoundAssignOps = [
+  '+=', '-=', '*=', '/=', '%=', '**=',
+  '<<=', '>>=', '>>>=',
+  '&=', '|=', '^=',
+  '&&=', '||=', '??=',
+];
+for (const op of compoundAssignOps) {
+  macros[op] = (args) => {
+    if (args.length !== 2) {
+      throw new Error(op + ' takes exactly 2 arguments');
+    }
+    return {
+      type: 'AssignmentExpression',
+      operator: op,
+      left: compileExpr(args[0]),
+      right: compileExpr(args[1]),
+    };
+  };
 }
 
 // Ensure a node is wrapped as a statement
