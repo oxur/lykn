@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0014 | DD-11: Macro Definition, `as` Pattern Form, and Hygiene | Draft | 2026-03-26 |
 | 0013 | DD-10: Quasiquote / Unquote / Splicing | Draft | 2026-03-26 |
 | 0012 | Macro System Research for lykn | Final | 2026-03-26 |
 | 0011 | Designing a macro system for lykn | Final | 2026-03-26 |
@@ -24,6 +25,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Draft
 
+- [0014 - DD-11: Macro Definition, `as` Pattern Form, and Hygiene](01-draft/0014-dd-11-macro-definition-as-pattern-form-and-hygiene.md)
 - [0013 - DD-10: Quasiquote / Unquote / Splicing](01-draft/0013-dd-10-quasiquote-unquote-splicing.md)
 
 ### Final
