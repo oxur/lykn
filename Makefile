@@ -316,12 +316,14 @@ push:
 		echo "$(GREEN)✓ Pushed$(RESET)"; \
 	done
 
+publish: publish-jsr publish-npm publish-crates
+
 # Crates in dependency order (leaf crates first, dependent crates later)
 PUBLISH_ORDER := $(CODE_NAME)
 # crates.io rate limit delay (seconds)
 PUBLISH_DELAY := 372
-.PHONY: publish
-publish:
+.PHONY: publish-crates
+publish-crates:
 	@echo ""
 	@echo "$(CYAN)╔══════════════════════════════════════════════════════════╗$(RESET)"
 	@echo "$(CYAN)║$(RESET) $(BLUE)Publishing $(PROJECT_NAME) Crates to crates.io$(RESET)                      $(CYAN)║$(RESET)"

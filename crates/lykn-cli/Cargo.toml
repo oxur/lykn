@@ -1,6 +1,6 @@
 [package]
 name = "lykn-cli"
-version = "0.0.2"
+version = "0.1.0"
 edition = "2024"
 description = "S-expression syntax for JavaScript — linter, formatter, and REPL"
 license = "Apache-2.0"
