@@ -1,7 +1,7 @@
 {
     "name": "@lykn/lykn",
     "version": "0.1.0",
-    "exports": "./src/index.js",
+    "exports": "./src/index.d.ts",
     "nodeModulesDir": "none",
     "imports": {
         "astring": "npm:astring@^1.9.0"
