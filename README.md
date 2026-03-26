@@ -16,23 +16,46 @@ squint at the Icelandic — *closure*.
 
 ## Status
 
-**v0.0.1** — This is an early proof of concept. The compiler handles core JS constructs. Design work is underway for the full language.
+**v0.1.0** — Feature-complete compiler covering core JS: functions, classes, modules, destructuring, template literals, async/await, and more. 38KB browser bundle. 196 tests.
 
 ## Quick taste
 
 ```lisp
-; main.lykn
+(import "node:fs" (read-file-sync))
+
 (const greet (=> (name)
-  ((. console log) (+ "hello, " name "!"))))
+  (console:log (template "hello, " name "!"))))
 
 (greet "world")
+
+(class Dog (Animal)
+  (field -name)
+  (constructor (name)
+    (super name)
+    (= this:-name name))
+  (speak ()
+    (console:log (template this:-name " says woof!"))))
+
+(const (object name (default age 0)) (get-user))
 ```
 
 Compiles to:
 
 ```js
-const greet = name => console.log("hello, " + name + "!");
+import {readFileSync} from "node:fs";
+const greet = name => console.log(`hello, ${name}!`);
 greet("world");
+class Dog extends Animal {
+  #_name;
+  constructor(name) {
+    super(name);
+    this.#_name = name;
+  }
+  speak() {
+    console.log(`${this.#_name} says woof!`);
+  }
+}
+const {name, age = 0} = getUser();
 ```
 
 ## Architecture
@@ -87,20 +110,28 @@ cargo test
 
 ## Usage
 
-### Compile (JS)
+### Browser
+
+```html
+<script src="dist/lykn-browser.js"></script>
+<script type="text/lykn">
+  (const el (document:query-selector "#output"))
+  (= el:text-content "Hello from lykn!")
+</script>
+```
+
+Or use the API directly:
+
+```js
+lykn.compile('(+ 1 2)')   // → "1 + 2;\n"
+lykn.run('(+ 1 2)')       // → 3
+await lykn.load('/app.lykn')
+```
+
+### Build Browser Bundle
 
 ```sh
-# Install
-npm install -g lykn      # or: deno install -g lykn
-
-# Compile to stdout
-lykn compile main.lykn
-
-# Compile to file
-lykn compile main.lykn -o main.js
-
-# Pipe
-echo '((. console log) "hi")' | lykn compile -
+deno task build:browser
 ```
 
 ### Format (Rust)
@@ -122,18 +153,90 @@ cargo build --release && cp ./target/release/lykn ./bin
 
 ## Supported forms
 
+### Basics
+
 | lykn | JS |
 |---|---|
 | `(const x 1)` | `const x = 1;` |
 | `(let x 1)` | `let x = 1;` |
+| `my-function` | `myFunction` |
+| `console:log` | `console.log` |
+| `this:-name` | `this.#_name` |
+| `(get arr 0)` | `arr[0]` |
+
+### Functions
+
+| lykn | JS |
+|---|---|
 | `(=> (a b) (+ a b))` | `(a, b) => a + b` |
+| `(function add (a b) (return (+ a b)))` | `function add(a, b) { return a + b; }` |
 | `(lambda (a) (return a))` | `function(a) { return a; }` |
-| `((. console log) "hi")` | `console.log("hi");` |
+| `(async (=> () (await (fetch url))))` | `async () => await fetch(url)` |
+| `(=> ((default x 0)) x)` | `(x = 0) => x` |
+| `(function f (a (rest args)) ...)` | `function f(a, ...args) { ... }` |
+
+### Modules
+
+| lykn | JS |
+|---|---|
+| `(import "mod" (a b))` | `import {a, b} from "mod";` |
+| `(import "mod" name)` | `import name from "mod";` |
+| `(export (const x 42))` | `export const x = 42;` |
+| `(export default my-fn)` | `export default myFn;` |
+| `(dynamic-import "./mod.js")` | `import("./mod.js")` |
+
+### Control flow
+
+| lykn | JS |
+|---|---|
 | `(if cond a b)` | `if (cond) a; else b;` |
-| `(+ a b c)` | `a + b + c` |
-| `(array 1 2 3)` | `[1, 2, 3]` |
-| `(object k1 v1 k2 v2)` | `{k1: v1, k2: v2}` |
+| `(? test a b)` | `test ? a : b` |
+| `(for-of item items (f item))` | `for (const item of items) { f(item); }` |
+| `(while cond body...)` | `while (cond) { body }` |
+| `(try body (catch e ...) (finally ...))` | `try { body } catch(e) { ... } finally { ... }` |
+| `(switch x ("a" (f) (break)) (default (g)))` | `switch(x) { case "a": f(); break; default: g(); }` |
+| `(throw (new Error "oops"))` | `throw new Error("oops");` |
+
+### Expressions
+
+| lykn | JS |
+|---|---|
+| `(template "hi " name "!")` | `` `hi ${name}!` `` |
+| `(tag html (template ...))` | `` html`...` `` |
+| `(object (name "x") age)` | `{name: "x", age}` |
+| `(array 1 2 (spread rest))` | `[1, 2, ...rest]` |
+| `(regex "^hello" "gi")` | `/^hello/gi` |
 | `(new Thing a b)` | `new Thing(a, b)` |
+
+### Destructuring
+
+| lykn | JS |
+|---|---|
+| `(const (object name age) person)` | `const {name, age} = person;` |
+| `(const (array first (rest tail)) list)` | `const [first, ...tail] = list;` |
+| `(const (object (alias data items)) obj)` | `const {data: items} = obj;` |
+| `(const (object (default x 0)) point)` | `const {x = 0} = point;` |
+| `(const (array _ _ third) arr)` | `const [, , third] = arr;` |
+
+### Classes
+
+| lykn | JS |
+|---|---|
+| `(class Dog (Animal) ...)` | `class Dog extends Animal { ... }` |
+| `(field -count 0)` | `#_count = 0;` |
+| `(get area () (return x))` | `get area() { return x; }` |
+| `(static (field count 0))` | `static count = 0;` |
+| `(async (fetch-data () ...))` | `async fetchData() { ... }` |
+
+### Operators
+
+| lykn | JS |
+|---|---|
+| `(+ a b c)` | `a + b + c` |
+| `(++ x)` | `++x` |
+| `(+= x 1)` | `x += 1` |
+| `(** base exp)` | `base ** exp` |
+| `(?? a b)` | `a ?? b` |
 
 ## Design principles
 
@@ -141,8 +244,8 @@ cargo build --release && cp ./target/release/lykn ./bin
   language you already have. The output should look like code you'd write.
 - **No runtime.** Compiled lykn is just JS. Nothing extra ships to the
   browser.
-- **Small tools.** The compiler is ~400 lines. The formatter is ~80 lines.
-  You can read the whole thing.
+- **Small tools.** The compiler is ~1,500 lines. The browser bundle is 38KB
+  minified. The formatter is ~80 lines.
 - **Two worlds.** Use Rust for dev-side tooling (fast, single binary). Use JS
   for the compiler (because it targets JS and can run in the browser).
 
