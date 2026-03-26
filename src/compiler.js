@@ -105,7 +105,7 @@ const macros = {
       kind: 'var',
       declarations: [{
         type: 'VariableDeclarator',
-        id: compileExpr(args[0]),
+        id: compilePattern(args[0]),
         init: args[1] ? compileExpr(args[1]) : null,
       }],
     };
@@ -119,7 +119,7 @@ const macros = {
       kind: 'const',
       declarations: [{
         type: 'VariableDeclarator',
-        id: compileExpr(args[0]),
+        id: compilePattern(args[0]),
         init: args[1] ? compileExpr(args[1]) : null,
       }],
     };
@@ -132,7 +132,7 @@ const macros = {
       kind: 'let',
       declarations: [{
         type: 'VariableDeclarator',
-        id: compileExpr(args[0]),
+        id: compilePattern(args[0]),
         init: args[1] ? compileExpr(args[1]) : null,
       }],
     };
@@ -154,7 +154,7 @@ const macros = {
   // Arrow function: (=> (a b) (+ a b))
   '=>'(args) {
     const params = args[0].type === 'list'
-      ? args[0].values.map(compileExpr)
+      ? args[0].values.map(compilePattern)
       : [];
     const bodyExprs = args.slice(1);
     if (bodyExprs.length === 1) {
@@ -182,7 +182,7 @@ const macros = {
   // Lambda: (lambda (a b) (return (+ a b)))
   'lambda'(args) {
     const params = args[0].type === 'list'
-      ? args[0].values.map(compileExpr)
+      ? args[0].values.map(compilePattern)
       : [];
     const bodyExprs = args.slice(1);
     return {
@@ -223,12 +223,21 @@ const macros = {
     };
   },
 
-  // Assignment: (= x 5)
+  // Assignment: (= x 5) or (= (object a b) obj)
   '='(args) {
+    if (args.length !== 2) {
+      throw new Error('= requires exactly 2 arguments');
+    }
+    const leftNode = args[0];
+    const isPattern = leftNode.type === 'list' &&
+      leftNode.values.length > 0 &&
+      leftNode.values[0].type === 'atom' &&
+      (leftNode.values[0].value === 'object' || leftNode.values[0].value === 'array');
+
     return {
       type: 'AssignmentExpression',
       operator: '=',
-      left: compileExpr(args[0]),
+      left: isPattern ? compilePattern(leftNode) : compileExpr(leftNode),
       right: compileExpr(args[1]),
     };
   },
@@ -261,7 +270,7 @@ const macros = {
     if (args[1].type !== 'list') {
       throw new Error('function params must be a list: (function name (params) body...)');
     }
-    const params = args[1].values.map(compileExpr);
+    const params = args[1].values.map(compilePattern);
     const bodyExprs = args.slice(2);
     return {
       type: 'FunctionDeclaration',
@@ -544,7 +553,7 @@ const macros = {
     if (args.length < 3) {
       throw new Error('for-of requires binding, iterable, and body');
     }
-    const binding = compileExpr(args[0]);
+    const binding = compilePattern(args[0]);
     return {
       type: 'ForOfStatement',
       left: {
@@ -570,7 +579,7 @@ const macros = {
     if (args.length < 3) {
       throw new Error('for-in requires binding, object, and body');
     }
-    const binding = compileExpr(args[0]);
+    const binding = compilePattern(args[0]);
     return {
       type: 'ForInStatement',
       left: {
@@ -800,6 +809,17 @@ const macros = {
       type: 'AssignmentPattern',
       left: compileExpr(args[0]),
       right: compileExpr(args[1]),
+    };
+  },
+
+  // Rest element: (rest x) — for function params
+  'rest'(args) {
+    if (args.length !== 1) {
+      throw new Error('rest takes exactly one argument');
+    }
+    return {
+      type: 'RestElement',
+      argument: compileExpr(args[0]),
     };
   },
 
@@ -1051,6 +1071,237 @@ export function compileExpr(node) {
     default:
       throw new Error(`Unknown node type: ${node.type}`);
   }
+}
+
+// Compile a reader AST node as a destructuring pattern
+function compilePattern(node) {
+  if (!node) return null;
+
+  switch (node.type) {
+    case 'atom': {
+      const val = node.value;
+      if (val === '_') return null;
+      if (val === 'true' || val === 'false' || val === 'null' || val === 'undefined') {
+        return compileExpr(node);
+      }
+      return { type: 'Identifier', name: toCamelCase(val) };
+    }
+
+    case 'list': {
+      if (node.values.length === 0) {
+        return { type: 'ObjectPattern', properties: [] };
+      }
+
+      const head = node.values[0];
+      const rest = node.values.slice(1);
+
+      if (head.type !== 'atom') {
+        throw new Error('Unrecognized pattern form: expected object, array, default, rest, or alias');
+      }
+
+      switch (head.value) {
+        case 'object':
+          return compileObjectPattern(rest);
+
+        case 'array':
+          return compileArrayPattern(rest);
+
+        case 'default':
+          if (rest.length !== 2) {
+            throw new Error('default in pattern requires 2 arguments: (default name value)');
+          }
+          return {
+            type: 'AssignmentPattern',
+            left: compilePattern(rest[0]),
+            right: compileExpr(rest[1]),
+          };
+
+        case 'rest':
+          if (rest.length !== 1) {
+            throw new Error('rest requires exactly 1 argument: (rest name)');
+          }
+          return {
+            type: 'RestElement',
+            argument: compilePattern(rest[0]),
+          };
+
+        case 'alias':
+          throw new Error('alias can only appear inside an object pattern');
+
+        default:
+          return compileExpr(node);
+      }
+    }
+
+    default:
+      return compileExpr(node);
+  }
+}
+
+// Compile children of (object ...) in pattern position → ObjectPattern
+function compileObjectPattern(children) {
+  const properties = [];
+
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+
+    if (child.type === 'atom') {
+      const name = toCamelCase(child.value);
+      properties.push({
+        type: 'Property',
+        key: { type: 'Identifier', name },
+        value: { type: 'Identifier', name },
+        kind: 'init',
+        computed: false,
+        shorthand: true,
+        method: false,
+      });
+
+    } else if (child.type === 'list') {
+      if (child.values.length === 0) {
+        throw new Error('Empty sub-list in object pattern');
+      }
+
+      const head = child.values[0];
+
+      // (rest others) → RestElement
+      if (head.type === 'atom' && head.value === 'rest') {
+        if (child.values.length !== 2) {
+          throw new Error('rest requires exactly 1 argument');
+        }
+        if (i !== children.length - 1) {
+          throw new Error('rest must be the last element in an object pattern');
+        }
+        properties.push({
+          type: 'RestElement',
+          argument: compilePattern(child.values[1]),
+        });
+        continue;
+      }
+
+      // (default name value) → Property with AssignmentPattern value
+      if (head.type === 'atom' && head.value === 'default') {
+        if (child.values.length !== 3) {
+          throw new Error('default in object pattern: (default name value)');
+        }
+        const propName = toCamelCase(child.values[1].value);
+        properties.push({
+          type: 'Property',
+          key: { type: 'Identifier', name: propName },
+          value: {
+            type: 'AssignmentPattern',
+            left: { type: 'Identifier', name: propName },
+            right: compileExpr(child.values[2]),
+          },
+          kind: 'init',
+          computed: false,
+          shorthand: true,
+          method: false,
+        });
+        continue;
+      }
+
+      // (alias key local) or (alias key local default-val)
+      if (head.type === 'atom' && head.value === 'alias') {
+        if (child.values.length < 3 || child.values.length > 4) {
+          throw new Error('alias: (alias key local) or (alias key local default)');
+        }
+
+        const key = toCamelCase(child.values[1].value);
+        let valueNode = compilePattern(child.values[2]);
+
+        if (child.values.length === 4) {
+          valueNode = {
+            type: 'AssignmentPattern',
+            left: valueNode,
+            right: compileExpr(child.values[3]),
+          };
+        }
+
+        properties.push({
+          type: 'Property',
+          key: { type: 'Identifier', name: key },
+          value: valueNode,
+          kind: 'init',
+          computed: false,
+          shorthand: false,
+          method: false,
+        });
+        continue;
+      }
+
+      throw new Error(
+        'object pattern: each element must be an atom (shorthand), ' +
+        '(alias ...), (default ...), or (rest ...). Got: (' +
+        (head.type === 'atom' ? head.value : head.type) + ' ...)'
+      );
+
+    } else {
+      throw new Error('object pattern: unexpected ' + child.type);
+    }
+  }
+
+  return { type: 'ObjectPattern', properties };
+}
+
+// Compile children of (array ...) in pattern position → ArrayPattern
+function compileArrayPattern(children) {
+  const elements = [];
+
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+
+    if (child.type === 'atom') {
+      if (child.value === '_') {
+        elements.push(null);
+      } else {
+        elements.push({ type: 'Identifier', name: toCamelCase(child.value) });
+      }
+
+    } else if (child.type === 'list') {
+      if (child.values.length === 0) {
+        throw new Error('Empty sub-list in array pattern');
+      }
+
+      const head = child.values[0];
+
+      // (rest name) → RestElement (must be last)
+      if (head.type === 'atom' && head.value === 'rest') {
+        if (child.values.length !== 2) {
+          throw new Error('rest requires exactly 1 argument');
+        }
+        if (i !== children.length - 1) {
+          throw new Error('rest must be the last element in an array pattern');
+        }
+        elements.push({
+          type: 'RestElement',
+          argument: compilePattern(child.values[1]),
+        });
+        continue;
+      }
+
+      // (default name value) → AssignmentPattern
+      if (head.type === 'atom' && head.value === 'default') {
+        if (child.values.length !== 3) {
+          throw new Error('default in array pattern: (default name value)');
+        }
+        elements.push({
+          type: 'AssignmentPattern',
+          left: compilePattern(child.values[1]),
+          right: compileExpr(child.values[2]),
+        });
+        continue;
+      }
+
+      // Nested pattern or other form
+      elements.push(compilePattern(child));
+
+    } else {
+      elements.push(compileExpr(child));
+    }
+  }
+
+  return { type: 'ArrayPattern', elements };
 }
 
 // Compile an array of top-level s-expressions to a JS program string
