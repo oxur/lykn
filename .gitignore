@@ -6,4 +6,4 @@ target/
 /workbench
 /.claude
 /assets/images/logo/drafts
-/assets/ai/ai-skill
+/assets/ai/ai-*
