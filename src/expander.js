@@ -2,13 +2,20 @@
  * @module
  * lykn expansion pass.
  * Transforms reader AST into compiler-ready AST by resolving quasiquote,
- * quote, sugar forms (cons/list/car/cdr), and as patterns.
+ * quote, sugar forms (cons/list/car/cdr), macros, and as patterns.
  */
+
+import { compile } from './compiler.js';
 
 // --- AST Node API ---
 
 /** @type {number} */
 let gensymCounter = 0;
+
+/** @type {Map<string, Function>} */
+const macroEnv = new Map();
+
+const MAX_EXPAND_ITERATIONS = 1000;
 
 /**
  * Create a symbol (atom) AST node.
@@ -53,10 +60,14 @@ export function array(...items) {
 export function append(...arrays) {
   const values = [];
   for (const arr of arrays) {
-    if (!arr || arr.type !== 'list') {
-      throw new Error(`append: expected list node, got ${arr?.type ?? 'null'}`);
+    if (Array.isArray(arr)) {
+      // Raw JS array (e.g., from rest params in macro body)
+      values.push(...arr);
+    } else if (arr && arr.type === 'list') {
+      values.push(...arr.values);
+    } else {
+      throw new Error(`append: expected list node or array, got ${arr?.type ?? 'null'}`);
     }
-    values.push(...arr.values);
   }
   return { type: 'list', values };
 }
@@ -162,6 +173,312 @@ function desugarAs(args) {
     return array(sym('alias'), args[0], args[1]);
   }
   throw new Error('as with pattern first argument must appear in binding position (const/let/var)');
+}
+
+// --- Macro Compilation ---
+
+/** Macro environment API parameter names for new Function(). */
+const MACRO_API_PARAMS = [
+  '$array', '$sym', '$gensym',
+  '$isArray', '$isSymbol', '$isNumber', '$isString',
+  '$first', '$rest', '$concat', '$nth', '$length',
+  '$append',
+];
+
+/** Macro environment API values, matching MACRO_API_PARAMS order. */
+const MACRO_API_VALUES = [
+  array, sym, gensym,
+  isArray, isSymbol, isNumber, isString,
+  first, rest, concat, nth, length,
+  append,
+];
+
+/**
+ * Compile a quasiquote template into s-expression AST that, when compiled
+ * to JS and executed, constructs the template with unquoted values filled in.
+ * This is different from expandQuasiquote which RESOLVES templates.
+ * @param {*} form - The quasiquote body
+ * @param {number} depth - Nesting depth
+ * @returns {*} S-expression AST representing API calls
+ */
+function compileQuasiquote(form, depth) {
+  if (form.type === 'number') {
+    return form;
+  }
+  if (form.type === 'string') {
+    return form;
+  }
+  if (form.type === 'atom') {
+    return array(sym('$sym'), { type: 'string', value: form.value });
+  }
+
+  if (form.type === 'cons') {
+    const car = compileQuasiquote(form.car, depth);
+    const cdr = compileQuasiquote(form.cdr, depth);
+    return array(sym('$array'), car, cdr);
+  }
+
+  if (form.type !== 'list') {
+    throw new Error(`compileQuasiquote: unexpected node type '${form.type}'`);
+  }
+
+  const values = form.values;
+  if (values.length === 0) {
+    return array(sym('$array'));
+  }
+
+  const head = values[0];
+
+  if (head.type === 'atom' && head.value === 'quasiquote') {
+    if (values.length !== 2) throw new Error('quasiquote requires exactly one argument');
+    const inner = compileQuasiquote(values[1], depth + 1);
+    return array(sym('$array'), array(sym('$sym'), { type: 'string', value: 'quasiquote' }), inner);
+  }
+
+  if (head.type === 'atom' && head.value === 'unquote') {
+    if (values.length !== 2) throw new Error('unquote requires exactly one argument');
+    if (depth === 0) {
+      return values[1];
+    }
+    const inner = compileQuasiquote(values[1], depth - 1);
+    return array(sym('$array'), array(sym('$sym'), { type: 'string', value: 'unquote' }), inner);
+  }
+
+  if (head.type === 'atom' && head.value === 'unquote-splicing') {
+    if (depth === 0) {
+      throw new Error('unquote-splicing not inside a list');
+    }
+    if (values.length !== 2) throw new Error('unquote-splicing requires exactly one argument');
+    const inner = compileQuasiquote(values[1], depth - 1);
+    return array(sym('$array'), array(sym('$sym'), { type: 'string', value: 'unquote-splicing' }), inner);
+  }
+
+  const parts = values.map((el) => compileQQElementForMacro(el, depth));
+  const hasSplice = parts.some((p) => p.isSplice);
+
+  if (!hasSplice) {
+    return array(sym('$array'), ...parts.map((p) => p.node));
+  }
+
+  const concatArgs = parts.map((p) => {
+    if (p.isSplice) return p.node;
+    return array(sym('$array'), p.node);
+  });
+  return array(sym('$concat'), ...concatArgs);
+}
+
+function compileQQElementForMacro(element, depth) {
+  if (element.type === 'list' && element.values.length === 2 &&
+      element.values[0].type === 'atom' && element.values[0].value === 'unquote') {
+    if (depth === 0) {
+      return { node: element.values[1], isSplice: false };
+    }
+    return { node: compileQuasiquote(element, depth), isSplice: false };
+  }
+
+  if (element.type === 'list' && element.values.length === 2 &&
+      element.values[0].type === 'atom' && element.values[0].value === 'unquote-splicing') {
+    if (depth === 0) {
+      return { node: element.values[1], isSplice: true };
+    }
+    return { node: compileQuasiquote(element, depth), isSplice: false };
+  }
+
+  if (element.type === 'list') {
+    return { node: compileQuasiquote(element, depth), isSplice: false };
+  }
+
+  if (element.type === 'number' || element.type === 'string') {
+    return { node: element, isSplice: false };
+  }
+
+  if (element.type === 'atom') {
+    return { node: array(sym('$sym'), { type: 'string', value: element.value }), isSplice: false };
+  }
+
+  if (element.type === 'cons') {
+    return { node: compileQuasiquote(element, depth), isSplice: false };
+  }
+
+  return { node: element, isSplice: false };
+}
+
+/**
+ * Resolve #gen auto-gensym suffixes in a quasiquote template.
+ * All occurrences of the same prefix#gen within one template → same gensym.
+ * @param {*} form - AST form (quasiquote body)
+ * @returns {*} Form with #gen atoms replaced by gensym atoms
+ */
+function resolveAutoGensym(form) {
+  const genMap = new Map();
+
+  function resolve(node) {
+    if (node === null || node === undefined) return node;
+
+    if (node.type === 'atom' && node.value.endsWith('#gen')) {
+      const prefix = node.value.slice(0, -4);
+      if (!genMap.has(prefix)) {
+        genMap.set(prefix, gensym(prefix));
+      }
+      return genMap.get(prefix);
+    }
+
+    if (node.type === 'list') {
+      return { type: 'list', values: node.values.map(resolve) };
+    }
+
+    if (node.type === 'cons') {
+      return { type: 'cons', car: resolve(node.car), cdr: resolve(node.cdr) };
+    }
+
+    return node;
+  }
+
+  return resolve(form);
+}
+
+/**
+ * Compile a macro body into a JS function string.
+ * The body may contain quasiquote templates which are compiled to API calls.
+ * @param {*[]} paramNames - Extracted parameter name atoms
+ * @param {*} paramPattern - The raw parameter pattern for destructuring
+ * @param {*[]} bodyForms - The macro body forms
+ * @returns {string} JS code string for new Function()
+ */
+function compileMacroBody(paramNames, paramPattern, bodyForms) {
+  // Process the body: compile quasiquote templates to API calls
+  const processedBody = bodyForms.map((form) => processBodyForm(form));
+
+  // Build a function that takes the call-site args and returns an s-expression
+  // For simple (test (rest body)): function(test, ...body) { return <compiled-body>; }
+  const jsParams = compileParamList(paramPattern);
+
+  // The last expression is the return value
+  const bodyStatements = processedBody.map((form, i) => {
+    if (i === processedBody.length - 1) {
+      return array(sym('return'), form);
+    }
+    return form;
+  });
+
+  // Use lambda (FunctionExpression) for proper block body with return
+  const fnForm = array(sym('lambda'), array(...jsParams), ...bodyStatements);
+
+  // Compile to JS using the compiler
+  const jsCode = compile([fnForm]);
+  return `return ${jsCode.trim()};`;
+}
+
+/**
+ * Process a macro body form, converting quasiquote templates to API calls.
+ */
+function processBodyForm(form) {
+  if (form === null || form === undefined) return form;
+
+  if (form.type !== 'list' || form.values.length === 0) return form;
+
+  const head = form.values[0];
+
+  // Quasiquote in macro body → compile to API calls (not resolve)
+  if (head.type === 'atom' && head.value === 'quasiquote') {
+    if (form.values.length !== 2) throw new Error('quasiquote requires exactly one argument');
+    const body = resolveAutoGensym(form.values[1]);
+    return compileQuasiquote(body, 0);
+  }
+
+  // Recursively process sub-forms
+  return { type: 'list', values: form.values.map(processBodyForm) };
+}
+
+/**
+ * Convert a macro param pattern to JS parameter atoms.
+ * (test (rest body)) → [sym('test'), sym('...body')] for arrow fn compilation
+ */
+function compileParamList(pattern) {
+  if (pattern.type !== 'list') return [];
+
+  const params = [];
+  for (const p of pattern.values) {
+    if (p.type === 'atom') {
+      if (p.value === '_') {
+        params.push(sym('_'));
+      } else {
+        params.push(p);
+      }
+    } else if (p.type === 'list' && p.values.length >= 1) {
+      const head = p.values[0];
+      if (head.type === 'atom' && head.value === 'rest') {
+        // (rest body) → ...body in JS (rest parameter)
+        params.push(p); // pass through — compilePattern handles (rest x)
+      } else if (head.type === 'atom' && head.value === 'default') {
+        params.push(p); // pass through — compilePattern handles (default x val)
+      } else {
+        params.push(p); // nested pattern — compilePattern handles it
+      }
+    }
+  }
+  return params;
+}
+
+/**
+ * Register a macro from a (macro name params body...) form.
+ * @param {*} nameNode - The macro name atom
+ * @param {*} paramsNode - The parameter pattern list
+ * @param {*[]} bodyForms - The body forms
+ * @throws {Error} If macro compilation fails
+ */
+function registerMacroForm(nameNode, paramsNode, bodyForms) {
+  const name = nameNode.value;
+
+  if (macroEnv.has(name)) {
+    throw new Error(`duplicate macro definition: '${name}'`);
+  }
+
+  const paramNames = extractParamNames(paramsNode);
+  const jsBody = compileMacroBody(paramNames, paramsNode, bodyForms);
+
+  try {
+    const factory = new Function(...MACRO_API_PARAMS, jsBody);
+    const macroFn = factory(...MACRO_API_VALUES);
+    macroEnv.set(name, macroFn);
+  } catch (err) {
+    throw new Error(`failed to compile macro '${name}': ${err.message}`, { cause: err });
+  }
+}
+
+/**
+ * Extract parameter names from a macro param pattern (for gensym checking).
+ */
+function extractParamNames(pattern) {
+  const names = new Set();
+
+  function walk(node) {
+    if (node === null || node === undefined) return;
+    if (node.type === 'atom' && node.value !== '_') {
+      names.add(node.value);
+    } else if (node.type === 'list') {
+      const head = node.values[0];
+      if (head?.type === 'atom' && head.value === 'rest' && node.values[1]) {
+        walk(node.values[1]);
+      } else if (head?.type === 'atom' && head.value === 'default' && node.values[1]) {
+        walk(node.values[1]);
+      } else {
+        for (const child of node.values) walk(child);
+      }
+    }
+  }
+
+  if (pattern.type === 'list') {
+    for (const p of pattern.values) walk(p);
+  }
+  return names;
+}
+
+/**
+ * Reset macro environment (for testing).
+ */
+export function resetMacros() {
+  macroEnv.clear();
 }
 
 // --- Quasiquote Expansion (Bawden's Algorithm) ---
@@ -359,6 +676,26 @@ export function expandExpr(form) {
     throw new Error('unquote-splicing outside of quasiquote');
   }
 
+  // Fixed-point macro expansion
+  if (head.type === 'atom' && macroEnv.has(head.value)) {
+    let current = form;
+    let count = 0;
+    while (current.type === 'list' && current.values.length > 0 &&
+           current.values[0].type === 'atom' && macroEnv.has(current.values[0].value)) {
+      const macroName = current.values[0].value;
+      const macroArgs = current.values.slice(1);
+      try {
+        current = macroEnv.get(macroName)(...macroArgs);
+      } catch (err) {
+        throw new Error(`error expanding macro '${macroName}': ${err.message}`, { cause: err });
+      }
+      if (++count > MAX_EXPAND_ITERATIONS) {
+        throw new Error(`expansion limit (${MAX_EXPAND_ITERATIONS}) exceeded expanding '${form.values[0].value}'`);
+      }
+    }
+    return expandExpr(current);
+  }
+
   // Dispatch table
   if (head.type === 'atom') {
     const entry = dispatchTable[head.value];
@@ -368,7 +705,7 @@ export function expandExpr(form) {
           return form;
 
         case 'register-macro':
-          throw new Error('unexpected macro definition in expansion pass (macro processing not yet implemented)');
+          throw new Error('unexpected macro definition in expansion pass (macros should be processed in Pass 1)');
 
         case 'desugar': {
           const args = form.values.slice(1);
@@ -422,11 +759,100 @@ export function expandExpr(form) {
 }
 
 /**
- * Expand all top-level forms.
- * @param {*[]} forms - Array of reader AST nodes
- * @returns {*[]} Expanded forms ready for the compiler
+ * Pass 1: Scan for macro definitions, compile and register them.
+ * Uses iterative fixed-point for order-independent macro compilation.
+ * @param {*[]} forms - All top-level forms
+ * @returns {*[]} Forms with macro definitions removed
  */
-export function expand(forms) {
+function pass1RegisterMacros(forms) {
+  const macroForms = [];
+  const otherForms = [];
+
+  for (const form of forms) {
+    if (form.type === 'list' && form.values.length >= 3 &&
+        form.values[0].type === 'atom' && form.values[0].value === 'macro') {
+      macroForms.push(form);
+    } else {
+      otherForms.push(form);
+    }
+  }
+
+  if (macroForms.length === 0) return otherForms;
+
+  // Iterative fixed-point: compile macros in dependency order
+  let pending = [...macroForms];
+  const maxPasses = pending.length;
+  let passCount = 0;
+
+  while (pending.length > 0) {
+    passCount++;
+    if (passCount > maxPasses) {
+      const names = pending.map((f) => f.values[1].value).join(', ');
+      throw new Error(`circular macro dependency among: ${names}`);
+    }
+
+    let progress = false;
+    const stillPending = [];
+
+    for (const form of pending) {
+      const name = form.values[1];
+      const params = form.values[2];
+      const body = form.values.slice(3);
+
+      // Check if body references any still-pending macro names
+      const pendingNames = new Set(pending.map((f) => f.values[1].value));
+      pendingNames.delete(name.value); // Don't count self-reference
+      const deps = findSymbolRefs(body, pendingNames);
+
+      if (deps.size === 0) {
+        registerMacroForm(name, params, body);
+        progress = true;
+      } else {
+        stillPending.push(form);
+      }
+    }
+
+    pending = stillPending;
+    if (!progress && pending.length > 0) {
+      const names = pending.map((f) => f.values[1].value).join(', ');
+      throw new Error(`circular macro dependency among: ${names}`);
+    }
+  }
+
+  return otherForms;
+}
+
+/**
+ * Find references to a set of symbol names within forms.
+ * @param {*[]} forms - Forms to search
+ * @param {Set<string>} names - Symbol names to look for
+ * @returns {Set<string>} Found references
+ */
+function findSymbolRefs(forms, names) {
+  const found = new Set();
+
+  function walk(node) {
+    if (node === null || node === undefined) return;
+    if (node.type === 'atom' && names.has(node.value)) {
+      found.add(node.value);
+    } else if (node.type === 'list') {
+      for (const child of node.values) walk(child);
+    } else if (node.type === 'cons') {
+      walk(node.car);
+      walk(node.cdr);
+    }
+  }
+
+  for (const form of forms) walk(form);
+  return found;
+}
+
+/**
+ * Pass 2: Expand all forms (sugar, quasiquote, macros).
+ * @param {*[]} forms - Forms after Pass 1 (macros removed)
+ * @returns {*[]} Fully expanded forms
+ */
+function pass2ExpandAll(forms) {
   const result = [];
   for (const form of forms) {
     const expanded = expandExpr(form);
@@ -437,4 +863,16 @@ export function expand(forms) {
     }
   }
   return result;
+}
+
+/**
+ * Expand all top-level forms. Two-pass pipeline:
+ * Pass 1: register macros (iterative fixed-point)
+ * Pass 2: expand all remaining forms
+ * @param {*[]} forms - Array of reader AST nodes
+ * @returns {*[]} Expanded forms ready for the compiler
+ */
+export function expand(forms) {
+  const remaining = pass1RegisterMacros(forms);
+  return pass2ExpandAll(remaining);
 }

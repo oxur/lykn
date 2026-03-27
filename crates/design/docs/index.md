@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0019 | JavaScript's hazard landscape and syntactic mitigations for a Lisp-to-JS compiler | Final | 2026-03-27 |
 | 0018 | Lykn v0.2.0 — Implementation Plan | Active | 2026-03-26 |
 | 0017 | DD-14: Macro Modules and ESM Interaction | Draft | 2026-03-26 |
 | 0016 | DD-13: Macro Expansion Pipeline | Draft | 2026-03-26 |
@@ -41,6 +42,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Final
 
+- [0019 - JavaScript's hazard landscape and syntactic mitigations for a Lisp-to-JS compiler](06-final/0019-javascripts-hazard-landscape-and-syntactic-mitigations-for-a-lisp-to-js-compiler.md)
 - [0012 - Macro System Research for lykn](06-final/0012-macro-system-research-for-lykn.md)
 - [0011 - Designing a macro system for lykn](06-final/0011-designing-a-macro-system-for-lykn.md)
 - [0010 - Lykn v0.1.0 — Implementation Plan](06-final/0010-lykn-v0.1.0-implementation-plan.md)

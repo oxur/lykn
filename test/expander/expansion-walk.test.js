@@ -42,8 +42,11 @@ Deno.test("walk: nested sugar desugared", () => {
   assertEquals(result.values[2].values[1].values[0].value, "array");
 });
 
-Deno.test("walk: macro form errors in phase 2", () => {
-  assertThrows(() => ex("(macro when (test body) body)"), Error, "macro");
+Deno.test("walk: macro form is consumed in pass 1", () => {
+  // Macros are now processed in Pass 1 and erased, not errored
+  const result = ex("(macro noop () \`null) (const x 1)");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].values[0].value, "const");
 });
 
 Deno.test("walk: macroexpand errors in phase 2", () => {
