@@ -1,17 +1,16 @@
 ---
 number: 15
 title: "DD-12: Reader `#` Dispatch, Data Literals, and Cons Lists"
-author: "Duncan McGreggor"
+author: "nested two"
 component: All
 tags: [change-me]
 created: 2026-03-26
 updated: 2026-03-26
-state: Draft
+state: Overwritten
 supersedes: null
 superseded-by: null
-version: 1.2
+version: 1.0
 ---
-
 
 # DD-12: Reader `#` Dispatch, Data Literals, and Cons Lists
 
@@ -23,18 +22,15 @@ version: 1.2
 
 The reader's `#` character (reserved since v0.1.0) triggers a fixed
 dispatch table with five entries: expression comments (`#;`), array
-literals (`#a(...)`), object literals (`#o(...)`), arbitrary-radix
-numerics (`#NNr`), and nestable block comments (`#|...|#`). All
-collection-type dispatch entries use the `#X(...)` pattern (letter
-prefix) for forward-compatible symmetry. Three new expansion-time
-forms — `cons`, `list`, and `car`/`cdr`/`cadr`/`cddr` — introduce
-classic Lisp cons-cell data structures backed by nested two-element
-JS arrays. Dotted-pair syntax `(,head . ,tail)` enables head/tail
-destructuring on cons lists via quasiquote patterns. Key positions
-in object destructuring patterns are implicitly literal — no quote
-needed. The internal AST representation remains flat JS arrays; cons
-lists are a user-facing data structure only. The dispatch table is
-fixed and not user-extensible.
+literals (`#(...)`), object literals (`#s(...)`), arbitrary-radix
+numerics (`#NNr`), and nestable block comments (`#|...|#`). Three
+new expansion-time forms — `cons`, `list`, and `car`/`cdr`/`cadr`/`cddr` —
+introduce classic Lisp cons-cell data structures backed by nested
+two-element JS arrays. Dotted-pair syntax `(,head . ,tail)` enables
+head/tail destructuring on cons lists via quasiquote patterns. The
+internal AST representation remains flat JS arrays; cons lists are a
+user-facing data structure only. The dispatch table is fixed and not
+user-extensible.
 
 ## Decisions
 
@@ -46,18 +42,13 @@ extend the table. The reader recognizes `#` at the start of a
 token (not mid-atom — `temp#gen` from DD-11 is a single atom
 containing `#`, not a dispatch trigger).
 
-All collection-type entries use the `#X(...)` pattern — a single
-letter followed by parenthesized contents — to maintain forward-
-compatible symmetry when additional collection types are added.
-
 | Dispatch | Meaning | Reader action |
 |---|---|---|
 | `#;` | Expression comment | Discard next form |
-| `#a(...)` | Array literal | Expand to `(array ...)` |
-| `#o(...)` | Object literal | Expand to `(object ...)` |
+| `#(...)` | Array literal | Expand to `(array ...)` |
+| `#s(...)` | Object literal | Expand to `(object ...)` |
 | `#NNr` | Radix literal | Parse value in base NN, emit numeric literal |
 | `#\|...\|#` | Nestable block comment | Discard contents, track nesting depth |
-| `#(...)` | **Reserved — error** | `"use #a(...) for array literals"` |
 
 **Rationale**: A fixed table avoids the complexity of user-extensible
 reader macros (Racket-level machinery). lykn's "dumb reader"
@@ -67,13 +58,7 @@ comments (debugging), data literals (construction and pattern
 matching), numeric bases (expressiveness), and nestable comments
 (ergonomics). Additional entries can be added in future versions
 without design changes — the dispatch mechanism is extensible
-internally, just not user-facing. The `#X(...)` pattern ensures
-that future collection types (tuples, sets, maps, vectors) will
-use the same syntax convention — no broken symmetry. LFE's
-experience with `#(...)` for tuples (forcing later types into
-`#X(...)` patterns) motivates this forward-compatible choice.
-`#(...)` without a letter is reserved and produces an error with
-a helpful message.
+internally, just not user-facing.
 
 ### `#;` expression comment
 
@@ -116,9 +101,9 @@ matching parentheses. Simpler than wrapping in `#|...|#` for
 single expressions. `;` comments only work to end-of-line; `#;`
 works structurally.
 
-### `#a(...)` array literal
+### `#(...)` array literal
 
-**Decision**: `#a(...)` is reader sugar that expands to `(array ...)`.
+**Decision**: `#(...)` is reader sugar that expands to `(array ...)`.
 It follows all the same rules as the `array` core form — the reader
 performs a mechanical expansion, and the compiler/expansion pass
 handles the rest.
@@ -126,7 +111,7 @@ handles the rest.
 **Syntax — construction**:
 
 ```lisp
-#a(1 2 3)
+#(1 2 3)
 ;; reader expands to:
 (array 1 2 3)
 ```
@@ -138,11 +123,11 @@ handles the rest.
 **Syntax — quasiquote pattern (destructuring)**:
 
 ```lisp
-(let ((`#a(,first ,second ,third) my-array))
+(let ((`#(,first ,second ,third) my-array))
   (console:log first second third))
 ```
 
-Expansion: the quasiquote pattern `#a(...)` expands to an `array`
+Expansion: the quasiquote pattern `#(...)` expands to an `array`
 pattern which uses DD-06 array destructuring:
 
 ```javascript
@@ -158,21 +143,18 @@ produces `ArrayExpression` (construction) or `ArrayPattern`
 It is to provide a literal form that works naturally in quasiquote
 templates for both construction and pattern matching — the
 constructor-as-destructor pattern from DD-06 and DD-11, applied at
-the reader level. The `a` prefix follows the `#X(...)` convention
-for collection types.
+the reader level.
 
-### `#o(...)` object literal
+### `#s(...)` object literal
 
-**Decision**: `#o(...)` is reader sugar that expands to `(object ...)`.
+**Decision**: `#s(...)` is reader sugar that expands to `(object ...)`.
 It uses the same grouped `(key value)` pair syntax established in
-DD-06's amended object construction syntax. Key positions in object
-patterns are implicitly literal — no quote is needed (see "Implicit
-literal keys in object patterns" below).
+DD-06's amended object construction syntax.
 
 **Syntax — construction**:
 
 ```lisp
-#o((name "Duncan") (age 42))
+#s((name "Duncan") (age 42))
 ;; reader expands to:
 (object (name "Duncan") (age 42))
 ```
@@ -185,7 +167,7 @@ All `object` features work: bare atoms for shorthand, `spread`,
 computed keys:
 
 ```lisp
-#o(name (age 42) (spread defaults))
+#s(name (age 42) (spread defaults))
 ;; reader expands to:
 (object name (age 42) (spread defaults))
 ```
@@ -197,11 +179,11 @@ computed keys:
 **Syntax — quasiquote pattern (destructuring)**:
 
 ```lisp
-(let ((`#o((name ,name) (address ,address)) personal-data))
+(let ((`#s((name ,name) (address ,address)) personal-data))
   (console:log name address))
 ```
 
-Expansion: the quasiquote pattern `#o(...)` expands to an `object`
+Expansion: the quasiquote pattern `#s(...)` expands to an `object`
 pattern which uses DD-06 object destructuring:
 
 ```javascript
@@ -212,7 +194,7 @@ console.log(name, address);
 **Syntax — nested patterns**:
 
 ```lisp
-(let ((`#o((users `#a(,first ,second))) response))
+(let ((`#s((users `#(,first ,second))) response))
   (console:log first second))
 ```
 
@@ -225,63 +207,11 @@ console.log(first, second);
 produces `ObjectExpression` (construction) or `ObjectPattern`
 (destructuring) per DD-06.
 
-**Rationale**: Same as `#a(...)` — provides a literal form for
+**Rationale**: Same as `#(...)` — provides a literal form for
 quasiquote-based construction and pattern matching of JS objects.
 Uses grouped `(key value)` pairs to match `object`'s established
-syntax (DD-06 amendment), maintaining internal consistency. The `o`
-prefix follows the `#X(...)` convention for collection types,
-freeing `#s` for future use (sets, structs).
-
-### Implicit literal keys in object patterns
-
-**Decision**: Key positions in object destructuring patterns are
-implicitly literal. No quote is needed to distinguish literal keys
-from variable bindings — the structural position determines the
-distinction.
-
-**Syntax — three unambiguous cases**:
-
-```lisp
-;; Bare atom: shorthand (key and binding are the same name)
-(const (object name age) person)
-```
-
-```javascript
-const { name, age } = person;
-```
-
-```lisp
-;; Pair with atom key: literal key, bind to different name
-(const (object (name n) (age a)) person)
-```
-
-```javascript
-const { name: n, age: a } = person;
-```
-
-```lisp
-;; Pair with list key: computed key
-(const (object ((get some-var) val)) person)
-```
-
-```javascript
-const { [someVar]: val } = person;
-```
-
-In quasiquoted object patterns, the `,` (unquote) independently
-marks variable positions:
-
-```lisp
-`#o((name ,n) (age ,a))
-;; expander produces: (object (name n) (age a))
-```
-
-**Rationale**: The structure of object patterns already encodes the
-literal/variable distinction: bare atom = shorthand, two-element
-pair with atom key = literal rename, two-element pair with list
-key = computed. Adding explicit quotes would be redundant and
-noisy. This is consistent with JS destructuring syntax, where
-`{ name: n }` uses a literal key without any special marker.
+syntax (DD-06 amendment), maintaining internal consistency. The
+lowercase `s` follows lykn's preference for lowercase forms.
 
 ### `#NNr` radix literal
 
@@ -586,19 +516,19 @@ lykn versions if new entries are needed.
 inline JS object construction.
 
 **Why rejected**: Introduces curly braces into the reader, which
-is otherwise paren-only for grouping. `#o(...)` achieves the same
+is otherwise paren-only for grouping. `#s(...)` achieves the same
 goal using parentheses, consistent with lykn's s-expression
 syntax. No justification for a second grouping character.
 
-### Flat alternating key-value pairs for `#o`
+### Flat alternating key-value pairs for `#s`
 
-**What**: Use `#o(name "Duncan" age 42)` with flat alternating
+**What**: Use `#s(name "Duncan" age 42)` with flat alternating
 keys and values instead of grouped pairs.
 
 **Why rejected**: DD-06 amended `object` to use grouped `(key value)`
-pairs. `#o` expands to `(object ...)`, so it should use the same
+pairs. `#s` expands to `(object ...)`, so it should use the same
 grouping convention for internal consistency. Flat alternating
-would create a divergence between `#o(...)` and `(object ...)`.
+would create a divergence between `#s(...)` and `(object ...)`.
 
 ### `cons` as a core form
 
@@ -632,37 +562,6 @@ with no unnecessary function calls. The value is fully known at
 compile time — emitting `0xff` or `255` is simpler, more readable,
 and marginally more efficient than a runtime `parseInt` call.
 
-### `#(...)` bare dispatch for array literals
-
-**What**: Use `#(...)` without a letter prefix for array literals
-(DD-12 v1.0).
-
-**Why rejected**: Breaks symmetry when additional collection types
-are added (tuples, sets, maps, vectors). LFE's experience confirms
-this problem — `#(...)` was used for tuples, and later collection
-types had to use `#X(...)` patterns, creating inconsistency.
-Starting with `#a(...)` ensures uniform `#X(...)` syntax from the
-beginning.
-
-### `#s(...)` for object literals
-
-**What**: Use `#s` prefix for object literals (DD-12 v1.0–v1.1).
-
-**Why rejected**: `#o` for object is more intuitive. Freeing `#s`
-keeps it available for future use (sets, structs). The `#X(...)`
-convention benefits from mnemonic letter choices.
-
-### Explicit quoted keys in object patterns
-
-**What**: Require `'name` (quoted atom) in key positions of object
-destructuring patterns to distinguish literal keys from variables.
-
-**Why rejected**: The structural position already determines the
-distinction — atom in key position is always literal, list with
-`get` head is computed, bare atom is shorthand. Adding quotes would
-be redundant and noisy. Quasiquote patterns independently use `,`
-to mark variable positions.
-
 ## Edge Cases
 
 | Case | Behavior | Example |
@@ -670,10 +569,9 @@ to mark variable positions.
 | `#;` before closing paren | Discards form, paren closes normally | `(a #;b c)` → `(a c)` |
 | `#;` before `#;` | Each discards one form | `(a #;#;b c d)` → `(a d)` |
 | `#;` at end of list | Reader error (no form to discard) | `(a b #;)` → error |
-| Empty `#a()` | Valid, produces `(array)` | `#a()` → `[]` |
-| Empty `#o()` | Valid, produces `(object)` | `#o()` → `({})` |
-| `#o` with single-element sub-list | Follows `object` rules — compile error | `#o((name))` → error per DD-06 |
-| `#(...)` without letter | Reader error with helpful message | `#(1 2 3)` → `"use #a(...) for array literals"` |
+| Empty `#()` | Valid, produces `(array)` | `#()` → `[]` |
+| Empty `#s()` | Valid, produces `(object)` | `#s()` → `({})` |
+| `#s` with single-element sub-list | Follows `object` rules — compile error | `#s((name))` → error per DD-06 |
 | `#0r` or `#1r` | Reader error — base must be 2–36 | `#1r0` → error |
 | `#37r` or higher | Reader error — base must be 2–36 | `#37r10` → error |
 | Invalid digit for base | Reader error | `#2r29` → error: `9` is not valid in base 2 |
@@ -709,29 +607,3 @@ to mark variable positions.
 ## Open Questions
 
 None.
-
-## Version History
-
-### v1.0 — 2026-03-26
-
-Initial version.
-
-### v1.1 — 2026-03-26 (DD-12 self-amendment)
-
-All references to `list` in the macro environment API and expansion
-algorithm renamed to `array` to avoid ambiguity with the user-facing
-`(list ...)` form (cons-list constructor). Applied to DD-10 and DD-11.
-
-### v1.2 — 2026-03-26 (DD-13 amendment)
-
-- `#(...)` → `#a(...)` for array literals. `#(...)` reserved (error
-  with helpful message).
-- `#s(...)` → `#o(...)` for object literals. `#s` freed for future use.
-- All collection-type dispatch entries now use `#X(...)` pattern for
-  forward-compatible symmetry.
-- Added "Implicit literal keys in object patterns" decision: key
-  positions in object destructuring are implicitly literal, no quote
-  needed.
-- Added rejected alternatives: `#(...)` bare dispatch, `#s(...)` for
-  objects, explicit quoted keys in patterns.
-- Updated edge cases for `#a`/`#o` syntax and `#(...)` error case.
