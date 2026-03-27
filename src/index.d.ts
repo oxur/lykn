@@ -1,6 +1,12 @@
 /** Parse lykn source text into an s-expression AST. */
 export function read(source: string): object[];
 
+/** Expand reader AST forms, resolving sugar, quasiquote, and patterns. */
+export function expand(forms: object[]): object[];
+
+/** Expand a single reader AST form. */
+export function expandExpr(form: object): object | object[];
+
 /** Compile an array of s-expression AST nodes to a JavaScript string. */
 export function compile(exprs: object[]): string;
 

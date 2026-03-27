@@ -1,4 +1,5 @@
 import { read } from './reader.js';
+import { expand } from './expander.js';
 import { compile } from './compiler.js';
 
 /**
@@ -7,7 +8,7 @@ import { compile } from './compiler.js';
  * @returns {string} JavaScript source text
  */
 export function compileLykn(source) {
-  return compile(read(source));
+  return compile(expand(read(source)));
 }
 
 /**

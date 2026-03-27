@@ -2,9 +2,11 @@
 // https://github.com/lykn
 
 export { read } from './reader.js';
+export { expand, expandExpr } from './expander.js';
 export { compile, compileExpr } from './compiler.js';
 
 import { read } from './reader.js';
+import { expand } from './expander.js';
 import { compile } from './compiler.js';
 
 /**
@@ -13,5 +15,5 @@ import { compile } from './compiler.js';
  * @returns {string} - JavaScript source text
  */
 export function lykn(source) {
-  return compile(read(source));
+  return compile(expand(read(source)));
 }
