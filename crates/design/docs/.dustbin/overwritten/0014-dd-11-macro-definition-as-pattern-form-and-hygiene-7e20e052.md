@@ -1,17 +1,16 @@
 ---
 number: 14
 title: "DD-11: Macro Definition, `as` Pattern Form, and Hygiene"
-author: "Duncan McGreggor"
+author: "the expansion"
 component: All
 tags: [change-me]
 created: 2026-03-26
 updated: 2026-03-26
-state: Draft
+state: Overwritten
 supersedes: null
 superseded-by: null
-version: 1.1
+version: 1.0
 ---
-
 
 # DD-11: Macro Definition, `as` Pattern Form, and Hygiene
 
@@ -382,13 +381,13 @@ argument uses `"g"` as the default prefix.
 ;; Programmatic gensym — useful when building AST nodes by hand
 (macro make-bindings ((rest names))
   (let ((bindings (names:map
-                    (=> (n) (array (gensym "tmp") n)))))
+                    (=> (n) (list (gensym "tmp") n)))))
     `(let (,@bindings) ...)))
 ```
 
 **Rationale**: `#gen` covers the common case (quasiquote templates).
 `(gensym)` covers the programmatic case where macro bodies construct
-AST nodes dynamically via the `array`/`sym` API. Both use the same
+AST nodes dynamically via the `list`/`sym` API. Both use the same
 counter, producing the same `name__gensymN` format.
 
 ### `sym` escape hatch for intentional capture
@@ -451,8 +450,8 @@ the unsafe thing possible but loud.
 
 const macroFn = new Function(
   // Macro environment API — the sandbox boundary
-  "array", "sym", "gensym",
-  "isArray", "isSymbol", "isNumber", "isString",
+  "list", "sym", "gensym",
+  "isList", "isSymbol", "isNumber", "isString",
   "first", "rest", "concat", "nth", "length",
   // Compiled macro body (returns s-expression builder)
   compiledBodyString
@@ -461,8 +460,8 @@ const macroFn = new Function(
 // Bind the API functions
 const boundMacro = (...args) => macroFn.call(
   null,
-  array, sym, gensym,
-  isArray, isSymbol, isNumber, isString,
+  list, sym, gensym,
+  isList, isSymbol, isNumber, isString,
   first, rest, concat, nth, length
 )(...args);
 
@@ -473,7 +472,7 @@ macroEnv.set("when", boundMacro);
 
 | Available | Examples |
 |-----------|----------|
-| Macro environment API | `array`, `sym`, `gensym`, `first`, `rest`, `concat`, `nth`, `length`, type predicates |
+| Macro environment API | `list`, `sym`, `gensym`, `first`, `rest`, `concat`, `nth`, `length`, type predicates |
 | Earlier macros in same file | Macros defined above the current `macro` form |
 | JS built-ins | `Math`, `Array`, `String`, `Object`, `JSON`, etc. |
 
@@ -495,7 +494,7 @@ by the same compiler that handles regular code, so all core forms
 ### Quasiquote in macro bodies
 
 **Decision**: Quasiquote inside macro bodies is compiled into calls
-to the macro environment API functions (`array`, `sym`, `append`,
+to the macro environment API functions (`list`, `sym`, `append`,
 etc.). The quasiquote is *not* resolved when the macro is defined —
 it is compiled into code that *constructs* an s-expression when the
 macro is invoked.
@@ -507,7 +506,7 @@ macro is invoked.
 
 ;; ...compiles the body to approximately:
 ;; function(test, ...body) {
-;;   return array(sym("if"), test, concat(array(sym("do")), body));
+;;   return list(sym("if"), test, concat(list(sym("do")), body));
 ;; }
 ```
 
@@ -597,7 +596,7 @@ user-facing forms with overlapping semantics creates confusion.
 | Case | Behavior | Example |
 |------|----------|---------|
 | Macro with no params | Empty param list | `(macro my-break () \`(break))` |
-| Macro body with no quasiquote | Returns computed s-expression | Body uses `array`/`sym` API directly |
+| Macro body with no quasiquote | Returns computed s-expression | Body uses `list`/`sym` API directly |
 | Same `#gen` prefix used in nested quasiquotes | Each quasiquote level gets independent gensym scope | Prevents cross-template collision |
 | `sym` with camelCase name | Name used as-is (no lisp-case conversion) | `(sym "innerHTML")` → `innerHTML` |
 | `sym` with lisp-case name | DD-01 conversion still applies at compile time | `(sym "my-var")` → symbol `my-var` → compiles to `myVar` |
@@ -626,28 +625,3 @@ user-facing forms with overlapping semantics creates confusion.
 ## Open Questions
 
 None.
-
-## Version History
-
-### v1.1 — 2026-03-26 (DD-12 amendment)
-
-**Reason**: DD-12 introduces `(list ...)` as a user-facing form
-that builds cons-cell data structures (nested two-element arrays).
-To avoid ambiguity, the macro environment API function previously
-called `list` is renamed to `array`, since it constructs flat JS
-arrays (the internal AST representation). All references to the
-API function are updated accordingly. Type predicate `isList` is
-renamed to `isArray`.
-
-**Changes**:
-
-| Section | Before | After |
-|---------|--------|-------|
-| `(gensym)` example | `(list (gensym "tmp") n)` | `(array (gensym "tmp") n)` |
-| `(gensym)` rationale | "via the `list`/`sym` API" | "via the `array`/`sym` API" |
-| `new Function()` example — parameter names | `"list"`, `"isList"` | `"array"`, `"isArray"` |
-| `new Function()` example — bound call | `list, sym, gensym, isList, ...` | `array, sym, gensym, isArray, ...` |
-| Available at compile time table | `list`, `sym`, ... | `array`, `sym`, ... |
-| Quasiquote in macro bodies — section text | "API functions (`list`, `sym`, `append`, etc.)" | "API functions (`array`, `sym`, `append`, etc.)" |
-| Quasiquote in macro bodies — compiled example | `list(sym("if"), ...); concat(list(sym("do")), body)` | `array(sym("if"), ...); concat(array(sym("do")), body)` |
-| Edge case: no quasiquote | "Body uses `list`/`sym` API directly" | "Body uses `array`/`sym` API directly" |
