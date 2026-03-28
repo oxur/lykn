@@ -8,11 +8,11 @@ This index is automatically generated. Do not edit manually.
 |--------|-------|-------|----------|
 | 0019 | JavaScript's hazard landscape and syntactic mitigations for a Lisp-to-JS compiler | Final | 2026-03-27 |
 | 0018 | Lykn v0.2.0 — Implementation Plan | Active | 2026-03-26 |
-| 0017 | DD-14: Macro Modules and ESM Interaction | Draft | 2026-03-26 |
-| 0016 | DD-13: Macro Expansion Pipeline | Draft | 2026-03-26 |
-| 0015 | DD-12: Reader `#` Dispatch, Data Literals, and Cons Lists | Draft | 2026-03-26 |
-| 0014 | DD-11: Macro Definition, `as` Pattern Form, and Hygiene | Draft | 2026-03-26 |
-| 0013 | DD-10: Quasiquote / Unquote / Splicing | Draft | 2026-03-26 |
+| 0017 | DD-14: Macro Modules and ESM Interaction | Final | 2026-03-27 |
+| 0016 | DD-13: Macro Expansion Pipeline | Final | 2026-03-27 |
+| 0015 | DD-12: Reader `#` Dispatch, Data Literals, and Cons Lists | Final | 2026-03-27 |
+| 0014 | DD-11: Macro Definition, `as` Pattern Form, and Hygiene | Final | 2026-03-27 |
+| 0013 | DD-10: Quasiquote / Unquote / Splicing | Final | 2026-03-27 |
 | 0012 | Macro System Research for lykn | Final | 2026-03-26 |
 | 0011 | Designing a macro system for lykn | Final | 2026-03-26 |
 | 0010 | Lykn v0.1.0 — Implementation Plan | Final | 2026-03-26 |
@@ -32,17 +32,14 @@ This index is automatically generated. Do not edit manually.
 
 - [0018 - Lykn v0.2.0 — Implementation Plan](05-active/0018-lykn-v0.2.0-implementation-plan.md)
 
-### Draft
-
-- [0017 - DD-14: Macro Modules and ESM Interaction](01-draft/0017-dd-14-macro-modules-and-esm-interaction.md)
-- [0016 - DD-13: Macro Expansion Pipeline](01-draft/0016-dd-13-macro-expansion-pipeline.md)
-- [0015 - DD-12: Reader `#` Dispatch, Data Literals, and Cons Lists](01-draft/0015-dd-12-reader-dispatch-data-literals-and-cons-lists.md)
-- [0014 - DD-11: Macro Definition, `as` Pattern Form, and Hygiene](01-draft/0014-dd-11-macro-definition-as-pattern-form-and-hygiene.md)
-- [0013 - DD-10: Quasiquote / Unquote / Splicing](01-draft/0013-dd-10-quasiquote-unquote-splicing.md)
-
 ### Final
 
 - [0019 - JavaScript's hazard landscape and syntactic mitigations for a Lisp-to-JS compiler](06-final/0019-javascripts-hazard-landscape-and-syntactic-mitigations-for-a-lisp-to-js-compiler.md)
+- [0017 - DD-14: Macro Modules and ESM Interaction](06-final/0017-dd-14-macro-modules-and-esm-interaction.md)
+- [0016 - DD-13: Macro Expansion Pipeline](06-final/0016-dd-13-macro-expansion-pipeline.md)
+- [0015 - DD-12: Reader `#` Dispatch, Data Literals, and Cons Lists](06-final/0015-dd-12-reader-dispatch-data-literals-and-cons-lists.md)
+- [0014 - DD-11: Macro Definition, `as` Pattern Form, and Hygiene](06-final/0014-dd-11-macro-definition-as-pattern-form-and-hygiene.md)
+- [0013 - DD-10: Quasiquote / Unquote / Splicing](06-final/0013-dd-10-quasiquote-unquote-splicing.md)
 - [0012 - Macro System Research for lykn](06-final/0012-macro-system-research-for-lykn.md)
 - [0011 - Designing a macro system for lykn](06-final/0011-designing-a-macro-system-for-lykn.md)
 - [0010 - Lykn v0.1.0 — Implementation Plan](06-final/0010-lykn-v0.1.0-implementation-plan.md)

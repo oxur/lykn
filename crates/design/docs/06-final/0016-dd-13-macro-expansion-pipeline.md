@@ -5,8 +5,8 @@ author: "the time"
 component: All
 tags: [change-me]
 created: 2026-03-26
-updated: 2026-03-26
-state: Draft
+updated: 2026-03-27
+state: Final
 supersedes: null
 superseded-by: null
 version: 1.0
