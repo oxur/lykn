@@ -8,3 +8,4 @@ target/
 /assets/images/logo/drafts
 /assets/ai/ai-*
 /dist
+/.npmrc

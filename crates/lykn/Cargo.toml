@@ -9,4 +9,4 @@ keywords = ["lisp", "javascript", "s-expression", "compiler", "formatter"]
 categories = ["compilers", "development-tools"]
 
 [dependencies]
-lykn-cli = { path = "../lykn-cli", version = "0.1.0" }
+lykn-cli = { path = "../lykn-cli", version = "0.2.0" }
