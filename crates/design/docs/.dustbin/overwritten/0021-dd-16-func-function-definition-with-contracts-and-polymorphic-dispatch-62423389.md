@@ -6,12 +6,11 @@ component: All
 tags: [change-me]
 created: 2026-03-27
 updated: 2026-03-28
-state: Draft
+state: Overwritten
 supersedes: null
 superseded-by: null
-version: 1.2
+version: 1.1
 ---
-
 
 # DD-16: `func` — Function Definition with Contracts and Polymorphic Dispatch
 
@@ -119,37 +118,28 @@ what must hold after, what happens.
 ### `:args` keyword for parameters
 
 **Decision**: The parameter clause uses `:args` (not `:params`).
-In the `:args` list, every parameter must have a type keyword. Bare
-symbols without type annotations are a compile error — use `:any`
-to explicitly opt out of type checking. A type keyword tags the
-immediately following symbol — no carry-forward.
+In the `:args` list, type keywords tag the immediately following
+symbol. Untyped parameters are bare symbols. A type keyword applies
+only to the next symbol — no carry-forward.
 
 ```lisp
 ;; All typed
 :args (:number a :number b)
 
-;; Explicitly untyped — :any required
-:args (:any a :any b)
-
-;; Mixed types
-:args (:string name :any age)
-
-;; COMPILE ERROR — bare symbol without type
+;; All untyped
 :args (a b)
-;; Error: parameter 'a' missing type annotation (use :any to opt out)
 
-;; COMPILE ERROR — bare symbol after typed param
-:args (:number a b)
-;; Error: parameter 'b' missing type annotation (use :any to opt out)
+;; Mixed — name is string, age is untyped
+:args (:string name age)
+
+;; Mixed — a is number, b is untyped, c is string
+:args (:number a b :string c)
 ```
 
 **Rationale**: "Arguments" is shorter and more familiar than
 "parameters" in the Erlang/Clojure tradition. The keyword-tags-next-
 symbol pattern is consistent with how keywords work in `obj`:
 `:name "Duncan"` — keyword tags the next value. Same visual rhythm.
-Requiring type annotations on all parameters matches the rule for
-`type` constructor fields (DD-17) — every named value crossing a
-boundary has an explicit type. `:any` is the opt-out, not silence.
 
 ### `:returns` optional — absent means void
 
@@ -272,7 +262,7 @@ A list `(...)` immediately after the function name in keyword mode
 (func greet (name)
   (str "Hello, " name))
 ;; Error: unexpected list after function name.
-;; Use :args (:string name) for parameters.
+;; Use :args (name) for parameters.
 ```
 
 **Rationale**: Zero-arg functions are common (thunks, initializers,
@@ -543,32 +533,29 @@ prioritizes safety. The set covers all JS primitive types plus
 
 ### `fn` / `lambda` — positional anonymous functions
 
-**Decision**: `fn` and `lambda` are always positional. Every
-parameter must have a type keyword (same requirement as `func`'s
-`:args`). `:any` is the explicit opt-out. Bare symbols without type
-annotations are a compile error. `fn` and `lambda` do not support
-`:pre`/`:post` contracts (contracts require a function name for
-error messages).
+**Decision**: `fn` and `lambda` are always positional. They support
+type annotations in the parameter list using the same keyword-tags-
+next-symbol convention, but do not support `:pre`/`:post` contracts
+(contracts require a function name for error messages).
 
 ```lisp
+;; Untyped
+(fn (x y) (+ x y))
+
 ;; Typed parameters
 (fn (:number x :number y) (+ x y))
 
-;; Explicitly untyped
-(fn (:any x :any y) (+ x y))
-
 ;; lambda is an alias
-(lambda (:number x :number y) (+ x y))
+(lambda (x y) (+ x y))
 
 ;; Zero-arg
 (fn () (Date:now))
-
-;; COMPILE ERROR — bare symbol without type
-(fn (x y) (+ x y))
-;; Error: parameter 'x' missing type annotation (use :any to opt out)
 ```
 
 ```javascript
+// Untyped
+(x, y) => x + y
+
 // Typed (dev mode — assertions emitted)
 (x, y) => {
   if (typeof x !== "number" || Number.isNaN(x))
@@ -578,10 +565,7 @@ error messages).
   return x + y;
 }
 
-// Explicitly untyped — :any, no checks
-(x, y) => x + y
-
-// Production mode (all types stripped)
+// Production mode
 (x, y) => x + y
 ```
 
@@ -598,9 +582,7 @@ Keyword labels would be excessive noise in callback position:
 `(map (fn (:number x) (* x 2)) items)` is already readable without
 `:args`/`:body` keywords. Contracts are omitted because error
 messages need a function name for blame attribution — anonymous
-functions have no name to report. Requiring type annotations matches
-`func` and `type` constructor fields (DD-17) — the rule is uniform
-across the entire surface language.
+functions have no name to report.
 
 ### `async` interaction
 
@@ -801,15 +783,12 @@ via `:any` or `js:typeof`.
 | Multi-clause with mixed `:returns` | Compile error — all clauses must agree | One clause with `:returns`, one without → error |
 | Multi-clause all void | Valid — all clauses omit `:returns` | Side-effectful dispatch |
 | Multi-clause with overlapping args | Compile error | Two clauses both `(:number a :number b)` → error |
-| Multi-clause with `:any` catch-all | Valid if no overlap with typed clauses | `(:args (:any a :any b))` after `(:args (:number a :number b))` — different specificity |
+| Multi-clause with untyped catch-all | Valid if no overlap with typed clauses | `(:args (a b))` after `(:args (:number a :number b))` — different specificity |
 | `:args` with destructuring | Supported — kernel destructuring patterns in arg position | `:args ((object name age) :array items)` |
-| Bare symbol in `:args` | Compile error | `:args (x)` → error: parameter 'x' missing type annotation |
-| Bare symbol in `fn` params | Compile error | `(fn (x) (+ x 1))` → error: parameter 'x' missing type annotation |
 | Unknown type keyword | Compile error unless registered by `type` (DD-17) | `:args (:foo x)` → error unless `foo` is a defined type |
 | `async` wrapping multi-clause | Valid — `async` applies to entire function | `(async (func f (:args ...) (:args ...)))` |
 | Exported func | `(export (func ...))` — same as kernel export wrapping | `export function ...` |
 | `fn` with types in production mode | Types stripped, compiles to bare arrow | `(fn (:number x) (* x 2))` → `(x) => x * 2` |
-| `fn` with `:any` in production mode | No checks to strip, compiles to bare arrow | `(fn (:any x) (* x 2))` → `(x) => x * 2` |
 | `:returns :void` explicitly | Valid, same behavior as omitting `:returns` | No `return` statement emitted |
 
 ## Dependencies
@@ -852,15 +831,6 @@ via `:any` or `js:typeof`.
   reserved but not defined. Future DD.
 
 ## Version History
-
-### v1.2 — 2026-03-28
-
-Type annotations required on all function parameters. `func` `:args`,
-`fn`, and `lambda` no longer accept bare symbols — every parameter
-must have a type keyword (`:number`, `:string`, `:any`, etc.).
-Harmonizes with DD-17's requirement for `type` constructor fields.
-`:any` is the explicit opt-out. Untyped parameter examples removed;
-compile error examples added.
 
 ### v1.1 — 2026-03-28
 
