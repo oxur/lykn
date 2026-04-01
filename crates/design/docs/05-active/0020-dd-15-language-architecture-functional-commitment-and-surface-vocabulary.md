@@ -5,8 +5,8 @@ author: "Duncan McGreggor"
 component: All
 tags: [change-me]
 created: 2026-03-27
-updated: 2026-03-28
-state: Draft
+updated: 2026-03-31
+state: Active
 supersedes: null
 superseded-by: null
 version: 1.1

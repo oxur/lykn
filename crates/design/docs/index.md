@@ -13,7 +13,7 @@ This index is automatically generated. Do not edit manually.
 | 0023 | DD-18: Threading Macros and Conditional Binding | Draft | 2026-03-28 |
 | 0022 | DD-17: `type` + `match` — Algebraic Data Types and Pattern Matching | Draft | 2026-03-27 |
 | 0021 | DD-16: `func` — Function Definition with Contracts and Polymorphic Dispatch | Draft | 2026-03-28 |
-| 0020 | DD-15: Language Architecture, Functional Commitment, and Surface Vocabulary | Draft | 2026-03-28 |
+| 0020 | DD-15: Language Architecture, Functional Commitment, and Surface Vocabulary | Active | 2026-03-31 |
 | 0019 | JavaScript's hazard landscape and syntactic mitigations for a Lisp-to-JS compiler | Final | 2026-03-27 |
 | 0018 | Lykn v0.2.0 — Implementation Plan | Final | 2026-03-31 |
 | 0017 | DD-14: Macro Modules and ESM Interaction | Final | 2026-03-27 |
@@ -36,6 +36,10 @@ This index is automatically generated. Do not edit manually.
 
 ## Documents by State
 
+### Active
+
+- [0020 - DD-15: Language Architecture, Functional Commitment, and Surface Vocabulary](05-active/0020-dd-15-language-architecture-functional-commitment-and-surface-vocabulary.md)
+
 ### Under Review
 
 - [0027 - lykn v0.3.0 — Implementation Plan](02-under-review/0027-lykn-v0.3.0-implementation-plan.md)
@@ -48,7 +52,6 @@ This index is automatically generated. Do not edit manually.
 - [0023 - DD-18: Threading Macros and Conditional Binding](01-draft/0023-dd-18-threading-macros-and-conditional-binding.md)
 - [0022 - DD-17: `type` + `match` — Algebraic Data Types and Pattern Matching](01-draft/0022-dd-17-type-match-algebraic-data-types-and-pattern-matching.md)
 - [0021 - DD-16: `func` — Function Definition with Contracts and Polymorphic Dispatch](01-draft/0021-dd-16-func-function-definition-with-contracts-and-polymorphic-dispatch.md)
-- [0020 - DD-15: Language Architecture, Functional Commitment, and Surface Vocabulary](01-draft/0020-dd-15-language-architecture-functional-commitment-and-surface-vocabulary.md)
 
 ### Final
 

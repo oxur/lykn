@@ -1,0 +1,59 @@
+[
+  {
+    "name": "assoc-single",
+    "source": "(assoc obj :age 43)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "object" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "spread" },
+            { "type": "atom", "value": "obj" }
+          ]
+        },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "age" },
+            { "type": "number", "value": 43 }
+          ]
+        }
+      ]
+    },
+    "js": "({...obj, age: 43})"
+  },
+  {
+    "name": "assoc-multiple",
+    "source": "(assoc obj :a 1 :b 2)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "object" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "spread" },
+            { "type": "atom", "value": "obj" }
+          ]
+        },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "a" },
+            { "type": "number", "value": 1 }
+          ]
+        },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "b" },
+            { "type": "number", "value": 2 }
+          ]
+        }
+      ]
+    },
+    "js": "({...obj, a: 1, b: 2})"
+  }
+]

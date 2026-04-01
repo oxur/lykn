@@ -1,0 +1,56 @@
+[
+  {
+    "name": "obj-simple",
+    "source": "(obj :name \"Duncan\" :age 42)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "object" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "name" },
+            { "type": "string", "value": "Duncan" }
+          ]
+        },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "age" },
+            { "type": "number", "value": 42 }
+          ]
+        }
+      ]
+    },
+    "js": "({name: \"Duncan\", age: 42})"
+  },
+  {
+    "name": "obj-kebab-case",
+    "source": "(obj :first-name \"Duncan\")",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "object" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "first-name" },
+            { "type": "string", "value": "Duncan" }
+          ]
+        }
+      ]
+    },
+    "js": "({firstName: \"Duncan\"})"
+  },
+  {
+    "name": "obj-empty",
+    "source": "(obj)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "object" }
+      ]
+    },
+    "js": "({})"
+  }
+]

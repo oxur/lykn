@@ -1043,6 +1043,8 @@ export function compileExpr(node) {
       return { type: 'Literal', value: node.value };
     case 'string':
       return { type: 'Literal', value: node.value };
+    case 'keyword':
+      return { type: 'Literal', value: toCamelCase(node.value) };
     case 'atom': {
       const val = node.value;
 
@@ -1060,9 +1062,6 @@ export function compileExpr(node) {
       if (val.includes(':')) {
         if (val === ':') {
           throw new Error('Bare colon is not a valid identifier');
-        }
-        if (val.startsWith(':')) {
-          throw new Error('Leading colon syntax is reserved for future use');
         }
         if (val.endsWith(':')) {
           throw new Error('Trailing colon in member expression');

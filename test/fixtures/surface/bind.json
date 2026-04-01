@@ -1,0 +1,41 @@
+[
+  {
+    "name": "bind-simple",
+    "source": "(bind x 42)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "const" },
+        { "type": "atom", "value": "x" },
+        { "type": "number", "value": 42 }
+      ]
+    },
+    "js": "const x = 42;"
+  },
+  {
+    "name": "bind-string",
+    "source": "(bind name \"Duncan\")",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "const" },
+        { "type": "atom", "value": "name" },
+        { "type": "string", "value": "Duncan" }
+      ]
+    },
+    "js": "const name = \"Duncan\";"
+  },
+  {
+    "name": "bind-typed",
+    "source": "(bind :number age 42)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "const" },
+        { "type": "atom", "value": "age" },
+        { "type": "number", "value": 42 }
+      ]
+    },
+    "js": "const age = 42;"
+  }
+]

@@ -94,6 +94,10 @@ export function read(source) {
       return { type: 'number', value: parseFloat(value) };
     }
 
+    if (value.length > 1 && value.startsWith(':')) {
+      return { type: 'keyword', value: value.slice(1) };
+    }
+
     return { type: 'atom', value };
   }
 

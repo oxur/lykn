@@ -1,0 +1,82 @@
+[
+  {
+    "name": "cell-number",
+    "source": "(cell 0)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "object" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "value" },
+            { "type": "number", "value": 0 }
+          ]
+        }
+      ]
+    },
+    "js": "({value: 0})"
+  },
+  {
+    "name": "express-simple",
+    "source": "(express c)",
+    "expansion": {
+      "type": "atom",
+      "value": "c:value"
+    },
+    "js": "c.value"
+  },
+  {
+    "name": "swap-simple",
+    "source": "(swap! c f)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "=" },
+        { "type": "atom", "value": "c:value" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "f" },
+            { "type": "atom", "value": "c:value" }
+          ]
+        }
+      ]
+    },
+    "js": "c.value = f(c.value)"
+  },
+  {
+    "name": "swap-extra-args",
+    "source": "(swap! c f a b)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "=" },
+        { "type": "atom", "value": "c:value" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "f" },
+            { "type": "atom", "value": "c:value" },
+            { "type": "atom", "value": "a" },
+            { "type": "atom", "value": "b" }
+          ]
+        }
+      ]
+    },
+    "js": "c.value = f(c.value, a, b)"
+  },
+  {
+    "name": "reset-simple",
+    "source": "(reset! c 42)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "=" },
+        { "type": "atom", "value": "c:value" },
+        { "type": "number", "value": 42 }
+      ]
+    },
+    "js": "c.value = 42"
+  }
+]

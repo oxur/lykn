@@ -7,6 +7,7 @@
 
 import { compile } from './compiler.js';
 import { read } from './reader.js';
+import { registerSurfaceMacros } from './surface.js';
 
 // node:path is needed for import-macros file resolution.
 // In browser builds, esbuild replaces this with stubs via the define/inject mechanism.
@@ -100,6 +101,11 @@ export function isString(x) {
   return x !== null && x !== undefined && x.type === 'string';
 }
 
+/** @param {*} x @returns {boolean} */
+export function isKeyword(x) {
+  return x !== null && x !== undefined && x.type === 'keyword';
+}
+
 /**
  * Get first element of a list node.
  * @param {{ type: 'list', values: *[] }} arr
@@ -139,6 +145,7 @@ export function nth(arr, n) {
 function formatSExpr(node) {
   if (node === null || node === undefined) return 'null';
   if (node.type === 'atom') return node.value;
+  if (node.type === 'keyword') return `:${node.value}`;
   if (node.type === 'string') return `"${node.value}"`;
   if (node.type === 'number') return String(node.value);
   if (node.type === 'cons') return `(${formatSExpr(node.car)} . ${formatSExpr(node.cdr)})`;
@@ -205,7 +212,7 @@ function desugarAs(args) {
 /** Macro environment API parameter names for new Function(). */
 const MACRO_API_PARAMS = [
   '$array', '$sym', '$gensym',
-  '$isArray', '$isSymbol', '$isNumber', '$isString',
+  '$isArray', '$isSymbol', '$isNumber', '$isString', '$isKeyword',
   '$first', '$rest', '$concat', '$nth', '$length',
   '$append',
 ];
@@ -213,7 +220,7 @@ const MACRO_API_PARAMS = [
 /** Macro environment API values, matching MACRO_API_PARAMS order. */
 const MACRO_API_VALUES = [
   array, sym, gensym,
-  isArray, isSymbol, isNumber, isString,
+  isArray, isSymbol, isNumber, isString, isKeyword,
   first, rest, concat, nth, length,
   append,
 ];
@@ -231,6 +238,9 @@ function compileQuasiquote(form, depth) {
     return form;
   }
   if (form.type === 'string') {
+    return form;
+  }
+  if (form.type === 'keyword') {
     return form;
   }
   if (form.type === 'atom') {
@@ -504,6 +514,7 @@ function extractParamNames(pattern) {
  */
 export function resetMacros() {
   macroEnv.clear();
+  registerSurfaceMacros(macroEnv);
 }
 
 export function resetModuleCache() {
@@ -516,7 +527,7 @@ export { formatSExpr };
 
 function expandQuasiquote(form, depth) {
   // Self-evaluating
-  if (form.type === 'number' || form.type === 'string') {
+  if (form.type === 'number' || form.type === 'string' || form.type === 'keyword') {
     return form;
   }
 
@@ -677,7 +688,7 @@ const dispatchTable = {
  */
 export function expandExpr(form) {
   if (form === null || form === undefined) return form;
-  if (form.type === 'atom' || form.type === 'number' || form.type === 'string') {
+  if (form.type === 'atom' || form.type === 'number' || form.type === 'string' || form.type === 'keyword') {
     return form;
   }
 
@@ -1134,6 +1145,10 @@ function loadMacroModule(resolvedPath, displayPath, compilationStack) {
  * @returns {*[]} Expanded forms ready for the compiler
  */
 export function expand(forms, context = {}) {
+  // Ensure surface macros are registered (idempotent — skips if already present)
+  if (!macroEnv.has('bind')) {
+    registerSurfaceMacros(macroEnv);
+  }
   const { filePath = null, compilationStack = [] } = context;
   const afterPass0 = pass0ImportMacros(forms, filePath, compilationStack);
   const afterPass1 = pass1RegisterMacros(afterPass0);

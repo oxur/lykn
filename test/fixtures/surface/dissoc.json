@@ -1,0 +1,14 @@
+[
+  {
+    "name": "dissoc-single",
+    "source": "(dissoc obj :key)",
+    "note": "Expands to IIFE: ((=> () (const (object (alias key _g0) (rest rest_g1)) obj) rest_g1)). Gensym counters may vary.",
+    "expansion_description": "IIFE arrow function containing destructuring assignment that removes :key and spreads rest"
+  },
+  {
+    "name": "dissoc-multiple",
+    "source": "(dissoc obj :a :b)",
+    "note": "Expands to IIFE with multiple alias patterns to remove :a and :b",
+    "expansion_description": "IIFE arrow function containing destructuring assignment that removes :a and :b and spreads rest"
+  }
+]

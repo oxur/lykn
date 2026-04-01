@@ -1,0 +1,78 @@
+[
+  {
+    "name": "thread-first-bare",
+    "source": "(-> x f g)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "g" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "f" },
+            { "type": "atom", "value": "x" }
+          ]
+        }
+      ]
+    },
+    "js": "g(f(x))"
+  },
+  {
+    "name": "thread-first-lists",
+    "source": "(-> x (f a) (g b))",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "g" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "f" },
+            { "type": "atom", "value": "x" },
+            { "type": "atom", "value": "a" }
+          ]
+        },
+        { "type": "atom", "value": "b" }
+      ]
+    },
+    "js": "g(f(x, a), b)"
+  },
+  {
+    "name": "thread-last-bare",
+    "source": "(->> x f g)",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "g" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "f" },
+            { "type": "atom", "value": "x" }
+          ]
+        }
+      ]
+    },
+    "js": "g(f(x))"
+  },
+  {
+    "name": "thread-last-lists",
+    "source": "(->> x (f a) (g b))",
+    "expansion": {
+      "type": "list",
+      "values": [
+        { "type": "atom", "value": "g" },
+        { "type": "atom", "value": "b" },
+        {
+          "type": "list",
+          "values": [
+            { "type": "atom", "value": "f" },
+            { "type": "atom", "value": "a" },
+            { "type": "atom", "value": "x" }
+          ]
+        }
+      ]
+    },
+    "js": "g(b, f(a, x))"
+  }
+]

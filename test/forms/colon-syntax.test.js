@@ -46,9 +46,13 @@ Deno.test("colon: bare super", () => {
   assertEquals(lykn("super"), "super;");
 });
 
-// Error cases
-Deno.test("colon: leading colon throws", () => {
-  assertThrows(() => lykn(":foo"), Error, "reserved");
+// Keywords (leading colon)
+Deno.test("colon: keyword compiles to string literal", () => {
+  assertEquals(lykn(":foo"), '"foo";');
+});
+
+Deno.test("colon: keyword with kebab-case compiles to camelCase string", () => {
+  assertEquals(lykn(":first-name"), '"firstName";');
 });
 
 Deno.test("colon: trailing colon throws", () => {
