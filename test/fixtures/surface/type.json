@@ -1,0 +1,20 @@
+[
+  {
+    "name": "type-option",
+    "source": "(type Option (Some :any value) None)",
+    "expansion_description": "block containing: function Some(value) { return { tag: 'Some', value } } and const None = { tag: 'None' }",
+    "js_includes": ["function Some(value)", "tag: \"Some\"", "const None", "tag: \"None\""]
+  },
+  {
+    "name": "type-typed-fields",
+    "source": "(type Point (Pt :number x :number y))",
+    "expansion_description": "function Pt(x, y) with typeof checks for number and NaN exclusion",
+    "js_includes": ["function Pt(x, y)", "typeof x !== \"number\"", "typeof y !== \"number\""]
+  },
+  {
+    "name": "type-zero-field",
+    "source": "(type Unit Empty)",
+    "expansion_description": "const Empty = { tag: 'Empty' }",
+    "js_includes": ["const Empty", "tag: \"Empty\""]
+  }
+]

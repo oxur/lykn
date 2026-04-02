@@ -1,0 +1,21 @@
+[
+  {
+    "name": "if-let-simple",
+    "source": "(if-let (user (find-user id)) (greet user) (console:log \"not found\"))",
+    "expansion_description": "IIFE: const _t = findUser(id); if (_t != null) { const user = _t; return greet(user); } else { return console.log('not found'); }",
+    "js_includes": ["!= null", "const user", "greet(user)", "not found"]
+  },
+  {
+    "name": "if-let-adt",
+    "note": "Requires prior (type Option (Some :any value) None) for type registry",
+    "source": "(if-let ((Some v) (find-user id)) (greet v) (console:log \"none\"))",
+    "expansion_description": "IIFE: const _t = findUser(id); if (_t.tag === 'Some') { const v = _t.value; return greet(v); } else { return ... }",
+    "js_includes": [".tag === \"Some\"", ".value", "greet(v)"]
+  },
+  {
+    "name": "when-let-simple",
+    "source": "(when-let (user (find-user id)) (greet user))",
+    "expansion_description": "IIFE: const _t = findUser(id); if (_t != null) { const user = _t; return greet(user); }",
+    "js_includes": ["!= null", "greet(user)"]
+  }
+]

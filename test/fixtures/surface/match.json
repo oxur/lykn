@@ -1,0 +1,27 @@
+[
+  {
+    "name": "match-literals",
+    "source": "(match status (200 \"ok\") (404 \"not found\") (_ \"unknown\"))",
+    "expansion_description": "IIFE with const target, if (target === 200) return 'ok', if (target === 404) return 'not found', block return 'unknown'",
+    "js_includes": ["=== 200", "=== 404", "\"ok\"", "\"not found\"", "\"unknown\""]
+  },
+  {
+    "name": "match-adt",
+    "note": "Requires prior (type Option (Some :any value) None) for type registry",
+    "source": "(match opt ((Some v) v) (None 0))",
+    "expansion_description": "IIFE: if (target.tag === 'Some') { const v = target.value; return v; } if (target.tag === 'None') { return 0; }",
+    "js_includes": [".tag === \"Some\"", ".value", ".tag === \"None\""]
+  },
+  {
+    "name": "match-structural",
+    "source": "(match resp ((obj :ok true :data d) (process d)) (_ (handle-error)))",
+    "expansion_description": "IIFE: if (typeof target === 'object' && target !== null && 'ok' in target && 'data' in target && target.ok === true) { const d = target.data; return process(d); }",
+    "js_includes": ["typeof", "\"ok\" in", "\"data\" in", ".ok === true"]
+  },
+  {
+    "name": "match-wildcard",
+    "source": "(match x (1 \"one\") (_ \"other\"))",
+    "expansion_description": "IIFE with if for literal 1, then block for wildcard default. No throw.",
+    "js_includes": ["=== 1", "\"one\"", "\"other\""]
+  }
+]

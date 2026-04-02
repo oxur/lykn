@@ -974,7 +974,8 @@ const macros = {
 // Binary/logical operators
 const binaryOps = ['+', '-', '*', '/', '%', '**', '===', '!==', '==', '!=',
                     '<', '>', '<=', '>=', '&&', '||', '??',
-                    '&', '|', '^', '<<', '>>', '>>>'];
+                    '&', '|', '^', '<<', '>>', '>>>',
+                    'in', 'instanceof'];
 for (const op of binaryOps) {
   macros[op] = (args) => {
     const type = (op === '&&' || op === '||' || op === '??')

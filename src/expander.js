@@ -7,7 +7,7 @@
 
 import { compile } from './compiler.js';
 import { read } from './reader.js';
-import { registerSurfaceMacros } from './surface.js';
+import { registerSurfaceMacros, resetTypeRegistry } from './surface.js';
 
 // node:path is needed for import-macros file resolution.
 // In browser builds, esbuild replaces this with stubs via the define/inject mechanism.
@@ -514,6 +514,7 @@ function extractParamNames(pattern) {
  */
 export function resetMacros() {
   macroEnv.clear();
+  resetTypeRegistry();
   registerSurfaceMacros(macroEnv);
 }
 
