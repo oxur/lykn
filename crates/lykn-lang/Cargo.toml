@@ -1,0 +1,8 @@
+[package]
+name = "lykn-lang"
+version = "0.3.0"
+edition = "2024"
+description = "lykn language toolchain library — reader, AST, classifier, diagnostics"
+
+[dependencies]
+thiserror = "2"
