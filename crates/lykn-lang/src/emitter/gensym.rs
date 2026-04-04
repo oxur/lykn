@@ -40,9 +40,9 @@ mod tests {
     #[test]
     fn test_next_produces_sequential_names() {
         let mut g = EmitterGensym::new();
-        assert_eq!(g.next("_t"), "_t__gensym0");
-        assert_eq!(g.next("_t"), "_t__gensym1");
-        assert_eq!(g.next("_result"), "_result__gensym2");
+        assert_eq!(g.next("t"), "t__gensym0");
+        assert_eq!(g.next("t"), "t__gensym1");
+        assert_eq!(g.next("result"), "result__gensym2");
     }
 
     #[test]

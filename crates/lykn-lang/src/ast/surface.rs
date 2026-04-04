@@ -157,6 +157,21 @@ pub enum SurfaceForm {
         body: Vec<SExpr>,
         span: Span,
     },
+    Conj {
+        arr: SExpr,
+        value: SExpr,
+        span: Span,
+    },
+    Assoc {
+        obj: SExpr,
+        pairs: Vec<(String, SExpr)>,
+        span: Span,
+    },
+    Dissoc {
+        obj: SExpr,
+        keys: Vec<String>,
+        span: Span,
+    },
     MacroDef {
         name: String,
         raw: SExpr,

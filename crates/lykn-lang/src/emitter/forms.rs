@@ -128,6 +128,9 @@ pub fn emit_form(
         SurfaceForm::FunctionCall { head, args, .. } => {
             vec![emit_function_call(head, args, ctx, registry)]
         }
+        SurfaceForm::Conj { arr, value, .. } => vec![emit_conj(arr, value, ctx, registry)],
+        SurfaceForm::Assoc { obj, pairs, .. } => vec![emit_assoc(obj, pairs, ctx, registry)],
+        SurfaceForm::Dissoc { obj, keys, .. } => vec![emit_dissoc(obj, keys, ctx, registry)],
         SurfaceForm::MacroDef { raw, .. } => vec![raw.clone()],
         SurfaceForm::ImportMacros { raw, .. } => vec![raw.clone()],
     }
@@ -137,17 +140,61 @@ pub fn emit_form(
 // Expression emission (recursive into sub-expressions)
 // ---------------------------------------------------------------------------
 
-/// Emit a sub-expression. Currently returns the expression unchanged since
-/// kernel SExpr and surface SExpr share the same `SExpr` type. Surface forms
-/// embedded in expressions (like nested `match` or `fn`) are handled at the
-/// classifier level, not here.
-fn emit_expr(expr: &SExpr, _ctx: &mut EmitterContext, _registry: &TypeRegistry) -> SExpr {
-    expr.clone()
+/// Recursively emit a sub-expression.
+///
+/// If the expression is a list whose head is a surface form name, classify and
+/// emit it so that nested surface forms (e.g. `(-> 1 (+ 2))` inside a `bind`)
+/// are expanded correctly. Non-surface-form lists are recursed into so that
+/// deeply nested surface forms are still discovered.
+fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) -> SExpr {
+    match expr {
+        SExpr::List { values, span } if !values.is_empty() => {
+            if let Some(head_name) = values[0].as_atom() {
+                if crate::classifier::dispatch::is_surface_form(head_name) {
+                    // This subexpression is a surface form — classify and emit it
+                    match crate::classifier::classify_expr(expr) {
+                        Ok(surface_form) => {
+                            let emitted = emit_form(&surface_form, ctx, registry);
+                            if emitted.len() == 1 {
+                                emitted.into_iter().next().unwrap()
+                            } else if emitted.is_empty() {
+                                expr.clone()
+                            } else {
+                                // Multiple forms (e.g. type block) — wrap in block
+                                let mut items = vec![atom("block")];
+                                items.extend(emitted);
+                                list(items)
+                            }
+                        }
+                        Err(_) => expr.clone(),
+                    }
+                } else {
+                    // Not a surface form — recursively process all subexpressions
+                    let new_values: Vec<SExpr> =
+                        values.iter().map(|v| emit_expr(v, ctx, registry)).collect();
+                    SExpr::List {
+                        values: new_values,
+                        span: *span,
+                    }
+                }
+            } else {
+                // Head is not an atom (computed call) — recurse on all elements
+                let new_values: Vec<SExpr> =
+                    values.iter().map(|v| emit_expr(v, ctx, registry)).collect();
+                SExpr::List {
+                    values: new_values,
+                    span: *span,
+                }
+            }
+        }
+        _ => expr.clone(),
+    }
 }
 
-/// Emit a body (list of expressions), returning them as kernel forms.
-fn emit_body(body: &[SExpr], _ctx: &mut EmitterContext, _registry: &TypeRegistry) -> Vec<SExpr> {
-    body.to_vec()
+/// Emit a body (list of expressions), recursively expanding any nested surface
+/// forms.
+fn emit_body(body: &[SExpr], ctx: &mut EmitterContext, registry: &TypeRegistry) -> Vec<SExpr> {
+    body.iter().map(|e| emit_expr(e, ctx, registry)).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +277,69 @@ fn emit_reset(
 }
 
 // ---------------------------------------------------------------------------
+// Conj / Assoc / Dissoc
+// ---------------------------------------------------------------------------
+
+/// `(conj arr value)` -> `(array (spread arr) value)`
+fn emit_conj(
+    arr: &SExpr,
+    value: &SExpr,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    list(vec![
+        atom("array"),
+        list(vec![atom("spread"), emit_expr(arr, ctx, registry)]),
+        emit_expr(value, ctx, registry),
+    ])
+}
+
+/// `(assoc obj :k1 v1 :k2 v2)` -> `(object (spread obj) (k1 v1) (k2 v2))`
+fn emit_assoc(
+    obj: &SExpr,
+    pairs: &[(String, SExpr)],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let mut items = vec![
+        atom("object"),
+        list(vec![atom("spread"), emit_expr(obj, ctx, registry)]),
+    ];
+    for (key, val) in pairs {
+        items.push(list(vec![atom(key), emit_expr(val, ctx, registry)]));
+    }
+    list(items)
+}
+
+/// `(dissoc obj :k1 :k2)` -> IIFE that destructures away the keys and returns the rest.
+///
+/// Produces:
+/// ```text
+/// ((=> ()
+///   (const (object (alias k1 _discard0) (alias k2 _discard1) (rest _rest0)) obj)
+///   _rest0))
+/// ```
+fn emit_dissoc(
+    obj: &SExpr,
+    keys: &[String],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let mut pattern_items = vec![atom("object")];
+    for key in keys {
+        let discard = ctx.gensym.next("_");
+        pattern_items.push(list(vec![atom("alias"), atom(key), atom(&discard)]));
+    }
+    let rest_var = ctx.gensym.next("rest");
+    pattern_items.push(list(vec![atom("rest"), atom(&rest_var)]));
+
+    let pattern = list(pattern_items);
+    let binding = list(vec![atom("const"), pattern, emit_expr(obj, ctx, registry)]);
+    let arrow = list(vec![atom("=>"), list(vec![]), binding, atom(&rest_var)]);
+    list(vec![arrow])
+}
+
+// ---------------------------------------------------------------------------
 // Threading
 // ---------------------------------------------------------------------------
 
@@ -306,7 +416,7 @@ fn emit_some_thread(
 ) -> SExpr {
     // Build as IIFE: ((=> () body...))
     let mut body = Vec::new();
-    let t0 = ctx.gensym.next("_t");
+    let t0 = ctx.gensym.next("t");
     body.push(list(vec![
         atom("const"),
         atom(&t0),
@@ -338,7 +448,7 @@ fn emit_some_thread(
             ]));
             body.push(list(vec![atom("return"), result]));
         } else {
-            let tn = ctx.gensym.next("_t");
+            let tn = ctx.gensym.next("t");
             body.push(list(vec![atom("const"), atom(&tn), result]));
             prev = tn;
         }
@@ -457,7 +567,7 @@ fn emit_fn_expr(
             if let Some(check) = emit_type_check(
                 &param.name,
                 &param.type_ann.name,
-                "<anonymous>",
+                "anonymous",
                 "arg",
                 param.name_span,
             ) {
@@ -532,7 +642,7 @@ fn emit_func_single(
 
     if has_post && !ctx.strip_assertions {
         // Capture result in gensym, check post, return
-        let result_var = ctx.gensym.next("_result");
+        let result_var = ctx.gensym.next("result");
         let last_expr = if body.len() == 1 {
             body[0].clone()
         } else {
@@ -565,7 +675,7 @@ fn emit_func_single(
 
         if !ctx.strip_assertions {
             if let Some(ref ret) = clause.returns {
-                let result_var = ctx.gensym.next("_result");
+                let result_var = ctx.gensym.next("result");
                 items.push(list(vec![atom("const"), atom(&result_var), last]));
                 if let Some(check) =
                     emit_type_check(&result_var, &ret.name, name, "return", ret.span)
@@ -694,7 +804,7 @@ fn emit_func_multi(
         let has_post = clause.post.is_some();
 
         if has_post && !ctx.strip_assertions {
-            let result_var = ctx.gensym.next("_result");
+            let result_var = ctx.gensym.next("result");
             if body.len() > 1 {
                 block_items.extend(body[..body.len() - 1].to_vec());
             }
@@ -801,7 +911,7 @@ fn emit_match(
     registry: &TypeRegistry,
 ) -> SExpr {
     // Always IIFE: ((=> () (const _t expr) [if-chains] [throw]))
-    let target_var = ctx.gensym.next("_target");
+    let target_var = ctx.gensym.next("target");
     let mut body = vec![
         atom("=>"),
         list(vec![]),
@@ -982,7 +1092,7 @@ fn emit_if_let(
     registry: &TypeRegistry,
 ) -> SExpr {
     // IIFE: ((=> () (const _t expr) (if <check> (block [bindings] (return then)) (block (return else)))))
-    let t = ctx.gensym.next("_t");
+    let t = ctx.gensym.next("t");
     let mut body = vec![
         atom("=>"),
         list(vec![]),
@@ -1028,7 +1138,7 @@ fn emit_when_let(
     registry: &TypeRegistry,
 ) -> SExpr {
     // IIFE: ((=> () (const _t expr) (if <check> (block [bindings] (return body)))))
-    let t = ctx.gensym.next("_t");
+    let t = ctx.gensym.next("t");
     let mut body = vec![
         atom("=>"),
         list(vec![]),

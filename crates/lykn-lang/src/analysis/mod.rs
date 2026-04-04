@@ -138,6 +138,9 @@ fn analyze_scope(form: &SurfaceForm, scope: &mut ScopeTracker, _registry: &TypeR
             }
             scope.exit_scope();
         }
+        SurfaceForm::Conj { .. } | SurfaceForm::Assoc { .. } | SurfaceForm::Dissoc { .. } => {
+            // No scope introductions needed for these forms
+        }
         _ => {}
     }
 }

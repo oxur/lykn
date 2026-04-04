@@ -18,6 +18,9 @@ pub fn is_surface_form(name: &str) -> bool {
             | "when-let"
             | "fn"
             | "lambda"
+            | "conj"
+            | "assoc"
+            | "dissoc"
             | "macro"
             | "import-macros"
     )

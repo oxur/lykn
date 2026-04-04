@@ -67,6 +67,9 @@ fn classify_surface_form(
         "when-let" => classify_when_let(args, span),
         "fn" => classify_fn(args, span),
         "lambda" => classify_lambda(args, span),
+        "conj" => classify_conj(args, span),
+        "assoc" => classify_assoc(args, span),
+        "dissoc" => classify_dissoc(args, span),
         "macro" => classify_macro_def(args, span),
         "import-macros" => classify_import_macros(args, span),
         _ => Err(Diagnostic {
@@ -636,6 +639,77 @@ fn classify_lambda(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic
         body: args[1..].to_vec(),
         span,
     })
+}
+
+fn classify_conj(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() != 2 {
+        return Err(err(
+            "conj requires exactly 2 arguments: (conj array value)",
+            span,
+        ));
+    }
+    Ok(SurfaceForm::Conj {
+        arr: args[0].clone(),
+        value: args[1].clone(),
+        span,
+    })
+}
+
+fn classify_assoc(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() < 3 {
+        return Err(err(
+            "assoc requires at least 3 arguments: (assoc obj :key value)",
+            span,
+        ));
+    }
+    let obj = args[0].clone();
+    let rest = &args[1..];
+    if !rest.len().is_multiple_of(2) {
+        return Err(err(
+            "assoc requires keyword-value pairs after the object",
+            span,
+        ));
+    }
+    let mut pairs = Vec::new();
+    for i in (0..rest.len()).step_by(2) {
+        match &rest[i] {
+            SExpr::Keyword { value, .. } => {
+                pairs.push((value.clone(), rest[i + 1].clone()));
+            }
+            _ => {
+                return Err(err(
+                    format!("assoc: expected keyword at position {}", i + 1),
+                    span,
+                ));
+            }
+        }
+    }
+    Ok(SurfaceForm::Assoc { obj, pairs, span })
+}
+
+fn classify_dissoc(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() < 2 {
+        return Err(err(
+            "dissoc requires at least 2 arguments: (dissoc obj :key)",
+            span,
+        ));
+    }
+    let obj = args[0].clone();
+    let mut keys = Vec::new();
+    for (i, arg) in args[1..].iter().enumerate() {
+        match arg {
+            SExpr::Keyword { value, .. } => {
+                keys.push(value.clone());
+            }
+            _ => {
+                return Err(err(
+                    format!("dissoc: expected keyword at position {}", i + 1),
+                    span,
+                ));
+            }
+        }
+    }
+    Ok(SurfaceForm::Dissoc { obj, keys, span })
 }
 
 fn classify_macro_def(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
