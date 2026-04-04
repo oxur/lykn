@@ -586,6 +586,60 @@ export function registerSurfaceMacros(macroEnv) {
 	});
 
 	// ===================================================================
+	// js: namespace interop (DD-15)
+	// ===================================================================
+
+	// --- js:call ---
+	// (js:call obj:method args...) → (obj:method args...)
+	macroEnv.set("js:call", (...args) => {
+		if (args.length < 1) {
+			throw new Error("js:call requires at least a method reference");
+		}
+		return array(args[0], ...args.slice(1));
+	});
+
+	// --- js:bind ---
+	// (js:bind obj:method obj) → (obj:method:bind obj)
+	macroEnv.set("js:bind", (...args) => {
+		if (args.length !== 2) {
+			throw new Error(
+				"js:bind requires exactly 2 arguments: (js:bind obj:method obj)",
+			);
+		}
+		if (args[0].type !== "atom") {
+			throw new Error("js:bind: first argument must be a method reference");
+		}
+		return array(sym(`${args[0].value}:bind`), args[1]);
+	});
+
+	// --- js:eval ---
+	// (js:eval code) → (eval code)
+	macroEnv.set("js:eval", (...args) => {
+		if (args.length !== 1) {
+			throw new Error("js:eval requires exactly 1 argument");
+		}
+		return array(sym("eval"), args[0]);
+	});
+
+	// --- js:eq ---
+	// (js:eq a b) → (== a b)
+	macroEnv.set("js:eq", (...args) => {
+		if (args.length !== 2) {
+			throw new Error("js:eq requires exactly 2 arguments");
+		}
+		return array(sym("=="), args[0], args[1]);
+	});
+
+	// --- js:typeof ---
+	// (js:typeof x) → (typeof x)
+	macroEnv.set("js:typeof", (...args) => {
+		if (args.length !== 1) {
+			throw new Error("js:typeof requires exactly 1 argument");
+		}
+		return array(sym("typeof"), args[0]);
+	});
+
+	// ===================================================================
 	// Phase 2: Complex Surface Forms
 	// ===================================================================
 

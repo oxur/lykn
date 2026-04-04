@@ -183,7 +183,16 @@ pub fn emit_form(
             target, clauses, ..
         } => vec![emit_match(target, clauses, ctx, registry)],
         SurfaceForm::KernelPassthrough { raw, .. } => vec![raw.clone()],
-        SurfaceForm::FunctionCall { head, args, .. } => {
+        SurfaceForm::FunctionCall {
+            head,
+            args,
+            span: _,
+        } => {
+            // Check for js: namespace interop
+            if let Some(name) = head.as_atom()
+                && name.starts_with("js:") {
+                    return vec![emit_js_interop(name, args, ctx, registry)];
+                }
             vec![emit_function_call(head, args, ctx, registry)]
         }
         SurfaceForm::Conj { arr, value, .. } => vec![emit_conj(arr, value, ctx, registry)],
@@ -208,6 +217,10 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
     match expr {
         SExpr::List { values, span } if !values.is_empty() => {
             if let Some(head_name) = values[0].as_atom() {
+                // js: namespace interop (DD-15) — handle before surface form check
+                if head_name.starts_with("js:") {
+                    return emit_js_interop(head_name, &values[1..], ctx, registry);
+                }
                 if crate::classifier::dispatch::is_surface_form(head_name) {
                     // This subexpression is a surface form — classify and emit it
                     match crate::classifier::classify_expr(expr) {
@@ -253,6 +266,81 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
 /// forms.
 fn emit_body(body: &[SExpr], ctx: &mut EmitterContext, registry: &TypeRegistry) -> Vec<SExpr> {
     body.iter().map(|e| emit_expr(e, ctx, registry)).collect()
+}
+
+// ---------------------------------------------------------------------------
+// js: namespace interop (DD-15)
+// ---------------------------------------------------------------------------
+
+/// Emit a `js:` namespace form. These are simple syntactic rewrites:
+/// - `(js:call method args...)` → `(method args...)`
+/// - `(js:bind obj:method obj)` → `(obj:method:bind obj)`
+/// - `(js:eval code)` → `(eval code)`
+/// - `(js:eq a b)` → `(== a b)`
+/// - `(js:typeof x)` → `(typeof x)`
+fn emit_js_interop(
+    form: &str,
+    args: &[SExpr],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    match form {
+        "js:call" => {
+            // (js:call method args...) → (method args...)
+            let items: Vec<SExpr> = args.iter().map(|a| emit_expr(a, ctx, registry)).collect();
+            list(items)
+        }
+        "js:bind" => {
+            // (js:bind obj:method obj) → (obj:method:bind obj)
+            if let Some(SExpr::Atom { value: method, .. }) = args.first() {
+                let this_arg = if args.len() > 1 {
+                    emit_expr(&args[1], ctx, registry)
+                } else {
+                    atom("undefined")
+                };
+                list(vec![atom(&format!("{method}:bind")), this_arg])
+            } else {
+                // Fallback: pass through
+                let mut items = vec![atom(form)];
+                items.extend(args.iter().map(|a| emit_expr(a, ctx, registry)));
+                list(items)
+            }
+        }
+        "js:eval" => {
+            // (js:eval code) → (eval code)
+            let code = args
+                .first()
+                .map(|a| emit_expr(a, ctx, registry))
+                .unwrap_or_else(|| atom("undefined"));
+            list(vec![atom("eval"), code])
+        }
+        "js:eq" => {
+            // (js:eq a b) → (== a b)
+            let a = args
+                .first()
+                .map(|x| emit_expr(x, ctx, registry))
+                .unwrap_or_else(|| atom("undefined"));
+            let b = args
+                .get(1)
+                .map(|x| emit_expr(x, ctx, registry))
+                .unwrap_or_else(|| atom("undefined"));
+            list(vec![atom("=="), a, b])
+        }
+        "js:typeof" => {
+            // (js:typeof x) → (typeof x)
+            let x = args
+                .first()
+                .map(|a| emit_expr(a, ctx, registry))
+                .unwrap_or_else(|| atom("undefined"));
+            list(vec![atom("typeof"), x])
+        }
+        _ => {
+            // Unknown js: form — pass through as function call
+            let mut items = vec![atom(form)];
+            items.extend(args.iter().map(|a| emit_expr(a, ctx, registry)));
+            list(items)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

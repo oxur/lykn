@@ -141,7 +141,9 @@ cross_test!(cross_obj_simple, r#"(obj :name "Duncan" :age 42)"#);
 cross_test!(cross_cell, "(cell 0)");
 cross_test!(cross_thread_first, "(-> x f g)");
 cross_test!(cross_thread_last, "(->> x (f a) (g b))");
-// Note: conj, assoc, dissoc are JS-only macro expansions.
-// The Rust pipeline handles these as direct emission in the emitter,
-// not via macro expansion. Cross-compiler parity for these requires
-// the Rust emitter to produce the same kernel forms as the JS macros.
+// js: namespace interop forms
+cross_test!(cross_js_eq, "(js:eq a b)");
+cross_test!(cross_js_typeof, "(js:typeof x)");
+cross_test!(cross_js_eval, r#"(js:eval "1 + 2")"#);
+cross_test!(cross_js_call, r#"(js:call console:log "hello")"#);
+cross_test!(cross_js_bind, "(js:bind obj:method obj)");
