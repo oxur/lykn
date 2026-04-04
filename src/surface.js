@@ -25,6 +25,11 @@ const typeRegistry = new Map();
 
 export function resetTypeRegistry() {
 	typeRegistry.clear();
+	// Pre-populate with blessed prelude types (DD-17)
+	typeRegistry.set("Some", ["value"]);
+	typeRegistry.set("None", []);
+	typeRegistry.set("Ok", ["value"]);
+	typeRegistry.set("Err", ["error"]);
 }
 
 // --- Shared Helpers ---
