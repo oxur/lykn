@@ -8,6 +8,10 @@ repository = "https://github.com/oxur/lykn"
 keywords = ["lisp", "javascript", "s-expression", "compiler", "formatter"]
 categories = ["compilers", "development-tools", "command-line-utilities"]
 
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+lykn-lang = { path = "../lykn-lang" }
+
 [lib]
 name = "lykn_cli"
 path = "src/lib.rs"

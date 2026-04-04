@@ -1,0 +1,2 @@
+(bind user (obj :name "Duncan" :age 42))
+(bind updated (assoc user :age 43))

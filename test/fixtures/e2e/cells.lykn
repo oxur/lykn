@@ -1,0 +1,3 @@
+(bind counter (cell 0))
+(swap! counter (=> (n) (+ n 1)))
+(console:log (express counter))

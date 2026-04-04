@@ -1,0 +1,5 @@
+(func safe-divide
+  :args (:number a :number b)
+  :returns :number
+  :pre (!== b 0)
+  :body (/ a b))
