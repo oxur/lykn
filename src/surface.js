@@ -12,9 +12,6 @@ import {
 	gensym,
 	isKeyword,
 	isArray,
-	isSymbol,
-	isNumber,
-	isString,
 	formatSExpr,
 } from "./expander.js";
 

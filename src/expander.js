@@ -380,7 +380,7 @@ function resolveAutoGensym(form) {
  * @param {*[]} bodyForms - The macro body forms
  * @returns {string} JS code string for new Function()
  */
-function compileMacroBody(paramNames, paramPattern, bodyForms) {
+function compileMacroBody(_paramNames, paramPattern, bodyForms) {
   // Process the body: compile quasiquote templates to API calls
   const processedBody = bodyForms.map((form) => processBodyForm(form));
 
