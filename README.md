@@ -11,70 +11,87 @@
 
 **lykn** is a lightweight Lisp that compiles to clean, readable JavaScript. No runtime, no dependencies in the output — just JS you'd write by hand, but expressed in s-expressions.
 
+lykn has two syntax layers: **surface syntax** for everyday code (typed
+functions, algebraic data types, pattern matching, immutable bindings) and
+**kernel syntax** for low-level control. Both are s-expressions; surface forms
+compile to kernel forms, which compile to JavaScript.
+
 The name means *good luck* in Norwegian, *luck* in Swedish, and — if you
 squint at the Icelandic — *closure*.
 
 ## Status
 
-**v0.2.0** — Full macro system with quasiquote, auto-gensym hygiene, and cross-module macro imports. 56KB browser bundle. 423 tests.
+**v0.3.0-dev** — Surface syntax with typed functions, ADTs, pattern matching, cells, threading macros. Full macro system with quasiquote, auto-gensym hygiene, and cross-module macro imports. 56KB browser bundle. 555 tests.
 
 ## Quick taste
 
 ```lisp
-;; Define macros with quasiquote templates
+;; Immutable bindings
+(bind greeting "hello, world")
+
+;; Typed functions with runtime safety
+(func greet
+  :args (:string name)
+  :returns :string
+  :body (+ greeting ", " name "!"))
+
+;; Threading macros
+(bind result (-> 5 (+ 3) (* 2)))
+
+;; Objects with keyword syntax
+(bind user (obj :name "lykn" :version "0.3.0"))
+
+;; Controlled mutation via cells
+(bind counter (cell 0))
+(swap! counter (=> (n) (+ n 1)))
+(console:log (express counter))
+
+;; Macros still work — define your own forms
 (macro when (test (rest body))
   `(if ,test (block ,@body)))
 
-(macro unless (test (rest body))
-  `(if (! ,test) (block ,@body)))
-
-;; Import macros from other files
-(import-macros "./control-flow.lykn" (when unless))
-
-;; Use them like built-in forms
-(when (> x 0)
+(when (> result 0)
   (console:log "positive"))
-
-;; Classes, destructuring, template literals — all the JS you need
-(class Dog (Animal)
-  (field -name)
-  (constructor (name)
-    (super name)
-    (= this:-name name))
-  (speak ()
-    (console:log (template this:-name " says woof!"))))
-
-(const (object name (default age 0)) (get-user))
 ```
 
 Compiles to:
 
 ```js
-if (x > 0) {
+const greeting = "hello, world";
+function greet(name) {
+  if (typeof name !== "string") throw new TypeError("greet: arg 'name' expected string, got " + typeof name);
+  const result__gensym0 = greeting + ", " + name + "!";
+  if (typeof result__gensym0 !== "string") throw new TypeError("greet: return 'result__gensym0' expected string, got " + typeof result__gensym0);
+  return result__gensym0;
+}
+const result = (5 + 3) * 2;
+const user = {
+  name: "lykn",
+  version: "0.3.0"
+};
+const counter = {
+  value: 0
+};
+counter.value = (n => n + 1)(counter.value);
+console.log(counter.value);
+if (result > 0) {
   console.log("positive");
 }
-class Dog extends Animal {
-  #_name;
-  constructor(name) {
-    super(name);
-    this.#_name = name;
-  }
-  speak() {
-    console.log(`${this.#_name} says woof!`);
-  }
-}
-const {name, age = 0} = getUser();
 ```
 
 ## Architecture
 
 ```
-.lykn source → reader → expander → compiler → astring → JavaScript
+.lykn source → reader → surface macros → expander → compiler → astring → JavaScript
 ```
 
 - **Reader** (`src/reader.js`) — parses s-expressions, handles `#` dispatch
   (`` ` ``, `,`, `,@`, `#a(...)`, `#o(...)`, `#NNr`, `#;`, `#|...|#`),
   dotted pairs
+
+- **Surface macros** (`src/surface.js`) — transforms high-level surface forms
+  (`bind`, `func`, `type`, `match`, `obj`, `cell`, threading macros) to
+  kernel forms before macro expansion
 
 - **Expander** (`src/expander.js`) — three-pass macro expansion pipeline.
   Resolves quasiquote (Bawden's algorithm), sugar forms (`cons`/`list`/
@@ -179,7 +196,62 @@ cargo build --release && cp ./target/release/lykn ./bin
 
 ## Supported forms
 
-### Basics
+### Surface forms
+
+Surface syntax is the recommended way to write lykn. These forms expand to
+kernel forms at compile time.
+
+#### Bindings & mutation
+
+| lykn | JS |
+|---|---|
+| `(bind x 1)` | `const x = 1;` |
+| `(bind counter (cell 0))` | `const counter = { value: 0 };` |
+| `(swap! counter f)` | `counter.value = f(counter.value);` |
+| `(reset! counter 0)` | `counter.value = 0;` |
+| `(express counter)` | `counter.value` |
+
+#### Functions
+
+| lykn | JS |
+|---|---|
+| `(func add :args (:number a :number b) :returns :number :body (+ a b))` | `function add(a, b) { ... return a + b; }` with type checks |
+| `(func now (Date:now))` | `function now() { return Date.now(); }` |
+| `(fn (:number x) (* x 2))` | `x => { ...; x * 2; }` with type check |
+
+#### Types & pattern matching
+
+| lykn | JS |
+|---|---|
+| `(type Option (Some :any value) None)` | Constructor functions with `{ tag: "Some", value }` |
+| `(match opt ((Some v) v) (None fallback))` | Exhaustive if-chain on `.tag` |
+| `(if-let ((Some user) (find id)) (greet user) "none")` | Tag check + binding + branch |
+| `(when-let ((Some user) (find id)) (greet user))` | Same without else branch |
+
+#### Objects
+
+| lykn | JS |
+|---|---|
+| `(obj :name "x" :age 42)` | `{ name: "x", age: 42 }` |
+| `(assoc user :age 43)` | `{ ...user, age: 43 }` |
+| `(dissoc user :password)` | Spread + delete |
+| `(conj items new-item)` | `[...items, newItem]` |
+
+#### Threading macros
+
+| lykn | JS |
+|---|---|
+| `(-> x (+ 3) (* 2))` | `(x + 3) * 2` |
+| `(->> items (filter even?) (map double))` | `map(filter(items, even), double)` |
+| `(some-> user (get :name) (str:to-upper-case))` | IIFE with null checks at each step |
+
+### Kernel forms
+
+Kernel forms are the compilation targets for surface macros. You can use
+them directly for low-level control, JS interop, or when surface syntax
+doesn't cover a specific JS feature.
+
+#### Basics
 
 | lykn | JS |
 |---|---|

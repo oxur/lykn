@@ -1,0 +1,40 @@
+; lykn surface syntax showcase
+; Features that distinguish surface from kernel syntax.
+
+;; --- Algebraic Data Types ---
+
+(type Shape
+  (Circle :number radius)
+  (Rect :number width :number height)
+  (Point))
+
+;; --- Pattern Matching ---
+
+(func describe
+  :args (:any shape)
+  :returns :string
+  :body (match shape
+    ((Circle r) (+ "circle with radius " r))
+    ((Rect w h) (+ w "×" h " rectangle"))
+    ((Point) "a point")))
+
+(console:log (describe (Circle 5)))
+(console:log (describe (Rect 3 4)))
+(console:log (describe (Point)))
+
+;; --- Controlled Mutation with Cells ---
+
+(bind counter (cell 0))
+(swap! counter (=> (n) (+ n 1)))
+(swap! counter (=> (n) (+ n 1)))
+(console:log "counter:" (express counter))
+
+;; --- Threading Macros ---
+
+(bind result (-> 5 (+ 3) (* 2)))
+(console:log "threaded:" result)
+
+;; --- Objects with Keyword Syntax ---
+
+(bind user (obj :name "lykn" :version "0.3.0" :compiled true))
+(console:log "user:" user)

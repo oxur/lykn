@@ -1,0 +1,27 @@
+; lykn example — main.lykn
+; Surface syntax: typed functions, immutable bindings, clean JS output.
+
+; Immutable bindings with `bind`
+(bind greeting "hello, world")
+
+; Typed function definition
+(func greet
+  :args (:string name)
+  :returns :void
+  :body (console:log (+ greeting ", " name "!")))
+
+; Call the function
+(greet "lykn")
+
+; Array literal with #a(...)
+(bind taglines #a(
+  "S-expression syntax for JavaScript"
+  "Good luck — lykn"
+  "Closure, in every sense"))
+
+; Zero-arg function with multi-expression body
+(func pick
+  (bind idx (Math:floor (* (Math:random) taglines:length)))
+  (taglines:at idx))
+
+(console:log (pick))

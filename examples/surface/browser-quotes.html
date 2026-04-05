@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lykn — Rotating Taglines (LFE site port)</title>
+  <style>
+    body { font-family: Georgia, serif; text-align: center; margin-top: 80px; background: #1a1a2e; color: #e0e0e0; }
+    h1 { font-size: 2.5em; color: #7ec8e3; }
+    #lfe-tagline { font-style: italic; font-size: 1.4em; color: #c9a0dc; min-height: 1.5em; }
+    p.note { margin-top: 40px; font-size: 0.9em; color: #666; }
+  </style>
+  <script src="../dist/lykn-browser.dev.js"></script>
+</head>
+<body>
+  <h1>LFE</h1>
+  <div id="lfe-tagline"></div>
+
+  <script type="text/lykn" src="browser-quotes.lykn"></script>
+
+  <p class="note">Tagline rotates every 10 seconds — powered by lykn, not BiwaScheme.</p>
+</body>
+</html>

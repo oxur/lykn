@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lykn Browser Test — Macros (Surface)</title>
+  <script src="../dist/lykn-browser.dev.js"></script>
+</head>
+<body>
+  <h1>lykn Browser Macros Test</h1>
+  <div id="output"></div>
+
+  <script type="text/lykn">
+  ;; Define macros inline — works in browser!
+  (macro when (test (rest body))
+    `(if ,test (block ,@body)))
+
+  (macro unless (test (rest body))
+    `(if (! ,test) (block ,@body)))
+
+  (bind el (document:get-element-by-id "output"))
+  (bind items #a("macros" "quasiquote" "auto-gensym" "sugar forms"))
+
+  (let html "")
+  (for-of item items
+    (when item
+      (+= html (template "<li>" item "</li>"))))
+
+  (= el:inner-HTML (template "<ul>" html "</ul>"))
+  </script>
+
+  <p>If you see a list of features above, inline macros work in the browser bundle.</p>
+  <p><em>Note: <code>import-macros</code> is not available in the browser (no file system access).</em></p>
+</body>
+</html>
