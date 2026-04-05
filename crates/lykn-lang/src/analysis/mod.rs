@@ -6,7 +6,8 @@ pub mod prelude;
 pub mod scope;
 pub mod type_registry;
 
-use crate::ast::surface::{Pattern, SurfaceForm};
+use crate::ast::sexpr::SExpr;
+use crate::ast::surface::{Pattern, SurfaceForm, ThreadingStep};
 use crate::diagnostics::{Diagnostic, Severity};
 use scope::ScopeTracker;
 use type_registry::TypeRegistry;
@@ -103,7 +104,12 @@ impl Analyze for SurfaceForm {
 
     fn track_scope(&self, scope: &mut ScopeTracker) {
         match self {
-            SurfaceForm::Bind { name, span, .. } => {
+            SurfaceForm::Bind {
+                name, value, span, ..
+            } => {
+                // Walk the value expression first so references to earlier
+                // bindings are recorded before we introduce this one.
+                track_references_in_expr(value, scope);
                 if let Some(atom) = name.as_atom() {
                     scope.introduce(atom, *span, false, false);
                 }
@@ -120,23 +126,149 @@ impl Analyze for SurfaceForm {
                     for param in &clause.args {
                         scope.introduce(&param.name, param.name_span, false, false);
                     }
+                    // Walk the body so references to params (and outer
+                    // bindings) are recorded inside this scope.
+                    for expr in &clause.body {
+                        track_references_in_expr(expr, scope);
+                    }
+                    if let Some(pre) = &clause.pre {
+                        track_references_in_expr(pre, scope);
+                    }
+                    if let Some(post) = &clause.post {
+                        track_references_in_expr(post, scope);
+                    }
                     scope.exit_scope();
                 }
             }
-            SurfaceForm::Match { clauses, .. } => {
+            SurfaceForm::Match {
+                target, clauses, ..
+            } => {
+                track_references_in_expr(target, scope);
                 for clause in clauses {
                     scope.enter_scope();
                     introduce_pattern_bindings(&clause.pattern, scope);
+                    if let Some(guard) = &clause.guard {
+                        track_references_in_expr(guard, scope);
+                    }
+                    for expr in &clause.body {
+                        track_references_in_expr(expr, scope);
+                    }
                     scope.exit_scope();
                 }
             }
-            SurfaceForm::Fn { params, .. } | SurfaceForm::Lambda { params, .. } => {
+            SurfaceForm::Fn { params, body, .. }
+            | SurfaceForm::Lambda { params, body, .. } => {
                 scope.enter_scope();
                 for param in params {
                     scope.introduce(&param.name, param.name_span, false, false);
                 }
+                for expr in body {
+                    track_references_in_expr(expr, scope);
+                }
                 scope.exit_scope();
             }
+            SurfaceForm::FunctionCall { head, args, .. } => {
+                track_references_in_expr(head, scope);
+                for arg in args {
+                    track_references_in_expr(arg, scope);
+                }
+            }
+            SurfaceForm::IfLet {
+                expr,
+                pattern,
+                then_body,
+                else_body,
+                ..
+            } => {
+                track_references_in_expr(expr, scope);
+                scope.enter_scope();
+                introduce_pattern_bindings(pattern, scope);
+                track_references_in_expr(then_body, scope);
+                scope.exit_scope();
+                if let Some(eb) = else_body {
+                    track_references_in_expr(eb, scope);
+                }
+            }
+            SurfaceForm::WhenLet {
+                expr,
+                pattern,
+                body,
+                ..
+            } => {
+                track_references_in_expr(expr, scope);
+                scope.enter_scope();
+                introduce_pattern_bindings(pattern, scope);
+                for e in body {
+                    track_references_in_expr(e, scope);
+                }
+                scope.exit_scope();
+            }
+            SurfaceForm::Express { target, .. } => {
+                track_references_in_expr(target, scope);
+            }
+            SurfaceForm::Cell { value, .. } => {
+                track_references_in_expr(value, scope);
+            }
+            SurfaceForm::Swap {
+                target,
+                func,
+                extra_args,
+                ..
+            } => {
+                track_references_in_expr(target, scope);
+                track_references_in_expr(func, scope);
+                for arg in extra_args {
+                    track_references_in_expr(arg, scope);
+                }
+            }
+            SurfaceForm::Reset { target, value, .. } => {
+                track_references_in_expr(target, scope);
+                track_references_in_expr(value, scope);
+            }
+            SurfaceForm::ThreadFirst {
+                initial, steps, ..
+            }
+            | SurfaceForm::ThreadLast {
+                initial, steps, ..
+            }
+            | SurfaceForm::SomeThreadFirst {
+                initial, steps, ..
+            }
+            | SurfaceForm::SomeThreadLast {
+                initial, steps, ..
+            } => {
+                track_references_in_expr(initial, scope);
+                for step in steps {
+                    match step {
+                        ThreadingStep::Bare(e) => track_references_in_expr(e, scope),
+                        ThreadingStep::Call(exprs) => {
+                            for e in exprs {
+                                track_references_in_expr(e, scope);
+                            }
+                        }
+                    }
+                }
+            }
+            SurfaceForm::Obj { pairs, .. } => {
+                for (_, expr) in pairs {
+                    track_references_in_expr(expr, scope);
+                }
+            }
+            SurfaceForm::Conj { arr, value, .. } => {
+                track_references_in_expr(arr, scope);
+                track_references_in_expr(value, scope);
+            }
+            SurfaceForm::Assoc { obj, pairs, .. } => {
+                track_references_in_expr(obj, scope);
+                for (_, expr) in pairs {
+                    track_references_in_expr(expr, scope);
+                }
+            }
+            SurfaceForm::Dissoc { obj, .. } => {
+                track_references_in_expr(obj, scope);
+            }
+            // Type, MacroDef, ImportMacros, KernelPassthrough — no user
+            // references to track beyond what `collect` already handles.
             _ => {}
         }
     }
@@ -198,16 +330,267 @@ fn introduce_pattern_bindings(pat: &Pattern, scope: &mut ScopeTracker) {
     }
 }
 
+/// Recursively walk an S-expression, recording every atom reference in the
+/// scope tracker. This is how usages of bindings are detected — each `Atom`
+/// node that matches an in-scope binding marks that binding as used.
+fn track_references_in_expr(expr: &SExpr, scope: &mut ScopeTracker) {
+    match expr {
+        SExpr::Atom { value, span } => {
+            scope.reference(value, *span);
+        }
+        SExpr::List { values, .. } => {
+            for v in values {
+                track_references_in_expr(v, scope);
+            }
+        }
+        SExpr::Cons { car, cdr, .. } => {
+            track_references_in_expr(car, scope);
+            track_references_in_expr(cdr, scope);
+        }
+        // Keywords, strings, numbers, bools, null — no references.
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ast::sexpr::SExpr;
-    use crate::ast::surface::{Constructor, MatchClause, Pattern, SurfaceForm};
+    use crate::ast::surface::{
+        Constructor, FuncClause, MatchClause, Pattern, SurfaceForm, TypeAnnotation, TypedParam,
+    };
     use crate::reader::source_loc::Span;
 
     fn span() -> Span {
         Span::default()
     }
+
+    // --- Cross-form reference tracking tests ---
+
+    #[test]
+    fn test_bind_then_function_call_no_unused_warning() {
+        // (bind greeting "hello")
+        // (console:log greeting)
+        let forms = vec![
+            SurfaceForm::Bind {
+                name: SExpr::Atom {
+                    value: "greeting".into(),
+                    span: span(),
+                },
+                type_ann: None,
+                value: SExpr::String {
+                    value: "hello".into(),
+                    span: span(),
+                },
+                span: span(),
+            },
+            SurfaceForm::FunctionCall {
+                head: SExpr::Atom {
+                    value: "console:log".into(),
+                    span: span(),
+                },
+                args: vec![SExpr::Atom {
+                    value: "greeting".into(),
+                    span: span(),
+                }],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        let unused: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.contains("unused"))
+            .collect();
+        assert!(
+            unused.is_empty(),
+            "expected no unused warnings, got: {unused:?}"
+        );
+    }
+
+    #[test]
+    fn test_bind_without_reference_warns_unused() {
+        // (bind x 1) — with no reference anywhere
+        let forms = vec![SurfaceForm::Bind {
+            name: SExpr::Atom {
+                value: "x".into(),
+                span: span(),
+            },
+            type_ann: None,
+            value: SExpr::Number {
+                value: 1.0,
+                span: span(),
+            },
+            span: span(),
+        }];
+        let result = analyze(&forms);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'x'")),
+            "expected unused warning for 'x'"
+        );
+    }
+
+    #[test]
+    fn test_func_params_referenced_in_body_no_unused_warning() {
+        // (func add :args (:number a :number b) :returns :number :body (+ a b))
+        // (console:log (add 1 2))
+        let forms = vec![
+            SurfaceForm::Func {
+                name: "add".into(),
+                name_span: span(),
+                clauses: vec![FuncClause {
+                    args: vec![
+                        TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: "number".into(),
+                                span: span(),
+                            },
+                            name: "a".into(),
+                            name_span: span(),
+                        },
+                        TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: "number".into(),
+                                span: span(),
+                            },
+                            name: "b".into(),
+                            name_span: span(),
+                        },
+                    ],
+                    returns: Some(TypeAnnotation {
+                        name: "number".into(),
+                        span: span(),
+                    }),
+                    pre: None,
+                    post: None,
+                    body: vec![SExpr::List {
+                        values: vec![
+                            SExpr::Atom {
+                                value: "+".into(),
+                                span: span(),
+                            },
+                            SExpr::Atom {
+                                value: "a".into(),
+                                span: span(),
+                            },
+                            SExpr::Atom {
+                                value: "b".into(),
+                                span: span(),
+                            },
+                        ],
+                        span: span(),
+                    }],
+                    span: span(),
+                }],
+                span: span(),
+            },
+            SurfaceForm::FunctionCall {
+                head: SExpr::Atom {
+                    value: "console:log".into(),
+                    span: span(),
+                },
+                args: vec![SExpr::List {
+                    values: vec![
+                        SExpr::Atom {
+                            value: "add".into(),
+                            span: span(),
+                        },
+                        SExpr::Number {
+                            value: 1.0,
+                            span: span(),
+                        },
+                        SExpr::Number {
+                            value: 2.0,
+                            span: span(),
+                        },
+                    ],
+                    span: span(),
+                }],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        let unused: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.contains("unused"))
+            .collect();
+        assert!(
+            unused.is_empty(),
+            "expected no unused warnings, got: {unused:?}"
+        );
+    }
+
+    #[test]
+    fn test_func_unused_param_still_warns() {
+        // A function where param 'b' is never referenced in the body
+        let forms = vec![
+            SurfaceForm::Func {
+                name: "f".into(),
+                name_span: span(),
+                clauses: vec![FuncClause {
+                    args: vec![
+                        TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: "number".into(),
+                                span: span(),
+                            },
+                            name: "a".into(),
+                            name_span: span(),
+                        },
+                        TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: "number".into(),
+                                span: span(),
+                            },
+                            name: "b".into(),
+                            name_span: span(),
+                        },
+                    ],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![SExpr::Atom {
+                        value: "a".into(),
+                        span: span(),
+                    }],
+                    span: span(),
+                }],
+                span: span(),
+            },
+            SurfaceForm::FunctionCall {
+                head: SExpr::Atom {
+                    value: "f".into(),
+                    span: span(),
+                },
+                args: vec![SExpr::Number {
+                    value: 1.0,
+                    span: span(),
+                }],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'b'")),
+            "expected unused warning for 'b'"
+        );
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'a'")),
+            "should NOT warn about 'a'"
+        );
+    }
+
+    // --- Original tests ---
 
     #[test]
     fn test_analyze_empty_forms() {
