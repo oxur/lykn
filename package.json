@@ -1,6 +1,6 @@
 {
     "name": "@lykn/lykn",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "S-expression syntax for JavaScript. A lightweight Lisp that compiles to clean JS.",
     "type": "module",
     "main": "./src/index.js",

@@ -1,6 +1,6 @@
 {
     "name": "@lykn/lykn",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "exports": "./src/index.d.ts",
     "nodeModulesDir": "none",
     "imports": {
