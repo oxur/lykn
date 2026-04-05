@@ -327,7 +327,7 @@ publish-npm:
 	@NPM_CONFIG__AUTH=$(cat ~/.lykn/npm.token) deno task publish:npm
 
 # Crates in dependency order (leaf crates first, dependent crates later)
-PUBLISH_ORDER := lykn-cli $(CODE_NAME)
+PUBLISH_ORDER := lykn-lang lykn-cli $(CODE_NAME)
 # crates.io rate limit delay (seconds)
 PUBLISH_DELAY := 372
 .PHONY: publish-crates

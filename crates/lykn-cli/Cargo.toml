@@ -10,7 +10,7 @@ categories = ["compilers", "development-tools", "command-line-utilities"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-lykn-lang = { path = "../lykn-lang" }
+lykn-lang = { path = "../lykn-lang", version = "0.3.0" }
 
 [lib]
 name = "lykn_cli"

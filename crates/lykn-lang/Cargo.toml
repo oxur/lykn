@@ -3,6 +3,8 @@ name = "lykn-lang"
 version = "0.3.0"
 edition = "2024"
 description = "lykn language toolchain library — reader, AST, classifier, diagnostics"
+license = "Apache-2.0"
+repository = "https://github.com/oxur/lykn"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
