@@ -156,8 +156,7 @@ impl Analyze for SurfaceForm {
                     scope.exit_scope();
                 }
             }
-            SurfaceForm::Fn { params, body, .. }
-            | SurfaceForm::Lambda { params, body, .. } => {
+            SurfaceForm::Fn { params, body, .. } | SurfaceForm::Lambda { params, body, .. } => {
                 scope.enter_scope();
                 for param in params {
                     scope.introduce(&param.name, param.name_span, false, false);
@@ -225,18 +224,10 @@ impl Analyze for SurfaceForm {
                 track_references_in_expr(target, scope);
                 track_references_in_expr(value, scope);
             }
-            SurfaceForm::ThreadFirst {
-                initial, steps, ..
-            }
-            | SurfaceForm::ThreadLast {
-                initial, steps, ..
-            }
-            | SurfaceForm::SomeThreadFirst {
-                initial, steps, ..
-            }
-            | SurfaceForm::SomeThreadLast {
-                initial, steps, ..
-            } => {
+            SurfaceForm::ThreadFirst { initial, steps, .. }
+            | SurfaceForm::ThreadLast { initial, steps, .. }
+            | SurfaceForm::SomeThreadFirst { initial, steps, .. }
+            | SurfaceForm::SomeThreadLast { initial, steps, .. } => {
                 track_references_in_expr(initial, scope);
                 for step in steps {
                     match step {

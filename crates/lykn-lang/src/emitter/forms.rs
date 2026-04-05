@@ -882,7 +882,11 @@ fn emit_func_single(
         if !ctx.strip_assertions {
             if let Some(ref ret) = clause.returns {
                 let result_var = ctx.gensym.next("result");
-                items.push(list(vec![atom("const"), atom(&result_var), if_to_ternary(last)]));
+                items.push(list(vec![
+                    atom("const"),
+                    atom(&result_var),
+                    if_to_ternary(last),
+                ]));
                 // Use "return value" in the error message instead of the
                 // gensym variable name for a user-friendly message, but
                 // still reference the gensym var for the typeof check.
