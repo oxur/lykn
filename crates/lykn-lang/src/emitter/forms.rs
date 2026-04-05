@@ -2823,4 +2823,2164 @@ mod tests {
             panic!("expected IIFE");
         }
     }
+
+    // =======================================================================
+    // js: namespace interop forms
+    // =======================================================================
+
+    #[test]
+    fn test_js_call() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:call"),
+            args: vec![atom("console:log"), str_lit("hello")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (js:call console:log "hello") -> (console:log "hello")
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("console:log"));
+            if let SExpr::String { value, .. } = &values[1] {
+                assert_eq!(value, "hello");
+            } else {
+                panic!("expected string arg");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_bind_with_this() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:bind"),
+            args: vec![atom("obj:method"), atom("obj")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (js:bind obj:method obj) -> (obj:method:bind obj)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("obj:method:bind"));
+            assert_eq!(values[1].as_atom(), Some("obj"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_bind_without_this() {
+        // Only method, no this arg -> uses "undefined"
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:bind"),
+            args: vec![atom("obj:method")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("obj:method:bind"));
+            assert_eq!(values[1].as_atom(), Some("undefined"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_bind_fallback_non_atom() {
+        // First arg is not an atom -> fallback passthrough
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:bind"),
+            args: vec![num(42.0)],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("js:bind"));
+        } else {
+            panic!("expected fallback list");
+        }
+    }
+
+    #[test]
+    fn test_js_eval() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:eval"),
+            args: vec![str_lit("1 + 2")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (js:eval "1 + 2") -> (eval "1 + 2")
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("eval"));
+            if let SExpr::String { value, .. } = &values[1] {
+                assert_eq!(value, "1 + 2");
+            } else {
+                panic!("expected string");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_eval_no_args() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:eval"),
+            args: vec![],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("eval"));
+            assert_eq!(values[1].as_atom(), Some("undefined"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_eq() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:eq"),
+            args: vec![atom("a"), atom("b")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (js:eq a b) -> (== a b)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=="));
+            assert_eq!(values[1].as_atom(), Some("a"));
+            assert_eq!(values[2].as_atom(), Some("b"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_eq_no_args() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:eq"),
+            args: vec![],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=="));
+            assert_eq!(values[1].as_atom(), Some("undefined"));
+            assert_eq!(values[2].as_atom(), Some("undefined"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_typeof() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:typeof"),
+            args: vec![atom("x")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (js:typeof x) -> (typeof x)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("typeof"));
+            assert_eq!(values[1].as_atom(), Some("x"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_typeof_no_args() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:typeof"),
+            args: vec![],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("typeof"));
+            assert_eq!(values[1].as_atom(), Some("undefined"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_js_unknown_form_passthrough() {
+        let form = SurfaceForm::FunctionCall {
+            head: atom("js:unknown"),
+            args: vec![atom("x")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("js:unknown"));
+            assert_eq!(values[1].as_atom(), Some("x"));
+        } else {
+            panic!("expected passthrough list");
+        }
+    }
+
+    // =======================================================================
+    // Conj / Assoc / Dissoc
+    // =======================================================================
+
+    #[test]
+    fn test_emit_conj() {
+        let form = SurfaceForm::Conj {
+            arr: atom("xs"),
+            value: num(42.0),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (conj xs 42) -> (array (spread xs) 42)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("array"));
+            if let SExpr::List {
+                values: spread_vals,
+                ..
+            } = &values[1]
+            {
+                assert_eq!(spread_vals[0].as_atom(), Some("spread"));
+                assert_eq!(spread_vals[1].as_atom(), Some("xs"));
+            } else {
+                panic!("expected spread");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_assoc() {
+        let form = SurfaceForm::Assoc {
+            obj: atom("m"),
+            pairs: vec![("name".into(), str_lit("Alice"))],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (assoc m :name "Alice") -> (object (spread m) (name "Alice"))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("object"));
+            if let SExpr::List {
+                values: spread_vals,
+                ..
+            } = &values[1]
+            {
+                assert_eq!(spread_vals[0].as_atom(), Some("spread"));
+                assert_eq!(spread_vals[1].as_atom(), Some("m"));
+            } else {
+                panic!("expected spread");
+            }
+            if let SExpr::List { values: pair, .. } = &values[2] {
+                assert_eq!(pair[0].as_atom(), Some("name"));
+            } else {
+                panic!("expected pair");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_dissoc() {
+        let form = SurfaceForm::Dissoc {
+            obj: atom("m"),
+            keys: vec!["name".into()],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be IIFE: ((=> () (const (object ...) m) rest_var))
+        if let SExpr::List { values, .. } = &result[0] {
+            if let SExpr::List { values: arrow, .. } = &values[0] {
+                assert_eq!(arrow[0].as_atom(), Some("=>"));
+                // Body should have const with destructuring pattern
+                if let SExpr::List {
+                    values: const_form, ..
+                } = &arrow[2]
+                {
+                    assert_eq!(const_form[0].as_atom(), Some("const"));
+                } else {
+                    panic!("expected const form in arrow body");
+                }
+            } else {
+                panic!("expected arrow inside IIFE");
+            }
+        } else {
+            panic!("expected IIFE");
+        }
+    }
+
+    // =======================================================================
+    // resolve_cell_target with complex (non-atom) target
+    // =======================================================================
+
+    #[test]
+    fn test_express_complex_target() {
+        // A non-atom target should emit (get <expr> "value")
+        let form = SurfaceForm::Express {
+            target: list(vec![atom("get-cell")]),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("get"));
+            if let SExpr::String { value, .. } = &values[2] {
+                assert_eq!(value, "value");
+            } else {
+                panic!("expected 'value' string");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_swap_complex_target() {
+        let form = SurfaceForm::Swap {
+            target: list(vec![atom("get-cell")]),
+            func: atom("inc"),
+            extra_args: vec![num(1.0)],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("="));
+            // target_val should be (get ... "value")
+            if let SExpr::List {
+                values: get_form, ..
+            } = &values[1]
+            {
+                assert_eq!(get_form[0].as_atom(), Some("get"));
+            } else {
+                panic!("expected get form for complex target");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_reset_complex_target() {
+        let form = SurfaceForm::Reset {
+            target: list(vec![atom("get-cell")]),
+            value: num(0.0),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("="));
+            if let SExpr::List {
+                values: get_form, ..
+            } = &values[1]
+            {
+                assert_eq!(get_form[0].as_atom(), Some("get"));
+            } else {
+                panic!("expected get form");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Threading with Call steps (thread-last bare, empty Call)
+    // =======================================================================
+
+    #[test]
+    fn test_thread_last_bare() {
+        let form = SurfaceForm::ThreadLast {
+            initial: num(1.0),
+            steps: vec![ThreadingStep::Bare(atom("inc"))],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (inc 1)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("inc"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_thread_first_empty_call_returns_acc() {
+        // An empty Call step should return the accumulator unchanged
+        let form = SurfaceForm::ThreadFirst {
+            initial: num(1.0),
+            steps: vec![ThreadingStep::Call(vec![])],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::Number { value, .. } = &result[0] {
+            assert!((value - 1.0).abs() < f64::EPSILON);
+        } else {
+            panic!("expected number (acc returned unchanged)");
+        }
+    }
+
+    #[test]
+    fn test_thread_last_call_with_extra_args() {
+        // (thread-last 1 (add 2 3)) -> (add 2 3 1)
+        let form = SurfaceForm::ThreadLast {
+            initial: num(1.0),
+            steps: vec![ThreadingStep::Call(vec![atom("add"), num(2.0), num(3.0)])],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("add"));
+            assert_eq!(values.len(), 4); // add 2 3 1
+            // Last should be 1.0
+            if let SExpr::Number { value, .. } = values.last().unwrap() {
+                assert!((value - 1.0).abs() < f64::EPSILON);
+            } else {
+                panic!("expected number at end");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // some-> with no steps
+    // =======================================================================
+
+    #[test]
+    fn test_some_thread_no_steps() {
+        let form = SurfaceForm::SomeThreadFirst {
+            initial: atom("x"),
+            steps: vec![],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // IIFE that just returns the initial value
+        if let SExpr::List { values, .. } = &result[0] {
+            if let SExpr::List { values: arrow, .. } = &values[0] {
+                assert_eq!(arrow[0].as_atom(), Some("=>"));
+                // Should contain a return
+                let has_return = arrow.iter().any(|v| {
+                    if let SExpr::List { values, .. } = v {
+                        values.first().and_then(|f| f.as_atom()) == Some("return")
+                    } else {
+                        false
+                    }
+                });
+                assert!(has_return, "should have a return statement");
+            } else {
+                panic!("expected arrow");
+            }
+        } else {
+            panic!("expected IIFE");
+        }
+    }
+
+    #[test]
+    fn test_some_thread_last() {
+        let form = SurfaceForm::SomeThreadLast {
+            initial: atom("x"),
+            steps: vec![ThreadingStep::Bare(atom("inc"))],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be IIFE with null checks
+        if let SExpr::List { values, .. } = &result[0] {
+            if let SExpr::List { values: arrow, .. } = &values[0] {
+                assert_eq!(arrow[0].as_atom(), Some("=>"));
+            } else {
+                panic!("expected arrow");
+            }
+        } else {
+            panic!("expected IIFE");
+        }
+    }
+
+    #[test]
+    fn test_some_thread_multiple_steps() {
+        let form = SurfaceForm::SomeThreadFirst {
+            initial: atom("x"),
+            steps: vec![
+                ThreadingStep::Bare(atom("inc")),
+                ThreadingStep::Bare(atom("double")),
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // IIFE with intermediate null checks
+        if let SExpr::List { values, .. } = &result[0] {
+            if let SExpr::List { values: arrow, .. } = &values[0] {
+                assert_eq!(arrow[0].as_atom(), Some("=>"));
+                // Should have multiple const bindings and null checks
+                let const_count = arrow
+                    .iter()
+                    .filter(|v| {
+                        if let SExpr::List { values, .. } = v {
+                            values.first().and_then(|f| f.as_atom()) == Some("const")
+                        } else {
+                            false
+                        }
+                    })
+                    .count();
+                // At least t0 and t1 const bindings
+                assert!(const_count >= 2, "should have at least 2 const bindings");
+            } else {
+                panic!("expected arrow");
+            }
+        } else {
+            panic!("expected IIFE");
+        }
+    }
+
+    // =======================================================================
+    // Func with return types (void, typed, any)
+    // =======================================================================
+
+    #[test]
+    fn test_func_returns_void() {
+        let form = SurfaceForm::Func {
+            name: "log".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("string", "msg")],
+                returns: Some(ta("void")),
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("console:log"), atom("msg")])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            // void function: no return statement at the end
+            let last = values.last().unwrap();
+            if let SExpr::List { values: last_v, .. } = last {
+                assert_ne!(
+                    last_v[0].as_atom(),
+                    Some("return"),
+                    "void func should not have return"
+                );
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_func_returns_typed() {
+        let form = SurfaceForm::Func {
+            name: "double".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("number", "x")],
+                returns: Some(ta("number")),
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("*"), atom("x"), num(2.0)])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            // Should have a return-type check before the return
+            let has_return = values.iter().any(|v| {
+                if let SExpr::List { values, .. } = v {
+                    values.first().and_then(|f| f.as_atom()) == Some("return")
+                } else {
+                    false
+                }
+            });
+            assert!(has_return, "typed return func should have return");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_func_returns_any() {
+        let form = SurfaceForm::Func {
+            name: "identity".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("any", "x")],
+                returns: Some(ta("any")),
+                pre: None,
+                post: None,
+                body: vec![atom("x")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            // returns any: implicit return, no type check
+            let last = values.last().unwrap();
+            if let SExpr::List { values: last_v, .. } = last {
+                assert_eq!(last_v[0].as_atom(), Some("return"));
+            } else {
+                panic!("expected return");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_func_returns_typed_strip_assertions() {
+        let form = SurfaceForm::Func {
+            name: "double".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("number", "x")],
+                returns: Some(ta("number")),
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("*"), atom("x"), num(2.0)])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = EmitterContext::new(true);
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            // With strip_assertions, just a plain return
+            let last = values.last().unwrap();
+            if let SExpr::List { values: last_v, .. } = last {
+                assert_eq!(last_v[0].as_atom(), Some("return"));
+            } else {
+                panic!("expected return");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Func with pre/post conditions
+    // =======================================================================
+
+    #[test]
+    fn test_func_with_pre_condition() {
+        let form = SurfaceForm::Func {
+            name: "sqrt".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("number", "x")],
+                returns: None,
+                pre: Some(list(vec![atom(">="), atom("x"), num(0.0)])),
+                post: None,
+                body: vec![list(vec![atom("Math:sqrt"), atom("x")])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should have an if block for pre-condition check
+        if let SExpr::List { values, .. } = &result[0] {
+            let has_if = values.iter().any(|v| {
+                if let SExpr::List { values, .. } = v {
+                    values.first().and_then(|f| f.as_atom()) == Some("if")
+                } else {
+                    false
+                }
+            });
+            assert!(has_if, "pre-condition should generate an if check");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_func_with_post_condition() {
+        let form = SurfaceForm::Func {
+            name: "abs".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("number", "x")],
+                returns: None,
+                pre: None,
+                post: Some(list(vec![atom(">="), atom("%"), num(0.0)])),
+                body: vec![list(vec![atom("Math:abs"), atom("x")])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Post-condition: should capture result in gensym, check, then return
+        if let SExpr::List { values, .. } = &result[0] {
+            let has_return = values.iter().any(|v| {
+                if let SExpr::List { values, .. } = v {
+                    values.first().and_then(|f| f.as_atom()) == Some("return")
+                } else {
+                    false
+                }
+            });
+            assert!(has_return, "post-condition path should return");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_func_with_post_and_multi_body() {
+        let form = SurfaceForm::Func {
+            name: "process".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("any", "x")],
+                returns: None,
+                pre: None,
+                post: Some(list(vec![atom("!="), atom("%"), atom("null")])),
+                body: vec![
+                    list(vec![atom("console:log"), atom("x")]),
+                    list(vec![atom("transform"), atom("x")]),
+                ],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Multi-body + post: all but last as statements, last captured
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn test_func_returns_typed_multi_body() {
+        let form = SurfaceForm::Func {
+            name: "process".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![tp("any", "x")],
+                returns: Some(ta("number")),
+                pre: None,
+                post: None,
+                body: vec![
+                    list(vec![atom("console:log"), atom("x")]),
+                    list(vec![atom("+"), atom("x"), num(1.0)]),
+                ],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_returns_typed_empty_body() {
+        let form = SurfaceForm::Func {
+            name: "noop".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![],
+                returns: Some(ta("number")),
+                pre: None,
+                post: None,
+                body: vec![],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_implicit_return_empty_body() {
+        let form = SurfaceForm::Func {
+            name: "noop".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![],
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            let last = values.last().unwrap();
+            if let SExpr::List { values: ret, .. } = last {
+                assert_eq!(ret[0].as_atom(), Some("return"));
+                assert_eq!(ret[1].as_atom(), Some("undefined"));
+            } else {
+                panic!("expected return undefined");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_func_implicit_return_multi_body() {
+        let form = SurfaceForm::Func {
+            name: "process".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![],
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![
+                    list(vec![atom("console:log"), str_lit("a")]),
+                    list(vec![atom("console:log"), str_lit("b")]),
+                    num(42.0),
+                ],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            // Last should be (return 42)
+            let last = values.last().unwrap();
+            if let SExpr::List { values: ret, .. } = last {
+                assert_eq!(ret[0].as_atom(), Some("return"));
+            } else {
+                panic!("expected return");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Func multi-clause with typed dispatch
+    // =======================================================================
+
+    #[test]
+    fn test_func_multi_clause_different_arity() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("any", "x")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("x")],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("any", "x"), tp("any", "y")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![list(vec![atom("+"), atom("x"), atom("y")])],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+            // Should have throw at the end
+            let last = values.last().unwrap();
+            if let SExpr::List { values: throw, .. } = last {
+                assert_eq!(throw[0].as_atom(), Some("throw"));
+            } else {
+                panic!("expected throw");
+            }
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn test_func_multi_clause_with_post() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: None,
+                    post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
+                    body: vec![atom("x")],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_multi_clause_with_pre() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: Some(list(vec![atom(">"), atom("x"), num(0.0)])),
+                    post: None,
+                    body: vec![atom("x")],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_multi_clause_empty_body() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_multi_clause_multi_body() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![
+                        list(vec![atom("console:log"), atom("x")]),
+                        atom("x"),
+                    ],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_multi_clause_post_empty_body() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: None,
+                    post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
+                    body: vec![],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_func_multi_clause_post_multi_body() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: None,
+                    post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
+                    body: vec![
+                        list(vec![atom("console:log"), atom("x")]),
+                        atom("x"),
+                    ],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // build_dispatch_check — various type keywords
+    // =======================================================================
+
+    #[test]
+    fn test_dispatch_check_boolean() {
+        let expr = atom("x");
+        let result = build_dispatch_check("boolean", &expr);
+        assert!(result.is_some());
+        if let Some(SExpr::List { values, .. }) = result {
+            assert_eq!(values[0].as_atom(), Some("==="));
+        }
+    }
+
+    #[test]
+    fn test_dispatch_check_function() {
+        let expr = atom("x");
+        let result = build_dispatch_check("function", &expr);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_dispatch_check_object() {
+        let expr = atom("x");
+        let result = build_dispatch_check("object", &expr);
+        assert!(result.is_some());
+        // Should be (&& (=== typeof "object") (!== x null))
+        if let Some(SExpr::List { values, .. }) = result {
+            assert_eq!(values[0].as_atom(), Some("&&"));
+        }
+    }
+
+    #[test]
+    fn test_dispatch_check_array() {
+        let expr = atom("x");
+        let result = build_dispatch_check("array", &expr);
+        assert!(result.is_some());
+        if let Some(SExpr::List { values, .. }) = result {
+            assert_eq!(values[0].as_atom(), Some("Array:isArray"));
+        }
+    }
+
+    #[test]
+    fn test_dispatch_check_any() {
+        let result = build_dispatch_check("any", &atom("x"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_dispatch_check_user_type() {
+        let expr = atom("x");
+        let result = build_dispatch_check("MyType", &expr);
+        assert!(result.is_some());
+        // User-defined: typeof "object" && !== null && "tag" in x
+        if let Some(SExpr::List { values, .. }) = result {
+            assert_eq!(values[0].as_atom(), Some("&&"));
+        }
+    }
+
+    // =======================================================================
+    // Match with Obj pattern
+    // =======================================================================
+
+    #[test]
+    fn test_match_obj_pattern_statement() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![
+                MatchClause {
+                    pattern: Pattern::Obj {
+                        pairs: vec![
+                            (
+                                "name".into(),
+                                Pattern::Binding {
+                                    name: "n".into(),
+                                    span: s(),
+                                },
+                            ),
+                            ("age".into(), Pattern::Wildcard(s())),
+                        ],
+                        span: s(),
+                    },
+                    guard: None,
+                    body: vec![atom("n")],
+                    span: s(),
+                },
+                MatchClause {
+                    pattern: Pattern::Wildcard(s()),
+                    guard: None,
+                    body: vec![str_lit("unknown")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_match_obj_pattern_value() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Obj {
+                    pairs: vec![(
+                        "name".into(),
+                        Pattern::Binding {
+                            name: "n".into(),
+                            span: s(),
+                        },
+                    )],
+                    span: s(),
+                },
+                guard: None,
+                body: vec![atom("n")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Match with guard clauses
+    // =======================================================================
+
+    #[test]
+    fn test_match_with_guard_statement() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![
+                MatchClause {
+                    pattern: Pattern::Binding {
+                        name: "v".into(),
+                        span: s(),
+                    },
+                    guard: Some(list(vec![atom(">"), atom("v"), num(0.0)])),
+                    body: vec![str_lit("positive")],
+                    span: s(),
+                },
+                MatchClause {
+                    pattern: Pattern::Wildcard(s()),
+                    guard: None,
+                    body: vec![str_lit("other")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_match_with_guard_value() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![
+                MatchClause {
+                    pattern: Pattern::Binding {
+                        name: "v".into(),
+                        span: s(),
+                    },
+                    guard: Some(list(vec![atom(">"), atom("v"), num(0.0)])),
+                    body: vec![str_lit("positive")],
+                    span: s(),
+                },
+                MatchClause {
+                    pattern: Pattern::Wildcard(s()),
+                    guard: None,
+                    body: vec![str_lit("other")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_match_with_guard_multi_body_value() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Binding {
+                    name: "v".into(),
+                    span: s(),
+                },
+                guard: Some(list(vec![atom(">"), atom("v"), num(0.0)])),
+                body: vec![
+                    list(vec![atom("console:log"), atom("v")]),
+                    str_lit("positive"),
+                ],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Match without wildcard (should have throw fallback)
+    // =======================================================================
+
+    #[test]
+    fn test_match_no_wildcard_statement() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Literal(num(1.0)),
+                guard: None,
+                body: vec![str_lit("one")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should have a throw fallback in the else chain
+    }
+
+    #[test]
+    fn test_match_no_wildcard_value() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Literal(num(1.0)),
+                guard: None,
+                body: vec![str_lit("one")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Match with binding pattern (non-wildcard, non-literal)
+    // =======================================================================
+
+    #[test]
+    fn test_match_binding_pattern() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Binding {
+                    name: "v".into(),
+                    span: s(),
+                },
+                guard: None,
+                body: vec![atom("v")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // compile_let_pattern — additional pattern types
+    // =======================================================================
+
+    #[test]
+    fn test_if_let_constructor_pattern() {
+        let mut r = reg();
+        r.register_type(TypeDef {
+            name: "Option".into(),
+            module_path: None,
+            constructors: vec![ConstructorDef {
+                name: "Some".into(),
+                fields: vec![FieldDef {
+                    name: "value".into(),
+                    type_keyword: "any".into(),
+                }],
+                owning_type: "Option".into(),
+                span: s(),
+            }],
+            is_blessed: false,
+            span: s(),
+        })
+        .unwrap();
+
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Constructor {
+                name: "Some".into(),
+                name_span: s(),
+                bindings: vec![Pattern::Binding {
+                    name: "v".into(),
+                    span: s(),
+                }],
+                span: s(),
+            },
+            expr: atom("x"),
+            then_body: atom("v"),
+            else_body: Some(num(0.0)),
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &r);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_if_let_obj_pattern() {
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Obj {
+                pairs: vec![(
+                    "name".into(),
+                    Pattern::Binding {
+                        name: "n".into(),
+                        span: s(),
+                    },
+                )],
+                span: s(),
+            },
+            expr: atom("x"),
+            then_body: atom("n"),
+            else_body: None,
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_if_let_wildcard_pattern() {
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Wildcard(s()),
+            expr: atom("x"),
+            then_body: str_lit("matched"),
+            else_body: None,
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_if_let_literal_pattern() {
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Literal(num(42.0)),
+            expr: atom("x"),
+            then_body: str_lit("matched"),
+            else_body: Some(str_lit("nope")),
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_if_let_statement_no_else() {
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Binding {
+                name: "v".into(),
+                span: s(),
+            },
+            expr: atom("x"),
+            then_body: atom("v"),
+            else_body: None,
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Statement context without else: should be (block (const ...) (if cond then))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("block"));
+        } else {
+            panic!("expected block");
+        }
+    }
+
+    #[test]
+    fn test_if_let_value_no_else() {
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Binding {
+                name: "v".into(),
+                span: s(),
+            },
+            expr: atom("x"),
+            then_body: atom("v"),
+            else_body: None,
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // when-let with constructor/obj patterns
+    // =======================================================================
+
+    #[test]
+    fn test_when_let_constructor_pattern() {
+        let mut r = reg();
+        r.register_type(TypeDef {
+            name: "Option".into(),
+            module_path: None,
+            constructors: vec![ConstructorDef {
+                name: "Some".into(),
+                fields: vec![FieldDef {
+                    name: "value".into(),
+                    type_keyword: "any".into(),
+                }],
+                owning_type: "Option".into(),
+                span: s(),
+            }],
+            is_blessed: false,
+            span: s(),
+        })
+        .unwrap();
+
+        let form = SurfaceForm::WhenLet {
+            pattern: Pattern::Constructor {
+                name: "Some".into(),
+                name_span: s(),
+                bindings: vec![Pattern::Binding {
+                    name: "v".into(),
+                    span: s(),
+                }],
+                span: s(),
+            },
+            expr: atom("x"),
+            body: vec![atom("v")],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &r);
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // step_contains_await
+    // =======================================================================
+
+    #[test]
+    fn test_step_contains_await_bare_atom() {
+        assert!(step_contains_await(&ThreadingStep::Bare(atom("await"))));
+        assert!(!step_contains_await(&ThreadingStep::Bare(atom("inc"))));
+    }
+
+    #[test]
+    fn test_step_contains_await_bare_list() {
+        let step = ThreadingStep::Bare(list(vec![atom("await"), atom("p")]));
+        assert!(step_contains_await(&step));
+    }
+
+    #[test]
+    fn test_step_contains_await_call_head() {
+        let step = ThreadingStep::Call(vec![atom("await"), atom("p")]);
+        assert!(step_contains_await(&step));
+    }
+
+    #[test]
+    fn test_step_contains_await_call_nested() {
+        let step = ThreadingStep::Call(vec![
+            atom("process"),
+            list(vec![atom("await"), atom("p")]),
+        ]);
+        assert!(step_contains_await(&step));
+    }
+
+    #[test]
+    fn test_step_contains_await_call_absent() {
+        let step = ThreadingStep::Call(vec![atom("process"), atom("x")]);
+        assert!(!step_contains_await(&step));
+    }
+
+    // =======================================================================
+    // any_contains_await
+    // =======================================================================
+
+    #[test]
+    fn test_any_contains_await_true() {
+        let exprs = vec![
+            atom("x"),
+            list(vec![atom("await"), atom("p")]),
+        ];
+        assert!(any_contains_await(&exprs));
+    }
+
+    #[test]
+    fn test_any_contains_await_false() {
+        let exprs = vec![atom("x"), num(1.0)];
+        assert!(!any_contains_await(&exprs));
+    }
+
+    // =======================================================================
+    // bool_lit helper
+    // =======================================================================
+
+    #[test]
+    fn test_bool_lit() {
+        if let SExpr::Bool { value, .. } = bool_lit(true) {
+            assert!(value);
+        } else {
+            panic!("expected bool");
+        }
+        if let SExpr::Bool { value, .. } = bool_lit(false) {
+            assert!(!value);
+        } else {
+            panic!("expected bool");
+        }
+    }
+
+    // =======================================================================
+    // MacroDef / ImportMacros passthrough
+    // =======================================================================
+
+    #[test]
+    fn test_emit_macro_def() {
+        let raw = list(vec![atom("defmacro"), atom("my-macro")]);
+        let form = SurfaceForm::MacroDef {
+            name: "my-macro".into(),
+            raw: raw.clone(),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], raw);
+    }
+
+    #[test]
+    fn test_emit_import_macros() {
+        let raw = list(vec![atom("import-macros"), str_lit("./macros.lykn")]);
+        let form = SurfaceForm::ImportMacros {
+            raw: raw.clone(),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], raw);
+    }
+
+    // =======================================================================
+    // emit_expr — nested surface form inside non-surface-form list
+    // =======================================================================
+
+    #[test]
+    fn test_emit_expr_nested_surface_form_in_bind() {
+        // A bind whose value contains a threading form
+        let form = SurfaceForm::Bind {
+            name: atom("x"),
+            type_ann: None,
+            value: list(vec![atom("->"), num(1.0), atom("inc")]),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // The nested (-> 1 inc) should be expanded to (inc 1)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("const"));
+            if let SExpr::List {
+                values: call_vals, ..
+            } = &values[2]
+            {
+                assert_eq!(call_vals[0].as_atom(), Some("inc"));
+            } else {
+                panic!("expected expanded threading form");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_expr_computed_call() {
+        // Head is not an atom (computed call) — recurse on all elements
+        let form = SurfaceForm::FunctionCall {
+            head: list(vec![atom("get-fn")]),
+            args: vec![num(1.0)],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            // Head should be the list (get-fn), recursed
+            assert!(matches!(&values[0], SExpr::List { .. }));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // some-> with Call steps (not just Bare)
+    // =======================================================================
+
+    #[test]
+    fn test_some_thread_first_call_step() {
+        let form = SurfaceForm::SomeThreadFirst {
+            initial: atom("x"),
+            steps: vec![ThreadingStep::Call(vec![atom("add"), num(2.0)])],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Match with multi-body clauses in value context
+    // =======================================================================
+
+    #[test]
+    fn test_match_value_multi_body() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Wildcard(s()),
+                guard: None,
+                body: vec![
+                    list(vec![atom("console:log"), atom("x")]),
+                    str_lit("done"),
+                ],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Match constructor in value context with wildcard bindings
+    // =======================================================================
+
+    #[test]
+    fn test_match_constructor_wildcard_binding() {
+        let mut r = reg();
+        r.register_type(TypeDef {
+            name: "Pair".into(),
+            module_path: None,
+            constructors: vec![ConstructorDef {
+                name: "Pair".into(),
+                fields: vec![
+                    FieldDef {
+                        name: "x".into(),
+                        type_keyword: "any".into(),
+                    },
+                    FieldDef {
+                        name: "y".into(),
+                        type_keyword: "any".into(),
+                    },
+                ],
+                owning_type: "Pair".into(),
+                span: s(),
+            }],
+            is_blessed: false,
+            span: s(),
+        })
+        .unwrap();
+
+        let form = SurfaceForm::Match {
+            target: atom("p"),
+            clauses: vec![MatchClause {
+                pattern: Pattern::Constructor {
+                    name: "Pair".into(),
+                    name_span: s(),
+                    bindings: vec![
+                        Pattern::Binding {
+                            name: "a".into(),
+                            span: s(),
+                        },
+                        Pattern::Wildcard(s()),
+                    ],
+                    span: s(),
+                },
+                guard: None,
+                body: vec![atom("a")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &r);
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // when-let with multi-body in value context
+    // =======================================================================
+
+    #[test]
+    fn test_when_let_value_multi_body() {
+        let form = SurfaceForm::WhenLet {
+            pattern: Pattern::Binding {
+                name: "v".into(),
+                span: s(),
+            },
+            expr: atom("x"),
+            body: vec![
+                list(vec![atom("console:log"), atom("v")]),
+                atom("v"),
+            ],
+            span: s(),
+        };
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Type emission with strip_assertions
+    // =======================================================================
+
+    #[test]
+    fn test_emit_type_with_fields_strip_assertions() {
+        let form = SurfaceForm::Type {
+            name: "Pair".into(),
+            name_span: s(),
+            constructors: vec![Constructor {
+                name: "Pair".into(),
+                name_span: s(),
+                fields: vec![tp("number", "x"), tp("number", "y")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = EmitterContext::new(true);
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // With strip_assertions, no type checks inside the function
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+            // Should not have any if nodes (type checks)
+            let has_if = values.iter().any(|v| {
+                if let SExpr::List { values, .. } = v {
+                    values.first().and_then(|f| f.as_atom()) == Some("if")
+                } else {
+                    false
+                }
+            });
+            assert!(!has_if, "should not have type checks when stripping");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Fn with strip_assertions
+    // =======================================================================
+
+    #[test]
+    fn test_fn_strip_assertions() {
+        let form = SurfaceForm::Fn {
+            params: vec![tp("number", "x")],
+            body: vec![atom("x")],
+            span: s(),
+        };
+        let mut c = EmitterContext::new(true);
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=>"));
+            // No type check if nodes
+            let has_if = values.iter().any(|v| {
+                if let SExpr::List { values, .. } = v {
+                    values.first().and_then(|f| f.as_atom()) == Some("if")
+                } else {
+                    false
+                }
+            });
+            assert!(!has_if, "should not have type checks");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // js: interop via emit_expr (nested in value expressions)
+    // =======================================================================
+
+    #[test]
+    fn test_js_interop_nested_in_bind() {
+        // Bind whose value is a js:typeof call
+        let form = SurfaceForm::Bind {
+            name: atom("t"),
+            type_ann: None,
+            value: list(vec![atom("js:typeof"), atom("x")]),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("const"));
+            if let SExpr::List {
+                values: typeof_form, ..
+            } = &values[2]
+            {
+                assert_eq!(typeof_form[0].as_atom(), Some("typeof"));
+            } else {
+                panic!("expected typeof form");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Multi-clause func strip_assertions
+    // =======================================================================
+
+    #[test]
+    fn test_func_multi_clause_strip_assertions() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("number", "x")],
+                    returns: None,
+                    pre: Some(list(vec![atom(">"), atom("x"), num(0.0)])),
+                    post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
+                    body: vec![atom("x")],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = EmitterContext::new(true);
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+    }
+
+    // =======================================================================
+    // Single-arity condition in multi-clause (no &&, just arity check)
+    // =======================================================================
+
+    #[test]
+    fn test_func_multi_clause_any_types_single_condition() {
+        let form = SurfaceForm::Func {
+            name: "f".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![tp("any", "x")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("x")],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![tp("any", "x"), tp("any", "y")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![list(vec![atom("+"), atom("x"), atom("y")])],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // When all params are "any", dispatch condition is just arity check (no &&)
+        if let SExpr::List { values, .. } = &result[0] {
+            // Find the first if block
+            for v in values.iter() {
+                if let SExpr::List { values: if_vals, .. } = v {
+                    if if_vals.first().and_then(|f| f.as_atom()) == Some("if") {
+                        // The condition should be (=== args:length N) directly
+                        if let SExpr::List {
+                            values: cond_vals, ..
+                        } = &if_vals[1]
+                        {
+                            assert_eq!(
+                                cond_vals[0].as_atom(),
+                                Some("==="),
+                                "single condition should be ==="
+                            );
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // =======================================================================
+    // Match statement with multiple literal clauses (builds else-chain)
+    // =======================================================================
+
+    #[test]
+    fn test_match_statement_multiple_literals_else_chain() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![
+                MatchClause {
+                    pattern: Pattern::Literal(num(1.0)),
+                    guard: None,
+                    body: vec![str_lit("one")],
+                    span: s(),
+                },
+                MatchClause {
+                    pattern: Pattern::Literal(num(2.0)),
+                    guard: None,
+                    body: vec![str_lit("two")],
+                    span: s(),
+                },
+                MatchClause {
+                    pattern: Pattern::Wildcard(s()),
+                    guard: None,
+                    body: vec![str_lit("other")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be nested if/else chain
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("block"));
+            // The chain element should be (if ... ... (if ... ... ...))
+            if let SExpr::List {
+                values: if_form, ..
+            } = &values[2]
+            {
+                assert_eq!(if_form[0].as_atom(), Some("if"));
+                // The else branch should also be an if
+                if let SExpr::List {
+                    values: else_form, ..
+                } = &if_form[3]
+                {
+                    assert_eq!(else_form[0].as_atom(), Some("if"));
+                } else {
+                    panic!("expected nested if in else");
+                }
+            } else {
+                panic!("expected if form");
+            }
+        } else {
+            panic!("expected block");
+        }
+    }
+
+    // =======================================================================
+    // Swap with extra_args
+    // =======================================================================
+
+    #[test]
+    fn test_swap_with_extra_args() {
+        let form = SurfaceForm::Swap {
+            target: atom("counter"),
+            func: atom("add"),
+            extra_args: vec![num(5.0)],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // (= counter:value (add counter:value 5))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("="));
+            if let SExpr::List { values: call, .. } = &values[2] {
+                assert_eq!(call[0].as_atom(), Some("add"));
+                assert_eq!(call.len(), 3); // add counter:value 5
+            } else {
+                panic!("expected call");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Dissoc with multiple keys
+    // =======================================================================
+
+    #[test]
+    fn test_dissoc_multiple_keys() {
+        let form = SurfaceForm::Dissoc {
+            obj: atom("m"),
+            keys: vec!["name".into(), "age".into()],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // IIFE with destructuring pattern that has 2 alias entries + rest
+        if let SExpr::List { values, .. } = &result[0] {
+            if let SExpr::List { values: arrow, .. } = &values[0] {
+                // arrow[2] should be the const with object pattern
+                if let SExpr::List {
+                    values: const_form, ..
+                } = &arrow[2]
+                {
+                    if let SExpr::List {
+                        values: pattern, ..
+                    } = &const_form[1]
+                    {
+                        assert_eq!(pattern[0].as_atom(), Some("object"));
+                        // 2 alias + 1 rest = 3 entries + "object" head = 4
+                        assert_eq!(pattern.len(), 4);
+                    }
+                }
+            }
+        }
+    }
 }
