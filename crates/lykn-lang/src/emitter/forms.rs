@@ -5,7 +5,7 @@ use crate::ast::surface::{
 };
 use crate::reader::source_loc::Span;
 
-use super::context::EmitterContext;
+use super::context::{EmitterContext, ExprContext};
 use super::contracts::{emit_post_check, emit_pre_check};
 use super::type_checks::emit_type_check;
 
@@ -223,8 +223,12 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
                     return emit_js_interop(head_name, &values[1..], ctx, registry);
                 }
                 if crate::classifier::dispatch::is_surface_form(head_name) {
-                    // This subexpression is a surface form — classify and emit it
-                    match crate::classifier::classify_expr(expr) {
+                    // This subexpression is a surface form — classify and emit it.
+                    // Nested surface forms are always in Value position (they need
+                    // to produce a result for the enclosing expression).
+                    let saved_ctx = ctx.expr_context;
+                    ctx.expr_context = ExprContext::Value;
+                    let result = match crate::classifier::classify_expr(expr) {
                         Ok(surface_form) => {
                             let emitted = emit_form(&surface_form, ctx, registry);
                             if emitted.len() == 1 {
@@ -239,7 +243,9 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
                             }
                         }
                         Err(_) => expr.clone(),
-                    }
+                    };
+                    ctx.expr_context = saved_ctx;
+                    result
                 } else {
                     // Not a surface form — recursively process all subexpressions
                     let new_values: Vec<SExpr> =
@@ -1082,6 +1088,86 @@ fn emit_match(
     ctx: &mut EmitterContext,
     registry: &TypeRegistry,
 ) -> SExpr {
+    match ctx.expr_context {
+        ExprContext::Statement => emit_match_statement(target, clauses, ctx, registry),
+        _ => emit_match_iife(target, clauses, ctx, registry),
+    }
+}
+
+/// Emit a match as a bare if/else chain (statement position — result unused).
+fn emit_match_statement(
+    target: &SExpr,
+    clauses: &[MatchClause],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let target_var = ctx.gensym.next("target");
+    let target_binding = list(vec![
+        atom("const"),
+        atom(&target_var),
+        emit_expr(target, ctx, registry),
+    ]);
+
+    // Collect (condition, block) tuples; stop at wildcard
+    let mut clause_data: Vec<(Option<SExpr>, SExpr)> = Vec::new();
+    let mut wildcard_block: Option<SExpr> = None;
+
+    for clause in clauses {
+        let (condition, bindings) = compile_pattern(&clause.pattern, &target_var, registry);
+        let clause_body = emit_body(&clause.body, ctx, registry);
+
+        let mut block_items = vec![atom("block")];
+        block_items.extend(bindings);
+
+        if let Some(ref guard) = clause.guard {
+            let mut inner_block = vec![atom("block")];
+            inner_block.extend(clause_body);
+            block_items.push(list(vec![atom("if"), guard.clone(), list(inner_block)]));
+        } else {
+            block_items.extend(clause_body);
+        }
+
+        let block = list(block_items);
+
+        if condition.is_some() {
+            clause_data.push((condition, block));
+        } else {
+            wildcard_block = Some(block);
+            break;
+        }
+    }
+
+    // Build the else-chain fallback
+    let fallback = wildcard_block.unwrap_or_else(|| {
+        list(vec![
+            atom("block"),
+            list(vec![
+                atom("throw"),
+                list(vec![
+                    atom("new"),
+                    atom("Error"),
+                    str_lit("match: no matching pattern"),
+                ]),
+            ]),
+        ])
+    });
+
+    // Build nested if/else from the end
+    let mut chain = fallback;
+    for (cond, block) in clause_data.into_iter().rev() {
+        chain = list(vec![atom("if"), cond.unwrap(), block, chain]);
+    }
+
+    list(vec![atom("block"), target_binding, chain])
+}
+
+/// Emit a match as an IIFE (value position — result needed).
+fn emit_match_iife(
+    target: &SExpr,
+    clauses: &[MatchClause],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
     // Await detection
     let target_has_await = contains_await(target);
     let body_has_await = clauses
@@ -1101,7 +1187,6 @@ fn emit_match(
         (None, emit_expr(target, ctx, registry))
     };
 
-    // Always IIFE: ((=> () (const _t expr) [if-chains] [throw]))
     let target_var = ctx.gensym.next("target");
     let mut body = vec![
         atom("=>"),
@@ -1119,9 +1204,6 @@ fn emit_match(
         block_items.extend(bindings);
 
         if let Some(ref guard) = clause.guard {
-            // With guard: wrap body in nested if
-            let mut guarded = vec![atom("if"), guard.clone(), list(vec![atom("block")])];
-            // Replace the empty block with one containing returns
             let mut inner_block = vec![atom("block")];
             for (i, expr) in clause_body.iter().enumerate() {
                 if i == clause_body.len() - 1 {
@@ -1130,10 +1212,8 @@ fn emit_match(
                     inner_block.push(expr.clone());
                 }
             }
-            guarded[2] = list(inner_block);
-            block_items.push(list(guarded));
+            block_items.push(list(vec![atom("if"), guard.clone(), list(inner_block)]));
         } else {
-            // Without guard: add body with return for last expr
             for (i, expr) in clause_body.iter().enumerate() {
                 if i == clause_body.len() - 1 {
                     block_items.push(list(vec![atom("return"), expr.clone()]));
@@ -1146,10 +1226,9 @@ fn emit_match(
         if let Some(cond) = condition {
             body.push(list(vec![atom("if"), cond, list(block_items)]));
         } else {
-            // Wildcard/binding with no condition — unconditional block
             has_wildcard = true;
             body.push(list(block_items));
-            break; // No further clauses needed after wildcard
+            break;
         }
     }
 
@@ -1171,7 +1250,6 @@ fn emit_match(
         list(vec![list(body)])
     };
 
-    // Combine: if we hoisted, emit block with hoist + iife
     if let Some(hoist) = hoist_stmt {
         list(vec![atom("block"), hoist, iife])
     } else {
@@ -1289,6 +1367,60 @@ fn emit_if_let(
     ctx: &mut EmitterContext,
     registry: &TypeRegistry,
 ) -> SExpr {
+    match ctx.expr_context {
+        ExprContext::Statement => {
+            emit_if_let_statement(pattern, expr, then_body, else_body, ctx, registry)
+        }
+        _ => emit_if_let_iife(pattern, expr, then_body, else_body, ctx, registry),
+    }
+}
+
+/// Emit if-let as a bare if/else (statement position).
+fn emit_if_let_statement(
+    pattern: &Pattern,
+    expr: &SExpr,
+    then_body: &SExpr,
+    else_body: Option<&SExpr>,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let t = ctx.gensym.next("t");
+    let binding = list(vec![
+        atom("const"),
+        atom(&t),
+        emit_expr(expr, ctx, registry),
+    ]);
+
+    let (condition, bindings) = compile_let_pattern(pattern, &t, registry);
+
+    let mut then_block = vec![atom("block")];
+    then_block.extend(bindings);
+    then_block.push(emit_expr(then_body, ctx, registry));
+
+    let if_form = if let Some(else_expr) = else_body {
+        let else_block = list(vec![atom("block"), emit_expr(else_expr, ctx, registry)]);
+        list(vec![
+            atom("if"),
+            condition,
+            list(then_block),
+            else_block,
+        ])
+    } else {
+        list(vec![atom("if"), condition, list(then_block)])
+    };
+
+    list(vec![atom("block"), binding, if_form])
+}
+
+/// Emit if-let as an IIFE (value position).
+fn emit_if_let_iife(
+    pattern: &Pattern,
+    expr: &SExpr,
+    then_body: &SExpr,
+    else_body: Option<&SExpr>,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
     // Await detection
     let expr_has_await = contains_await(expr);
     let body_has_await = contains_await(then_body) || else_body.is_some_and(contains_await);
@@ -1306,7 +1438,6 @@ fn emit_if_let(
         (None, emit_expr(expr, ctx, registry))
     };
 
-    // IIFE: ((=> () (const _t expr) (if <check> (block [bindings] (return then)) (block (return else)))))
     let t = ctx.gensym.next("t");
     let mut body = vec![
         atom("=>"),
@@ -1338,14 +1469,12 @@ fn emit_if_let(
         body.push(list(vec![atom("if"), condition, list(then_block)]));
     }
 
-    // Strategy 2: wrap IIFE in async + await if body contains await
     let iife = if body_has_await {
         wrap_iife_async(body)
     } else {
         list(vec![list(body)])
     };
 
-    // Combine: if we hoisted, emit block with hoist + iife
     if let Some(hoist) = hoist_stmt {
         list(vec![atom("block"), hoist, iife])
     } else {
@@ -1354,6 +1483,50 @@ fn emit_if_let(
 }
 
 fn emit_when_let(
+    pattern: &Pattern,
+    expr: &SExpr,
+    body_exprs: &[SExpr],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    match ctx.expr_context {
+        ExprContext::Statement => {
+            emit_when_let_statement(pattern, expr, body_exprs, ctx, registry)
+        }
+        _ => emit_when_let_iife(pattern, expr, body_exprs, ctx, registry),
+    }
+}
+
+/// Emit when-let as a bare if (statement position).
+fn emit_when_let_statement(
+    pattern: &Pattern,
+    expr: &SExpr,
+    body_exprs: &[SExpr],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let t = ctx.gensym.next("t");
+    let binding = list(vec![
+        atom("const"),
+        atom(&t),
+        emit_expr(expr, ctx, registry),
+    ]);
+
+    let (condition, bindings) = compile_let_pattern(pattern, &t, registry);
+
+    let mut then_block = vec![atom("block")];
+    then_block.extend(bindings);
+    then_block.extend(emit_body(body_exprs, ctx, registry));
+
+    list(vec![
+        atom("block"),
+        binding,
+        list(vec![atom("if"), condition, list(then_block)]),
+    ])
+}
+
+/// Emit when-let as an IIFE (value position).
+fn emit_when_let_iife(
     pattern: &Pattern,
     expr: &SExpr,
     body_exprs: &[SExpr],
@@ -1377,7 +1550,6 @@ fn emit_when_let(
         (None, emit_expr(expr, ctx, registry))
     };
 
-    // IIFE: ((=> () (const _t expr) (if <check> (block [bindings] (return body)))))
     let t = ctx.gensym.next("t");
     let mut body = vec![
         atom("=>"),
@@ -1401,14 +1573,12 @@ fn emit_when_let(
 
     body.push(list(vec![atom("if"), condition, list(then_block)]));
 
-    // Strategy 2: wrap IIFE in async + await if body contains await
     let iife = if body_has_await {
         wrap_iife_async(body)
     } else {
         list(vec![list(body)])
     };
 
-    // Combine: if we hoisted, emit block with hoist + iife
     if let Some(hoist) = hoist_stmt {
         list(vec![atom("block"), hoist, iife])
     } else {
@@ -1558,6 +1728,12 @@ mod tests {
 
     fn ctx() -> EmitterContext {
         EmitterContext::new(false)
+    }
+
+    fn ctx_value() -> EmitterContext {
+        let mut c = EmitterContext::new(false);
+        c.expr_context = ExprContext::Value;
+        c
     }
 
     fn reg() -> TypeRegistry {
@@ -1952,10 +2128,53 @@ mod tests {
             ],
             span: s(),
         };
+        // Statement context: bare if/else chain
         let mut c = ctx();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
-        // IIFE: ((=> () ...))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("block"));
+            // Second element: (const target__gensymN x)
+            if let SExpr::List { values: binding, .. } = &values[1] {
+                assert_eq!(binding[0].as_atom(), Some("const"));
+            } else {
+                panic!("expected const binding");
+            }
+            // Third element: (if ...)
+            if let SExpr::List { values: if_form, .. } = &values[2] {
+                assert_eq!(if_form[0].as_atom(), Some("if"));
+            } else {
+                panic!("expected if form");
+            }
+        } else {
+            panic!("expected block");
+        }
+    }
+
+    #[test]
+    fn test_emit_match_literal_value_context() {
+        let form = SurfaceForm::Match {
+            target: atom("x"),
+            clauses: vec![
+                MatchClause {
+                    pattern: Pattern::Literal(num(1.0)),
+                    guard: None,
+                    body: vec![str_lit("one")],
+                    span: s(),
+                },
+                MatchClause {
+                    pattern: Pattern::Wildcard(s()),
+                    guard: None,
+                    body: vec![str_lit("other")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        // Value context: IIFE
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
         if let SExpr::List { values, .. } = &result[0] {
             if let SExpr::List { values: arrow, .. } = &values[0] {
                 assert_eq!(arrow[0].as_atom(), Some("=>"));
@@ -2101,10 +2320,33 @@ mod tests {
             else_body: Some(num(0.0)),
             span: s(),
         };
+        // Statement context: bare if/else
         let mut c = ctx();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
-        // IIFE
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("block"));
+        } else {
+            panic!("expected block");
+        }
+    }
+
+    #[test]
+    fn test_emit_if_let_value_context() {
+        let form = SurfaceForm::IfLet {
+            pattern: Pattern::Binding {
+                name: "v".into(),
+                span: s(),
+            },
+            expr: atom("x"),
+            then_body: atom("v"),
+            else_body: Some(num(0.0)),
+            span: s(),
+        };
+        // Value context: IIFE
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
         if let SExpr::List { values, .. } = &result[0] {
             if let SExpr::List { values: arrow, .. } = &values[0] {
                 assert_eq!(arrow[0].as_atom(), Some("=>"));
@@ -2129,10 +2371,32 @@ mod tests {
             body: vec![atom("v")],
             span: s(),
         };
+        // Statement context: bare if
         let mut c = ctx();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
-        // IIFE
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("block"));
+        } else {
+            panic!("expected block");
+        }
+    }
+
+    #[test]
+    fn test_emit_when_let_value_context() {
+        let form = SurfaceForm::WhenLet {
+            pattern: Pattern::Binding {
+                name: "v".into(),
+                span: s(),
+            },
+            expr: atom("x"),
+            body: vec![atom("v")],
+            span: s(),
+        };
+        // Value context: IIFE
+        let mut c = ctx_value();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
         if let SExpr::List { values, .. } = &result[0] {
             if let SExpr::List { values: arrow, .. } = &values[0] {
                 assert_eq!(arrow[0].as_atom(), Some("=>"));
@@ -2262,7 +2526,7 @@ mod tests {
             }],
             span: s(),
         };
-        let mut c = ctx();
+        let mut c = ctx_value();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
         // Should be (block (const await__gensymN ...) ((=> () ...)))
@@ -2310,7 +2574,7 @@ mod tests {
             }],
             span: s(),
         };
-        let mut c = ctx();
+        let mut c = ctx_value();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
         // Should be (await ((async (=> () ...))))
@@ -2349,7 +2613,7 @@ mod tests {
             }],
             span: s(),
         };
-        let mut c = ctx();
+        let mut c = ctx_value();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
         // Should be (block (const await__gensym ...) (await ((async (=> () ...)))))
@@ -2468,7 +2732,7 @@ mod tests {
             else_body: None,
             span: s(),
         };
-        let mut c = ctx();
+        let mut c = ctx_value();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
         // Should be (await ((async (=> () ...))))
@@ -2518,7 +2782,7 @@ mod tests {
             ])],
             span: s(),
         };
-        let mut c = ctx();
+        let mut c = ctx_value();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
         if let SExpr::List { values, .. } = &result[0] {
@@ -2542,7 +2806,8 @@ mod tests {
             }],
             span: s(),
         };
-        let mut c = ctx();
+        // Value context: plain IIFE (no async wrapper)
+        let mut c = ctx_value();
         let result = emit_form(&form, &mut c, &reg());
         assert_eq!(result.len(), 1);
         // Should be plain IIFE: ((=> () ...))
