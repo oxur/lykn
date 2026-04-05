@@ -7,7 +7,7 @@ use crate::reader::source_loc::Span;
 
 use super::context::{EmitterContext, ExprContext};
 use super::contracts::{emit_post_check, emit_pre_check};
-use super::type_checks::emit_type_check;
+use super::type_checks::{emit_return_type_check, emit_type_check};
 
 // ---------------------------------------------------------------------------
 // Kernel SExpr construction helpers
@@ -125,7 +125,7 @@ pub fn emit_form(
         SurfaceForm::Bind { name, value, .. } => emit_bind(name, value, ctx, registry),
         SurfaceForm::Obj { pairs, .. } => vec![emit_obj(pairs, ctx, registry)],
         SurfaceForm::Cell { value, .. } => vec![emit_cell(value, ctx, registry)],
-        SurfaceForm::Express { target, .. } => vec![emit_express(target)],
+        SurfaceForm::Express { target, .. } => vec![emit_express(target, ctx, registry)],
         SurfaceForm::Swap {
             target,
             func,
@@ -382,13 +382,33 @@ fn emit_cell(value: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) -
     ])
 }
 
-fn emit_express(target: &SExpr) -> SExpr {
+/// Resolve a cell target to a `:value` accessor.
+///
+/// For atoms, returns `name:value` directly. For complex expressions,
+/// emits the expression and appends `:value` via property access.
+fn resolve_cell_target(
+    target: &SExpr,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
     if let SExpr::Atom { value, .. } = target {
         atom(&format!("{value}:value"))
     } else {
-        // Fallback: return target as-is (should not happen with valid input)
-        target.clone()
+        // Complex expression: emit and access :value property
+        list(vec![
+            atom("get"),
+            emit_expr(target, ctx, registry),
+            str_lit("value"),
+        ])
     }
+}
+
+fn emit_express(
+    target: &SExpr,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    resolve_cell_target(target, ctx, registry)
 }
 
 fn emit_swap(
@@ -398,11 +418,7 @@ fn emit_swap(
     ctx: &mut EmitterContext,
     registry: &TypeRegistry,
 ) -> SExpr {
-    let target_name = target
-        .as_atom()
-        .map(|s| format!("{s}:value"))
-        .unwrap_or_default();
-    let target_val = atom(&target_name);
+    let target_val = resolve_cell_target(target, ctx, registry);
 
     let mut call_args = vec![emit_expr(func, ctx, registry), target_val.clone()];
     for arg in extra_args {
@@ -418,13 +434,10 @@ fn emit_reset(
     ctx: &mut EmitterContext,
     registry: &TypeRegistry,
 ) -> SExpr {
-    let target_name = target
-        .as_atom()
-        .map(|s| format!("{s}:value"))
-        .unwrap_or_default();
+    let target_val = resolve_cell_target(target, ctx, registry);
     list(vec![
         atom("="),
-        atom(&target_name),
+        target_val,
         emit_expr(value, ctx, registry),
     ])
 }
@@ -855,9 +868,15 @@ fn emit_func_single(
             if let Some(ref ret) = clause.returns {
                 let result_var = ctx.gensym.next("result");
                 items.push(list(vec![atom("const"), atom(&result_var), last]));
-                if let Some(check) =
-                    emit_type_check(&result_var, &ret.name, name, "return", ret.span)
-                {
+                // Use "return value" in the error message instead of the
+                // gensym variable name for a user-friendly message, but
+                // still reference the gensym var for the typeof check.
+                if let Some(check) = emit_return_type_check(
+                    &result_var,
+                    &ret.name,
+                    name,
+                    ret.span,
+                ) {
                     items.push(check);
                 }
                 items.push(list(vec![atom("return"), atom(&result_var)]));

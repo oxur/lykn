@@ -70,6 +70,22 @@ fn build_check(param_name: &str, type_keyword: &str) -> Option<SExpr> {
             list(vec![atom("==="), p, atom("null")]),
         ])),
         "array" => Some(list(vec![atom("!"), list(vec![atom("Array:isArray"), p])])),
+        "promise" => Some(list(vec![
+            atom("||"),
+            list(vec![
+                atom("!=="),
+                list(vec![atom("typeof"), p.clone()]),
+                str_lit("object"),
+            ]),
+            list(vec![
+                atom("||"),
+                list(vec![atom("==="), p.clone(), atom("null")]),
+                list(vec![
+                    atom("!"),
+                    list(vec![atom("instanceof"), p, atom("Promise")]),
+                ]),
+            ]),
+        ])),
         // User-defined type: check it's a tagged object
         _ => Some(list(vec![
             atom("||"),
@@ -85,6 +101,37 @@ fn build_check(param_name: &str, type_keyword: &str) -> Option<SExpr> {
             ]),
         ])),
     }
+}
+
+/// Emit a return-type check that uses a user-friendly label in the error
+/// message instead of the gensym variable name.
+///
+/// The `result_var` is the gensym variable holding the return value (used
+/// for the `typeof` check), but the error message says `"return value"`
+/// instead of `"result__gensym0"`.
+pub fn emit_return_type_check(
+    result_var: &str,
+    type_keyword: &str,
+    func_name: &str,
+    span: Span,
+) -> Option<SExpr> {
+    let check = build_check(result_var, type_keyword)?;
+    let message = list(vec![
+        atom("+"),
+        str_lit(&format!(
+            "{func_name}: return value expected {type_keyword}, got "
+        )),
+        list(vec![atom("typeof"), atom(result_var)]),
+    ]);
+    let _ = span;
+    Some(list(vec![
+        atom("if"),
+        check,
+        list(vec![
+            atom("throw"),
+            list(vec![atom("new"), atom("TypeError"), message]),
+        ]),
+    ]))
 }
 
 /// Build the error message expression for a type mismatch.
@@ -184,6 +231,21 @@ mod tests {
                 assert_eq!(check[0].as_atom(), Some("!"));
             } else {
                 panic!("expected ! check");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_promise_check() {
+        let result = emit_type_check("p", "promise", "f", "arg", Span::default()).unwrap();
+        if let SExpr::List { values, .. } = &result {
+            if let SExpr::List { values: check, .. } = &values[1] {
+                // (|| (!== (typeof p) "object") (|| (=== p null) (! (instanceof p Promise))))
+                assert_eq!(check[0].as_atom(), Some("||"));
+            } else {
+                panic!("expected || check");
             }
         } else {
             panic!("expected list");
