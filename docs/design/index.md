@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0028 | Fix `lykn compile` Rust CLI Bugs | Draft | 2026-04-05 |
 | 0027 | lykn v0.3.0 — Implementation Plan | Final | 2026-04-04 |
 | 0026 | DD-21: Type Analysis and Exhaustiveness | Final | 2026-04-04 |
 | 0025 | DD-20: Rust Surface Compiler Architecture | Final | 2026-04-04 |
@@ -35,6 +36,10 @@ This index is automatically generated. Do not edit manually.
 | 0001 | DD-01: Colon Syntax and camelCase Conversion | Final | 2026-03-26 |
 
 ## Documents by State
+
+### Draft
+
+- [0028 - Fix `lykn compile` Rust CLI Bugs](01-draft/0028-fix-lykn-compile-rust-cli-bugs.md)
 
 ### Final
 

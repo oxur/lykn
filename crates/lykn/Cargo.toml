@@ -1,6 +1,6 @@
 [package]
 name = "lykn"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "S-expression syntax for JavaScript"
 license = "Apache-2.0"
@@ -9,4 +9,4 @@ keywords = ["lisp", "javascript", "s-expression", "compiler", "formatter"]
 categories = ["compilers", "development-tools"]
 
 [dependencies]
-lykn-cli = { path = "../lykn-cli", version = "0.3.0" }
+lykn-cli = { path = "../lykn-cli", version = "0.3.1" }
