@@ -203,8 +203,8 @@ deno eval "import {lykn} from './src/index.js'; \
   eval(lykn(src))"
 
 # Serve the browser examples (needs a local server for external .lykn files)
-deno run --allow-net --allow-read jsr:@std/http@1/file-server
-# Then open http://localhost:8000/examples/surface/browser.html
+deno run --allow-net --allow-read jsr:@std/http@1/file-server --port 5099
+# Then open http://localhost:5099/examples/surface/browser.html
 ```
 
 Both `examples/surface/` (recommended) and `examples/kernel/` are available.
