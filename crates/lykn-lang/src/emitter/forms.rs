@@ -283,16 +283,17 @@ fn emit_body(body: &[SExpr], ctx: &mut EmitterContext, registry: &TypeRegistry) 
 ///
 /// If the expression is not an `(if ...)` form, it is returned unchanged.
 fn if_to_ternary(expr: SExpr) -> SExpr {
-    if let SExpr::List { values, span } = &expr {
-        if values.len() >= 3 && values[0].as_atom() == Some("if") {
-            // (if cond then) or (if cond then else)
-            let mut new_values = vec![atom("?")];
-            new_values.extend(values[1..].iter().cloned());
-            return SExpr::List {
-                values: new_values,
-                span: *span,
-            };
-        }
+    if let SExpr::List { values, span } = &expr
+        && values.len() >= 3
+        && values[0].as_atom() == Some("if")
+    {
+        // (if cond then) or (if cond then else)
+        let mut new_values = vec![atom("?")];
+        new_values.extend(values[1..].iter().cloned());
+        return SExpr::List {
+            values: new_values,
+            span: *span,
+        };
     }
     expr
 }
