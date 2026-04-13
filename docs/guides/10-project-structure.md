@@ -342,10 +342,10 @@ the edges.
     "@shared/": "./shared/"
   },
   "tasks": {
-    "build": "lykn compile src/ -o dist/",
+    "build": "make build",
     "dev": "deno run --watch --allow-net --allow-read dist/main.js",
-    "test": "deno test --allow-all",
-    "check": "deno lint dist/ && deno test --allow-all"
+    "test": "make build && deno test --allow-all",
+    "check": "make build && deno lint dist/ && deno test --allow-all"
   },
   "compilerOptions": {
     "checkJs": true
