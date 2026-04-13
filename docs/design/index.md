@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0031 | DD-22: Surface Equality and Logical Operators | Final | 2026-04-12 |
 | 0030 | Pure Rust Kernel→JS Codegen | Active | 2026-04-05 |
 | 0029 | DD-18.1: Method Calls in Threading Macros | Active | 2026-04-05 |
 | 0028 | Fix `lykn compile` Rust CLI Bugs | Draft | 2026-04-05 |
@@ -28,7 +29,7 @@ This index is automatically generated. Do not edit manually.
 | 0011 | Designing a macro system for lykn | Final | 2026-03-26 |
 | 0010 | Lykn v0.1.0 — Implementation Plan | Final | 2026-03-26 |
 | 0009 | DD-09: v0.1.0 Scope and Phasing | Final | 2026-03-26 |
-| 0008 | DD-08: Special Atoms, Update Operators, and Miscellaneous Forms | Final | 2026-03-26 |
+| 0008 | DD-08: Special Atoms, Update Operators, and Miscellaneous Forms | Final | 2026-04-12 |
 | 0007 | DD-07: Class Syntax | Final | 2026-03-26 |
 | 0006 | DD-06: Destructuring Patterns | Final | 2026-03-26 |
 | 0005 | DD-05: Template Literals | Final | 2026-03-26 |
@@ -50,6 +51,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Final
 
+- [0031 - DD-22: Surface Equality and Logical Operators](06-final/0031-dd-22-surface-equality-and-logical-operators.md)
 - [0027 - lykn v0.3.0 — Implementation Plan](06-final/0027-lykn-v0.3.0-implementation-plan.md)
 - [0026 - DD-21: Type Analysis and Exhaustiveness](06-final/0026-dd-21-type-analysis-and-exhaustiveness.md)
 - [0025 - DD-20: Rust Surface Compiler Architecture](06-final/0025-dd-20-rust-surface-compiler-architecture.md)
