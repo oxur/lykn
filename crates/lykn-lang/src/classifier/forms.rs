@@ -72,6 +72,11 @@ fn classify_surface_form(
         "dissoc" => classify_dissoc(args, span),
         "macro" => classify_macro_def(args, span),
         "import-macros" => classify_import_macros(args, span),
+        "=" => classify_eq(args, span),
+        "!=" => classify_not_eq(args, span),
+        "and" => classify_and(args, span),
+        "or" => classify_or(args, span),
+        "not" => classify_not(args, span),
         _ => Err(Diagnostic {
             severity: Severity::Error,
             message: format!("unknown surface form: {name}"),
@@ -744,6 +749,61 @@ fn classify_import_macros(args: &[SExpr], span: Span) -> Result<SurfaceForm, Dia
         span,
     };
     Ok(SurfaceForm::ImportMacros { raw, span })
+}
+
+// ---------------------------------------------------------------------------
+// Equality and logical operators (DD-22)
+// ---------------------------------------------------------------------------
+
+fn classify_eq(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() < 2 {
+        return Err(err("= requires at least 2 arguments: (= a b)", span));
+    }
+    Ok(SurfaceForm::Eq {
+        args: args.to_vec(),
+        span,
+    })
+}
+
+fn classify_not_eq(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() != 2 {
+        return Err(err("!= requires exactly 2 arguments: (!= a b)", span));
+    }
+    Ok(SurfaceForm::NotEq {
+        left: args[0].clone(),
+        right: args[1].clone(),
+        span,
+    })
+}
+
+fn classify_and(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() < 2 {
+        return Err(err("and requires at least 2 arguments: (and a b)", span));
+    }
+    Ok(SurfaceForm::And {
+        args: args.to_vec(),
+        span,
+    })
+}
+
+fn classify_or(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() < 2 {
+        return Err(err("or requires at least 2 arguments: (or a b)", span));
+    }
+    Ok(SurfaceForm::Or {
+        args: args.to_vec(),
+        span,
+    })
+}
+
+fn classify_not(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() != 1 {
+        return Err(err("not requires exactly 1 argument: (not x)", span));
+    }
+    Ok(SurfaceForm::Not {
+        operand: args[0].clone(),
+        span,
+    })
 }
 
 fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<TypedParam>, Diagnostic> {
@@ -2515,5 +2575,203 @@ mod tests {
     fn test_classify_form_keyword_is_kernel_passthrough() {
         let result = classify_form(&kw("something")).unwrap();
         assert!(matches!(result, SurfaceForm::KernelPassthrough { .. }));
+    }
+
+    // ---------------------------------------------------------------
+    // classify_eq (DD-22)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_eq_binary() {
+        let result = form("=", vec![atom("a"), atom("b")]).unwrap();
+        match result {
+            SurfaceForm::Eq { args, .. } => {
+                assert_eq!(args.len(), 2);
+                assert_eq!(args[0].as_atom(), Some("a"));
+                assert_eq!(args[1].as_atom(), Some("b"));
+            }
+            other => panic!("expected Eq, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_eq_variadic() {
+        let result = form("=", vec![atom("a"), atom("b"), atom("c")]).unwrap();
+        match result {
+            SurfaceForm::Eq { args, .. } => {
+                assert_eq!(args.len(), 3);
+            }
+            other => panic!("expected Eq, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_eq_too_few_args() {
+        let result = form("=", vec![atom("a")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("at least 2 arguments"));
+    }
+
+    // ---------------------------------------------------------------
+    // classify_not_eq (DD-22)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_not_eq_binary() {
+        let result = form("!=", vec![atom("a"), atom("b")]).unwrap();
+        match result {
+            SurfaceForm::NotEq { left, right, .. } => {
+                assert_eq!(left.as_atom(), Some("a"));
+                assert_eq!(right.as_atom(), Some("b"));
+            }
+            other => panic!("expected NotEq, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_not_eq_wrong_arg_count() {
+        let result = form("!=", vec![atom("a")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("exactly 2 arguments"));
+
+        let result = form("!=", vec![atom("a"), atom("b"), atom("c")]);
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // classify_and (DD-22)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_and_binary() {
+        let result = form("and", vec![atom("a"), atom("b")]).unwrap();
+        match result {
+            SurfaceForm::And { args, .. } => {
+                assert_eq!(args.len(), 2);
+                assert_eq!(args[0].as_atom(), Some("a"));
+                assert_eq!(args[1].as_atom(), Some("b"));
+            }
+            other => panic!("expected And, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_and_variadic() {
+        let result = form("and", vec![atom("a"), atom("b"), atom("c"), atom("d")]).unwrap();
+        match result {
+            SurfaceForm::And { args, .. } => {
+                assert_eq!(args.len(), 4);
+            }
+            other => panic!("expected And, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_and_too_few_args() {
+        let result = form("and", vec![atom("a")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("at least 2 arguments"));
+    }
+
+    // ---------------------------------------------------------------
+    // classify_or (DD-22)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_or_binary() {
+        let result = form("or", vec![atom("a"), atom("b")]).unwrap();
+        match result {
+            SurfaceForm::Or { args, .. } => {
+                assert_eq!(args.len(), 2);
+                assert_eq!(args[0].as_atom(), Some("a"));
+                assert_eq!(args[1].as_atom(), Some("b"));
+            }
+            other => panic!("expected Or, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_or_variadic() {
+        let result = form("or", vec![atom("a"), atom("b"), atom("c"), atom("d")]).unwrap();
+        match result {
+            SurfaceForm::Or { args, .. } => {
+                assert_eq!(args.len(), 4);
+            }
+            other => panic!("expected Or, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_or_too_few_args() {
+        let result = form("or", vec![atom("a")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("at least 2 arguments"));
+    }
+
+    // ---------------------------------------------------------------
+    // classify_not (DD-22)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_not_unary() {
+        let result = form("not", vec![atom("x")]).unwrap();
+        match result {
+            SurfaceForm::Not { operand, .. } => {
+                assert_eq!(operand.as_atom(), Some("x"));
+            }
+            other => panic!("expected Not, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_not_wrong_arg_count() {
+        let result = form("not", vec![atom("a"), atom("b")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("exactly 1 argument"));
+
+        let result = form("not", vec![]);
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // DD-22: =, != are surface forms, not kernel passthroughs
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_eq_is_surface_form_not_kernel() {
+        // `=` should be classified as a surface Eq form, NOT a kernel passthrough
+        let expr = list(vec![atom("="), atom("a"), atom("b")]);
+        let result = classify_form(&expr).unwrap();
+        assert!(
+            matches!(result, SurfaceForm::Eq { .. }),
+            "expected Eq surface form, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_classify_ne_is_surface_form_not_kernel() {
+        // `!=` should be classified as a surface NotEq form, NOT a kernel passthrough
+        let expr = list(vec![atom("!="), atom("a"), atom("b")]);
+        let result = classify_form(&expr).unwrap();
+        assert!(
+            matches!(result, SurfaceForm::NotEq { .. }),
+            "expected NotEq surface form, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_classify_and_or_not_are_surface_forms() {
+        // and, or, not should be surface forms, NOT function calls
+        let expr = list(vec![atom("and"), atom("a"), atom("b")]);
+        let result = classify_form(&expr).unwrap();
+        assert!(matches!(result, SurfaceForm::And { .. }));
+
+        let expr = list(vec![atom("or"), atom("a"), atom("b")]);
+        let result = classify_form(&expr).unwrap();
+        assert!(matches!(result, SurfaceForm::Or { .. }));
+
+        let expr = list(vec![atom("not"), atom("x")]);
+        let result = classify_form(&expr).unwrap();
+        assert!(matches!(result, SurfaceForm::Not { .. }));
     }
 }

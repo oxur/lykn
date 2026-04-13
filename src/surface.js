@@ -15,6 +15,18 @@ import {
 	formatSExpr,
 } from "./expander.js";
 
+/**
+ * Create a kernel-level AST node that won't be re-intercepted by surface
+ * macros during fixed-point expansion. Used by surface macros (reset!,
+ * swap!) that emit kernel `=` (assignment) — prevents the surface `=`
+ * macro (equality) from re-expanding their output.
+ */
+function kernelArray(...items) {
+	const node = array(...items);
+	node._kernel = true;
+	return node;
+}
+
 // --- Type Registry ---
 // Maps constructor names to their field names, populated by `type` macro.
 // Used by `match` and `if-let`/`when-let` to resolve ADT pattern field bindings.
@@ -469,7 +481,7 @@ export function registerSurfaceMacros(macroEnv) {
 		const fn = args[1];
 		const extraArgs = args.slice(2);
 		const cellValue = sym(`${cell.value}:value`);
-		return array(sym("="), cellValue, array(fn, cellValue, ...extraArgs));
+		return kernelArray(sym("="), cellValue, array(fn, cellValue, ...extraArgs));
 	});
 
 	// --- reset! ---
@@ -484,7 +496,75 @@ export function registerSurfaceMacros(macroEnv) {
 		if (cell.type !== "atom") {
 			throw new Error("reset!: first argument must be a symbol");
 		}
-		return array(sym("="), sym(`${cell.value}:value`), args[1]);
+		return kernelArray(sym("="), sym(`${cell.value}:value`), args[1]);
+	});
+
+	// --- = (strict equality) ---
+	// (= a b) → (=== a b)
+	// (= a b c) → (&& (=== a b) (=== b c))
+	macroEnv.set("=", (...args) => {
+		if (args.length < 2) {
+			throw new Error("= requires at least 2 arguments: (= a b)");
+		}
+		if (args.length === 2) {
+			return array(sym("==="), args[0], args[1]);
+		}
+		// Variadic: (= a b c) → (&&(=== a b) (=== b c))
+		const checks = [];
+		for (let i = 0; i < args.length - 1; i++) {
+			checks.push(array(sym("==="), args[i], args[i + 1]));
+		}
+		let result = checks[0];
+		for (let i = 1; i < checks.length; i++) {
+			result = array(sym("&&"), result, checks[i]);
+		}
+		return result;
+	});
+
+	// --- != (strict inequality) ---
+	// (!= a b) → (!== a b)
+	macroEnv.set("!=", (...args) => {
+		if (args.length !== 2) {
+			throw new Error("!= requires exactly 2 arguments: (!= a b)");
+		}
+		return array(sym("!=="), args[0], args[1]);
+	});
+
+	// --- and (logical AND) ---
+	// (and a b) → (&& a b)
+	// (and a b c d) → (&& (&& (&& a b) c) d)
+	macroEnv.set("and", (...args) => {
+		if (args.length < 2) {
+			throw new Error("and requires at least 2 arguments: (and a b)");
+		}
+		let result = args[0];
+		for (let i = 1; i < args.length; i++) {
+			result = array(sym("&&"), result, args[i]);
+		}
+		return result;
+	});
+
+	// --- or (logical OR) ---
+	// (or a b) → (|| a b)
+	// (or a b c d) → (|| (|| (|| a b) c) d)
+	macroEnv.set("or", (...args) => {
+		if (args.length < 2) {
+			throw new Error("or requires at least 2 arguments: (or a b)");
+		}
+		let result = args[0];
+		for (let i = 1; i < args.length; i++) {
+			result = array(sym("||"), result, args[i]);
+		}
+		return result;
+	});
+
+	// --- not (logical NOT) ---
+	// (not x) → (! x)
+	macroEnv.set("not", (...args) => {
+		if (args.length !== 1) {
+			throw new Error("not requires exactly 1 argument: (not x)");
+		}
+		return array(sym("!"), args[0]);
 	});
 
 	// --- -> (thread-first) ---
@@ -1474,8 +1554,8 @@ export function registerSurfaceMacros(macroEnv) {
 				);
 			}
 		} else if (pattern.type === "atom" && !isPascalCase(pattern.value)) {
-			// Simple binding — nil check
-			const condition = array(sym("!="), tempVar, sym("null"));
+			// Simple binding — nil check (loose != to catch null and undefined)
+			const condition = kernelArray(sym("!="), tempVar, sym("null"));
 			const thenBlock = [
 				array(sym("const"), pattern, tempVar),
 				array(sym("return"), thenBody),
@@ -1564,7 +1644,8 @@ export function registerSurfaceMacros(macroEnv) {
 				),
 			);
 		} else if (pattern.type === "atom" && !isPascalCase(pattern.value)) {
-			const condition = array(sym("!="), tempVar, sym("null"));
+			// Loose != to catch null and undefined
+			const condition = kernelArray(sym("!="), tempVar, sym("null"));
 			stmts.push(
 				array(
 					sym("if"),

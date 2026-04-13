@@ -147,3 +147,13 @@ cross_test!(cross_js_typeof, "(js:typeof x)");
 cross_test!(cross_js_eval, r#"(js:eval "1 + 2")"#);
 cross_test!(cross_js_call, r#"(js:call console:log "hello")"#);
 cross_test!(cross_js_bind, "(js:bind obj:method obj)");
+// DD-22: Surface equality and logical operators
+cross_test!(cross_eq_binary, "(= a b)");
+cross_test!(cross_eq_variadic, "(= a b c)");
+cross_test!(cross_neq_binary, "(!= a b)");
+cross_test!(cross_and_binary, "(and a b)");
+cross_test!(cross_or_binary, "(or a b)");
+cross_test!(cross_not_unary, "(not x)");
+cross_test!(cross_and_variadic, "(and a b c d)");
+cross_test!(cross_or_variadic, "(or a b c d)");
+cross_test!(cross_not_nested, "(not (not x))");

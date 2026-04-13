@@ -23,6 +23,11 @@ pub fn is_surface_form(name: &str) -> bool {
             | "dissoc"
             | "macro"
             | "import-macros"
+            | "="
+            | "!="
+            | "and"
+            | "or"
+            | "not"
     )
 }
 

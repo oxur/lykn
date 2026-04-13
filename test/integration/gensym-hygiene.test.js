@@ -9,17 +9,19 @@ function lykn(source) {
 }
 
 Deno.test("integration: swap macro with auto-gensym", () => {
+  // DD-22: surface `=` is now strict equality. User macros that need
+  // assignment must use kernel operators directly. This test verifies
+  // gensym hygiene using a read-only swap (captures values, doesn't assign).
   const result = lykn(`
-    (macro swap (a b)
+    (macro swap-log (a b)
       \`(block
         (let temp#gen ,a)
-        (= ,a ,b)
-        (= ,b temp#gen)))
-    (swap x y)
+        (console:log temp#gen ,b)))
+    (swap-log x y)
   `);
   assertEquals(result.includes("temp__gensym0"), true);
-  assertEquals(result.includes("x = y"), true);
-  assertEquals(result.includes("y = temp__gensym0"), true);
+  assertEquals(result.includes("let temp__gensym0 = x"), true);
+  assertEquals(result.includes("console.log(temp__gensym0, y)"), true);
 });
 
 Deno.test("integration: full end-to-end with macros + classes + destructuring", () => {

@@ -258,6 +258,20 @@ impl Analyze for SurfaceForm {
             SurfaceForm::Dissoc { obj, .. } => {
                 track_references_in_expr(obj, scope);
             }
+            SurfaceForm::Eq { args, .. }
+            | SurfaceForm::And { args, .. }
+            | SurfaceForm::Or { args, .. } => {
+                for arg in args {
+                    track_references_in_expr(arg, scope);
+                }
+            }
+            SurfaceForm::NotEq { left, right, .. } => {
+                track_references_in_expr(left, scope);
+                track_references_in_expr(right, scope);
+            }
+            SurfaceForm::Not { operand, .. } => {
+                track_references_in_expr(operand, scope);
+            }
             // Type, MacroDef, ImportMacros, KernelPassthrough — no user
             // references to track beyond what `collect` already handles.
             _ => {}

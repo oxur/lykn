@@ -199,6 +199,11 @@ pub fn emit_form(
         SurfaceForm::Conj { arr, value, .. } => vec![emit_conj(arr, value, ctx, registry)],
         SurfaceForm::Assoc { obj, pairs, .. } => vec![emit_assoc(obj, pairs, ctx, registry)],
         SurfaceForm::Dissoc { obj, keys, .. } => vec![emit_dissoc(obj, keys, ctx, registry)],
+        SurfaceForm::Eq { args, .. } => vec![emit_eq(args, ctx, registry)],
+        SurfaceForm::NotEq { left, right, .. } => vec![emit_not_eq(left, right, ctx, registry)],
+        SurfaceForm::And { args, .. } => vec![emit_and(args, ctx, registry)],
+        SurfaceForm::Or { args, .. } => vec![emit_or(args, ctx, registry)],
+        SurfaceForm::Not { operand, .. } => vec![emit_not(operand, ctx, registry)],
         SurfaceForm::MacroDef { raw, .. } => vec![raw.clone()],
         SurfaceForm::ImportMacros { raw, .. } => vec![raw.clone()],
     }
@@ -451,6 +456,76 @@ fn emit_reset(
 ) -> SExpr {
     let target_val = resolve_cell_target(target, ctx, registry);
     list(vec![atom("="), target_val, emit_expr(value, ctx, registry)])
+}
+
+// ---------------------------------------------------------------------------
+// Equality and logical operators (DD-22)
+// ---------------------------------------------------------------------------
+
+/// `(= a b)` → `(=== a b)`
+/// `(= a b c)` → `(&& (=== a b) (=== b c))` (variadic, pairwise, left-fold)
+fn emit_eq(args: &[SExpr], ctx: &mut EmitterContext, registry: &TypeRegistry) -> SExpr {
+    let emitted: Vec<SExpr> = args.iter().map(|a| emit_expr(a, ctx, registry)).collect();
+
+    if emitted.len() == 2 {
+        return list(vec![atom("==="), emitted[0].clone(), emitted[1].clone()]);
+    }
+
+    // Variadic: pairwise comparisons, left-folded with &&
+    let mut checks: Vec<SExpr> = Vec::new();
+    for i in 0..emitted.len() - 1 {
+        checks.push(list(vec![
+            atom("==="),
+            emitted[i].clone(),
+            emitted[i + 1].clone(),
+        ]));
+    }
+    let mut result = checks[0].clone();
+    for check in &checks[1..] {
+        result = list(vec![atom("&&"), result, check.clone()]);
+    }
+    result
+}
+
+/// `(!= a b)` → `(!== a b)`
+fn emit_not_eq(
+    left: &SExpr,
+    right: &SExpr,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    list(vec![
+        atom("!=="),
+        emit_expr(left, ctx, registry),
+        emit_expr(right, ctx, registry),
+    ])
+}
+
+/// `(and a b)` → `(&& a b)`
+/// `(and a b c d)` → `(&& (&& (&& a b) c) d)` (variadic, left-fold)
+fn emit_and(args: &[SExpr], ctx: &mut EmitterContext, registry: &TypeRegistry) -> SExpr {
+    let emitted: Vec<SExpr> = args.iter().map(|a| emit_expr(a, ctx, registry)).collect();
+    let mut result = emitted[0].clone();
+    for arg in &emitted[1..] {
+        result = list(vec![atom("&&"), result, arg.clone()]);
+    }
+    result
+}
+
+/// `(or a b)` → `(|| a b)`
+/// `(or a b c d)` → `(|| (|| (|| a b) c) d)` (variadic, left-fold)
+fn emit_or(args: &[SExpr], ctx: &mut EmitterContext, registry: &TypeRegistry) -> SExpr {
+    let emitted: Vec<SExpr> = args.iter().map(|a| emit_expr(a, ctx, registry)).collect();
+    let mut result = emitted[0].clone();
+    for arg in &emitted[1..] {
+        result = list(vec![atom("||"), result, arg.clone()]);
+    }
+    result
+}
+
+/// `(not x)` → `(! x)`
+fn emit_not(operand: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) -> SExpr {
+    list(vec![atom("!"), emit_expr(operand, ctx, registry)])
 }
 
 // ---------------------------------------------------------------------------
@@ -5112,6 +5187,343 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    // --- Eq (DD-22) ---
+
+    #[test]
+    fn test_emit_eq_binary() {
+        let form = SurfaceForm::Eq {
+            args: vec![atom("a"), atom("b")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (=== a b)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("==="));
+            assert_eq!(values[1].as_atom(), Some("a"));
+            assert_eq!(values[2].as_atom(), Some("b"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_eq_variadic_three() {
+        let form = SurfaceForm::Eq {
+            args: vec![atom("a"), atom("b"), atom("c")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (&& (=== a b) (=== b c))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("&&"));
+            if let SExpr::List { values: left, .. } = &values[1] {
+                assert_eq!(left[0].as_atom(), Some("==="));
+                assert_eq!(left[1].as_atom(), Some("a"));
+                assert_eq!(left[2].as_atom(), Some("b"));
+            } else {
+                panic!("expected left === pair");
+            }
+            if let SExpr::List { values: right, .. } = &values[2] {
+                assert_eq!(right[0].as_atom(), Some("==="));
+                assert_eq!(right[1].as_atom(), Some("b"));
+                assert_eq!(right[2].as_atom(), Some("c"));
+            } else {
+                panic!("expected right === pair");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_eq_variadic_four() {
+        let form = SurfaceForm::Eq {
+            args: vec![atom("a"), atom("b"), atom("c"), atom("d")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (&& (&& (=== a b) (=== b c)) (=== c d))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("&&"));
+            // Left side is (&& (=== a b) (=== b c))
+            if let SExpr::List { values: inner, .. } = &values[1] {
+                assert_eq!(inner[0].as_atom(), Some("&&"));
+            } else {
+                panic!("expected inner && for left-fold");
+            }
+            // Right side is (=== c d)
+            if let SExpr::List { values: right, .. } = &values[2] {
+                assert_eq!(right[0].as_atom(), Some("==="));
+                assert_eq!(right[1].as_atom(), Some("c"));
+                assert_eq!(right[2].as_atom(), Some("d"));
+            } else {
+                panic!("expected right === pair");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // --- NotEq (DD-22) ---
+
+    #[test]
+    fn test_emit_not_eq() {
+        let form = SurfaceForm::NotEq {
+            left: atom("a"),
+            right: atom("b"),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (!== a b)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("!=="));
+            assert_eq!(values[1].as_atom(), Some("a"));
+            assert_eq!(values[2].as_atom(), Some("b"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // --- And (DD-22) ---
+
+    #[test]
+    fn test_emit_and_binary() {
+        let form = SurfaceForm::And {
+            args: vec![atom("a"), atom("b")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (&& a b)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("&&"));
+            assert_eq!(values[1].as_atom(), Some("a"));
+            assert_eq!(values[2].as_atom(), Some("b"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_and_variadic() {
+        let form = SurfaceForm::And {
+            args: vec![atom("a"), atom("b"), atom("c"), atom("d")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (&& (&& (&& a b) c) d)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("&&"));
+            assert_eq!(values[2].as_atom(), Some("d"));
+            // Inner: (&& (&& a b) c)
+            if let SExpr::List { values: mid, .. } = &values[1] {
+                assert_eq!(mid[0].as_atom(), Some("&&"));
+                assert_eq!(mid[2].as_atom(), Some("c"));
+                // Innermost: (&& a b)
+                if let SExpr::List { values: inner, .. } = &mid[1] {
+                    assert_eq!(inner[0].as_atom(), Some("&&"));
+                    assert_eq!(inner[1].as_atom(), Some("a"));
+                    assert_eq!(inner[2].as_atom(), Some("b"));
+                } else {
+                    panic!("expected innermost && list");
+                }
+            } else {
+                panic!("expected middle && list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // --- Or (DD-22) ---
+
+    #[test]
+    fn test_emit_or_binary() {
+        let form = SurfaceForm::Or {
+            args: vec![atom("a"), atom("b")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (|| a b)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("||"));
+            assert_eq!(values[1].as_atom(), Some("a"));
+            assert_eq!(values[2].as_atom(), Some("b"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_or_variadic() {
+        let form = SurfaceForm::Or {
+            args: vec![atom("a"), atom("b"), atom("c"), atom("d")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (|| (|| (|| a b) c) d)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("||"));
+            assert_eq!(values[2].as_atom(), Some("d"));
+            // Inner: (|| (|| a b) c)
+            if let SExpr::List { values: mid, .. } = &values[1] {
+                assert_eq!(mid[0].as_atom(), Some("||"));
+                assert_eq!(mid[2].as_atom(), Some("c"));
+            } else {
+                panic!("expected middle || list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // --- Not (DD-22) ---
+
+    #[test]
+    fn test_emit_not() {
+        let form = SurfaceForm::Not {
+            operand: atom("x"),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (! x)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("!"));
+            assert_eq!(values[1].as_atom(), Some("x"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_not_nested() {
+        // (not (not x)) → (! (! x))
+        // Construct the inner (not x) form as a surface form nested in the SExpr.
+        // Since emit uses emit_expr which classifies nested surface forms,
+        // we test the emitter directly by constructing the kernel form.
+        let inner_not = SurfaceForm::Not {
+            operand: atom("x"),
+            span: s(),
+        };
+        let mut c = ctx();
+        let inner_result = emit_form(&inner_not, &mut c, &reg());
+        // inner_result = [(! x)]
+
+        let outer = SurfaceForm::Not {
+            operand: inner_result[0].clone(),
+            span: s(),
+        };
+        let result = emit_form(&outer, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (! (! x))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("!"));
+            if let SExpr::List {
+                values: inner_vals, ..
+            } = &values[1]
+            {
+                assert_eq!(inner_vals[0].as_atom(), Some("!"));
+                assert_eq!(inner_vals[1].as_atom(), Some("x"));
+            } else {
+                panic!("expected inner (! x)");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // --- DD-22 regression: kernel = in emitter output is not re-intercepted ---
+
+    #[test]
+    fn test_emit_reset_still_uses_kernel_assignment() {
+        // reset! emits kernel `=` (assignment). This must not be intercepted
+        // by the surface `=` (equality) form.
+        let form = SurfaceForm::Reset {
+            target: atom("counter"),
+            value: num(0.0),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(
+                values[0].as_atom(),
+                Some("="),
+                "reset! should still emit kernel ="
+            );
+            assert_eq!(values[1].as_atom(), Some("counter:value"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_swap_still_uses_kernel_assignment() {
+        // swap! emits kernel `=` (assignment). This must not be intercepted.
+        let form = SurfaceForm::Swap {
+            target: atom("counter"),
+            func: atom("inc"),
+            extra_args: vec![],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(
+                values[0].as_atom(),
+                Some("="),
+                "swap! should still emit kernel ="
+            );
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // --- DD-22 regression: nested surface forms in equality/logical ops ---
+
+    #[test]
+    fn test_emit_eq_with_nested_surface_form() {
+        // (= (cell 1) (cell 2)) — the args contain surface forms that should be
+        // recursively emitted
+        let form = SurfaceForm::Eq {
+            args: vec![
+                list(vec![atom("cell"), num(1.0)]),
+                list(vec![atom("cell"), num(2.0)]),
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("==="));
+            // Both sides should be emitted (cell → object with value)
+            assert!(matches!(values[1], SExpr::List { .. }));
+            assert!(matches!(values[2], SExpr::List { .. }));
+        } else {
+            panic!("expected list");
         }
     }
 }

@@ -721,11 +721,13 @@ export function expandExpr(form) {
   }
 
   // Fixed-point macro expansion
-  if (head.type === 'atom' && macroEnv.has(head.value)) {
+  // Skip re-expansion of forms marked as kernel output by surface macros
+  if (head.type === 'atom' && macroEnv.has(head.value) && !form._kernel) {
     let current = form;
     let count = 0;
     while (current.type === 'list' && current.values.length > 0 &&
-           current.values[0].type === 'atom' && macroEnv.has(current.values[0].value)) {
+           current.values[0].type === 'atom' && macroEnv.has(current.values[0].value) &&
+           !current._kernel) {
       const macroName = current.values[0].value;
       const macroArgs = current.values.slice(1);
       try {

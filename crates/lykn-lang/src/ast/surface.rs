@@ -181,6 +181,27 @@ pub enum SurfaceForm {
         raw: SExpr,
         span: Span,
     },
+    Eq {
+        args: Vec<SExpr>,
+        span: Span,
+    },
+    NotEq {
+        left: SExpr,
+        right: SExpr,
+        span: Span,
+    },
+    And {
+        args: Vec<SExpr>,
+        span: Span,
+    },
+    Or {
+        args: Vec<SExpr>,
+        span: Span,
+    },
+    Not {
+        operand: SExpr,
+        span: Span,
+    },
     KernelPassthrough {
         raw: SExpr,
         span: Span,
