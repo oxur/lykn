@@ -157,3 +157,5 @@ cross_test!(cross_not_unary, "(not x)");
 cross_test!(cross_and_variadic, "(and a b c d)");
 cross_test!(cross_or_variadic, "(or a b c d)");
 cross_test!(cross_not_nested, "(not (not x))");
+// DD: fn typed return
+cross_test!(cross_fn_typed_return, "(bind f (fn (:number x) (* x 2)))");

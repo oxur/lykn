@@ -857,6 +857,7 @@ fn emit_fn_expr(
     let mut items = vec![atom("=>"), list(param_names)];
 
     // Type checks
+    let mut has_type_checks = false;
     if !ctx.strip_assertions {
         for param in params {
             if let Some(check) = emit_type_check(
@@ -867,11 +868,21 @@ fn emit_fn_expr(
                 param.name_span,
             ) {
                 items.push(check);
+                has_type_checks = true;
             }
         }
     }
 
-    items.extend(emit_body(body, ctx, registry));
+    // When type checks are present, the arrow gets a block body, so we must
+    // wrap the last body expression in (return ...) to preserve the return value.
+    let emitted_body = emit_body(body, ctx, registry);
+    if has_type_checks && !emitted_body.is_empty() {
+        items.extend(emitted_body[..emitted_body.len() - 1].iter().cloned());
+        let last = emitted_body.last().unwrap().clone();
+        items.push(list(vec![atom("return"), last]));
+    } else {
+        items.extend(emitted_body);
+    }
     list(items)
 }
 
@@ -4937,6 +4948,80 @@ mod tests {
                 }
             });
             assert!(!has_if, "should not have type checks");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_fn_typed_returns_last_expression() {
+        // (fn (:number x) (* x 2)) should emit (=> (x) <type-check> (return (* x 2)))
+        let form = SurfaceForm::Fn {
+            params: vec![tp("number", "x")],
+            body: vec![list(vec![atom("*"), atom("x"), SExpr::Number { value: 2.0, span: s() }])],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=>"));
+            // Last item should be (return (* x 2))
+            let last = values.last().unwrap();
+            if let SExpr::List { values: ret_vals, .. } = last {
+                assert_eq!(ret_vals[0].as_atom(), Some("return"));
+            } else {
+                panic!("expected last item to be a return list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_fn_typed_multi_body_returns_last() {
+        // (fn (:number x) (console:log x) (+ x 1)) should return last expr
+        let form = SurfaceForm::Fn {
+            params: vec![tp("number", "x")],
+            body: vec![
+                list(vec![atom("console.log"), atom("x")]),
+                list(vec![atom("+"), atom("x"), SExpr::Number { value: 1.0, span: s() }]),
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=>"));
+            // Last item should be (return (+ x 1))
+            let last = values.last().unwrap();
+            if let SExpr::List { values: ret_vals, .. } = last {
+                assert_eq!(ret_vals[0].as_atom(), Some("return"));
+            } else {
+                panic!("expected last item to be a return list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_fn_any_no_return_wrapper() {
+        // (fn (:any x) x) should NOT get a return wrapper (concise arrow body)
+        let form = SurfaceForm::Fn {
+            params: vec![tp("any", "x")],
+            body: vec![atom("x")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=>"));
+            // Should be (=> (x) x) — no return wrapper
+            let last = values.last().unwrap();
+            assert_eq!(last.as_atom(), Some("x"), "should be bare atom, not return wrapper");
         } else {
             panic!("expected list");
         }

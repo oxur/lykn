@@ -758,6 +758,14 @@ export function registerSurfaceMacros(macroEnv) {
 			if (check) typeChecks.push(check);
 		}
 
+		// When type checks are present, the arrow gets a block body, so we must
+		// wrap the last body expression in (return ...) to preserve the return value.
+		if (typeChecks.length > 0) {
+			const allBody = [...typeChecks, ...bodyForms.slice(0, -1)];
+			const lastExpr = bodyForms[bodyForms.length - 1];
+			allBody.push(array(sym("return"), lastExpr));
+			return array(sym("=>"), array(...paramNames), ...allBody);
+		}
 		return array(sym("=>"), array(...paramNames), ...typeChecks, ...bodyForms);
 	};
 
