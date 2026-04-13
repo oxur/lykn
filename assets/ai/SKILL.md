@@ -55,6 +55,7 @@ Note: document paths are relative to the lykn project root.
 | **Deno runtime** | `docs/guides/12-deno/12-01-runtime-basics.md` |
 | **Biome lint/format** | `docs/guides/13-biome/13-01-setup.md`, `docs/guides/13-biome/13-02-lint-rules.md` |
 | **No-Node boundary** | `docs/guides/14-no-node-boundary.md`, `docs/guides/12-deno/12-01-runtime-basics.md` |
+| **lykn CLI (compile, fmt, check)** | `docs/guides/15-lykn-cli.md` |
 
 ---
 
@@ -112,7 +113,7 @@ Note: document paths are relative to the lykn project root.
 
 ;; Mutation via cell
 (bind counter (cell 0))
-(swap! counter (=> (n) (+ n 1)))
+(swap! counter (fn (:number n) (+ n 1)))
 (console:log (express counter))  ;; => 1
 (reset! counter 0)
 ```
@@ -124,7 +125,11 @@ const greeting = "hello";
 const maxRetries = 3;
 const result = computeSomething();
 const counter = {value: 0};
-counter.value = ((n) => n + 1)(counter.value);
+counter.value = ((n) => {
+  if (typeof n !== "number" || Number.isNaN(n))
+    throw new TypeError("anonymous: arg 'n' expected number, got " + typeof n);
+  return n + 1;
+})(counter.value);
 console.log(counter.value);
 counter.value = 0;
 ```
@@ -139,7 +144,7 @@ counter.value = 0;
 
 - **`func` for named functions**: keyword-labeled clauses, required type annotations, optional contracts. **MUST**
 - **`fn` for anonymous functions**: positional typed params, arrow function output. **SHOULD**
-- **`lambda` for anonymous functions**: same as `fn` but emits `function` expression. **CONSIDER**
+- **`lambda` for anonymous functions**: exact alias for `fn` — same output (arrow function). **CONSIDER**
 - **All params require type annotations**: bare symbols in param lists are compile errors. `:any` is the explicit opt-out. **MUST**
 - **Contracts with `:pre` / `:post`**: runtime validation, stripped by `--strip-assertions`. **SHOULD**
 - **`:returns` for return type checking**: runtime check on return value. **SHOULD**
@@ -151,7 +156,7 @@ counter.value = 0;
 (func divide
   :args (:number a :number b)
   :returns :number
-  :pre ((!= b 0) "division by zero")
+  :pre (!= b 0)
   :body (/ a b))
 
 ;; Zero-arg shorthand
@@ -290,15 +295,15 @@ const updated = {...user, age: 31};
 
 - **ESM only**: `import`/`export` forms. No `require()`, no CommonJS. **MUST**
 - **Named exports**: `(export (func ...))` or `(export (bind ...))`. **MUST**
-- **Import with binding list**: `(import (name1 name2) "./module.js")`. **MUST**
-- **`alias` for rename**: `(import ((alias original renamed)) "./module.js")`. **SHOULD**
+- **Import with binding list**: `(import "./module.js" (name1 name2))`. **MUST** — path first, then bindings.
+- **`alias` for rename**: `(import "./module.js" ((alias original renamed)))`. **SHOULD**
 - **File extensions required** on local imports. **MUST**
 - **No `export *` or namespace imports**: banned by design. **MUST**
 
 ```lykn
-;; Import
-(import (join) "@std/path")
-(import (login logout) "./auth/mod.js")
+;; Import — path first, then bindings
+(import "@std/path" (join))
+(import "./auth/mod.js" (login logout))
 
 ;; Export
 (export (func greet
@@ -398,8 +403,8 @@ Classes are available but de-emphasized in surface lykn. Prefer `type` + `func` 
 | `#o((name "x") (age 42))` | `{name: "x", age: 42}` | Object literal (kernel-style) |
 | `#16rff` | `255` | Hex radix literal |
 | `#2r11110000` | `240` | Binary radix literal |
-| `#; expr` | *(discarded)* | Expression comment |
-| `#\| ... \|#` | *(discarded)* | Nestable block comment |
+| `#; expr` | *(discarded)* | Expression comment (JS compiler only; not in Rust CLI) |
+| `#\| ... \|#` | *(discarded)* | Nestable block comment (JS compiler only; not in Rust CLI) |
 | `(template "hi " name)` | `` `hi ${name}` `` | Template literal |
 | `(tag html (template ...))` | `` html`...` `` | Tagged template |
 | `(regex "^hello" "gi")` | `/^hello/gi` | Regular expression |
