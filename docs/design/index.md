@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0033 | DD-24: `bind` Type Enforcement | Final | 2026-04-14 |
 | 0032 | DD-23: `set!` — External Property Mutation | Final | 2026-04-13 |
 | 0031 | DD-22: Surface Equality and Logical Operators | Final | 2026-04-12 |
 | 0030 | Pure Rust Kernel→JS Codegen | Active | 2026-04-05 |
@@ -41,17 +42,18 @@ This index is automatically generated. Do not edit manually.
 
 ## Documents by State
 
+### Draft
+
+- [0028 - Fix `lykn compile` Rust CLI Bugs](01-draft/0028-fix-lykn-compile-rust-cli-bugs.md)
+
 ### Active
 
 - [0030 - Pure Rust Kernel→JS Codegen](05-active/0030-pure-rust-kerneljs-codegen.md)
 - [0029 - DD-18.1: Method Calls in Threading Macros](05-active/0029-dd-18.1-method-calls-in-threading-macros.md)
 
-### Draft
-
-- [0028 - Fix `lykn compile` Rust CLI Bugs](01-draft/0028-fix-lykn-compile-rust-cli-bugs.md)
-
 ### Final
 
+- [0033 - DD-24: `bind` Type Enforcement](06-final/0033-dd-24-bind-type-enforcement.md)
 - [0032 - DD-23: `set!` — External Property Mutation](06-final/0032-dd-23-set-external-property-mutation.md)
 - [0031 - DD-22: Surface Equality and Logical Operators](06-final/0031-dd-22-surface-equality-and-logical-operators.md)
 - [0027 - lykn v0.3.0 — Implementation Plan](06-final/0027-lykn-v0.3.0-implementation-plan.md)
