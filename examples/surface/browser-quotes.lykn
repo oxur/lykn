@@ -18,7 +18,7 @@
   (get quotes (Math:floor (* (Math:random) quotes:length))))
 
 (func set-quote
-  (= el:text-content (template "\"" (get-quote) "\"")))
+  (set! el:text-content (template "\"" (get-quote) "\"")))
 
 (set-quote)
 (set-interval set-quote 10000)

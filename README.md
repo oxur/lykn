@@ -167,9 +167,9 @@ cargo test                  # Rust tests
   (macro when (test (rest body))
     `(if ,test (block ,@body)))
 
-  (const el (document:query-selector "#output"))
+  (bind el (document:query-selector "#output"))
   (when el
-    (= el:text-content "Hello from lykn!"))
+    (set! el:text-content "Hello from lykn!"))
 </script>
 ```
 
@@ -240,6 +240,7 @@ kernel forms at compile time.
 | `(swap! counter f)` | `counter.value = f(counter.value);` |
 | `(reset! counter 0)` | `counter.value = 0;` |
 | `(express counter)` | `counter.value` |
+| `(set! el:prop value)` | `el.prop = value;` |
 
 #### Functions
 

@@ -220,7 +220,7 @@ impl Analyze for SurfaceForm {
                     track_references_in_expr(arg, scope);
                 }
             }
-            SurfaceForm::Reset { target, value, .. } => {
+            SurfaceForm::Reset { target, value, .. } | SurfaceForm::Set { target, value, .. } => {
                 track_references_in_expr(target, scope);
                 track_references_in_expr(value, scope);
             }

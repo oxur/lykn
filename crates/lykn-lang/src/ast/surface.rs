@@ -114,6 +114,11 @@ pub enum SurfaceForm {
         value: SExpr,
         span: Span,
     },
+    Set {
+        target: SExpr,
+        value: SExpr,
+        span: Span,
+    },
     ThreadFirst {
         initial: SExpr,
         steps: Vec<ThreadingStep>,

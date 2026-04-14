@@ -499,6 +499,25 @@ export function registerSurfaceMacros(macroEnv) {
 		return kernelArray(sym("="), sym(`${cell.value}:value`), args[1]);
 	});
 
+	// --- set! ---
+	// (set! target:prop value) → (= target:prop value) [kernel assignment]
+	// Target must be colon-syntax (member expression), not a bare binding.
+	macroEnv.set("set!", (...args) => {
+		if (args.length !== 2) {
+			throw new Error(
+				"set! requires exactly 2 arguments: (set! target:prop value)",
+			);
+		}
+		const target = args[0];
+		if (target.type !== "atom" || !target.value.includes(":")) {
+			throw new Error(
+				"set! requires a property path (e.g., obj:prop), not a bare binding. " +
+					"Use (bind x val) for new bindings, (reset! cell val) for cells.",
+			);
+		}
+		return kernelArray(sym("="), target, args[1]);
+	});
+
 	// --- = (strict equality) ---
 	// (= a b) → (=== a b)
 	// (= a b c) → (&& (=== a b) (=== b c))

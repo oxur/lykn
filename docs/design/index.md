@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0032 | DD-23: `set!` — External Property Mutation | Final | 2026-04-13 |
 | 0031 | DD-22: Surface Equality and Logical Operators | Final | 2026-04-12 |
 | 0030 | Pure Rust Kernel→JS Codegen | Active | 2026-04-05 |
 | 0029 | DD-18.1: Method Calls in Threading Macros | Active | 2026-04-05 |
@@ -51,6 +52,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Final
 
+- [0032 - DD-23: `set!` — External Property Mutation](06-final/0032-dd-23-set-external-property-mutation.md)
 - [0031 - DD-22: Surface Equality and Logical Operators](06-final/0031-dd-22-surface-equality-and-logical-operators.md)
 - [0027 - lykn v0.3.0 — Implementation Plan](06-final/0027-lykn-v0.3.0-implementation-plan.md)
 - [0026 - DD-21: Type Analysis and Exhaustiveness](06-final/0026-dd-21-type-analysis-and-exhaustiveness.md)

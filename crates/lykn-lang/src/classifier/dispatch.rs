@@ -10,6 +10,7 @@ pub fn is_surface_form(name: &str) -> bool {
             | "express"
             | "swap!"
             | "reset!"
+            | "set!"
             | "->"
             | "->>"
             | "some->"

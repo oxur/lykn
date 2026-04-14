@@ -133,6 +133,14 @@ pub fn emit_form(
             ..
         } => vec![emit_swap(target, func, extra_args, ctx, registry)],
         SurfaceForm::Reset { target, value, .. } => vec![emit_reset(target, value, ctx, registry)],
+        SurfaceForm::Set { target, value, .. } => {
+            // (set! target:prop value) → (= target:prop value)
+            vec![list(vec![
+                atom("="),
+                emit_expr(target, ctx, registry),
+                emit_expr(value, ctx, registry),
+            ])]
+        }
         SurfaceForm::ThreadFirst { initial, steps, .. } => {
             vec![emit_thread_first(initial, steps, ctx, registry)]
         }
@@ -4958,7 +4966,14 @@ mod tests {
         // (fn (:number x) (* x 2)) should emit (=> (x) <type-check> (return (* x 2)))
         let form = SurfaceForm::Fn {
             params: vec![tp("number", "x")],
-            body: vec![list(vec![atom("*"), atom("x"), SExpr::Number { value: 2.0, span: s() }])],
+            body: vec![list(vec![
+                atom("*"),
+                atom("x"),
+                SExpr::Number {
+                    value: 2.0,
+                    span: s(),
+                },
+            ])],
             span: s(),
         };
         let mut c = ctx();
@@ -4968,7 +4983,10 @@ mod tests {
             assert_eq!(values[0].as_atom(), Some("=>"));
             // Last item should be (return (* x 2))
             let last = values.last().unwrap();
-            if let SExpr::List { values: ret_vals, .. } = last {
+            if let SExpr::List {
+                values: ret_vals, ..
+            } = last
+            {
                 assert_eq!(ret_vals[0].as_atom(), Some("return"));
             } else {
                 panic!("expected last item to be a return list");
@@ -4985,7 +5003,14 @@ mod tests {
             params: vec![tp("number", "x")],
             body: vec![
                 list(vec![atom("console.log"), atom("x")]),
-                list(vec![atom("+"), atom("x"), SExpr::Number { value: 1.0, span: s() }]),
+                list(vec![
+                    atom("+"),
+                    atom("x"),
+                    SExpr::Number {
+                        value: 1.0,
+                        span: s(),
+                    },
+                ]),
             ],
             span: s(),
         };
@@ -4996,7 +5021,10 @@ mod tests {
             assert_eq!(values[0].as_atom(), Some("=>"));
             // Last item should be (return (+ x 1))
             let last = values.last().unwrap();
-            if let SExpr::List { values: ret_vals, .. } = last {
+            if let SExpr::List {
+                values: ret_vals, ..
+            } = last
+            {
                 assert_eq!(ret_vals[0].as_atom(), Some("return"));
             } else {
                 panic!("expected last item to be a return list");
@@ -5021,7 +5049,11 @@ mod tests {
             assert_eq!(values[0].as_atom(), Some("=>"));
             // Should be (=> (x) x) — no return wrapper
             let last = values.last().unwrap();
-            assert_eq!(last.as_atom(), Some("x"), "should be bare atom, not return wrapper");
+            assert_eq!(
+                last.as_atom(),
+                Some("x"),
+                "should be bare atom, not return wrapper"
+            );
         } else {
             panic!("expected list");
         }

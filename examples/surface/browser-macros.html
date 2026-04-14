@@ -25,7 +25,7 @@
     (when item
       (+= html (template "<li>" item "</li>"))))
 
-  (= el:inner-HTML (template "<ul>" html "</ul>"))
+  (set! el:inner-HTML (template "<ul>" html "</ul>"))
   </script>
 
   <p>If you see a list of features above, inline macros work in the browser bundle.</p>

@@ -14,7 +14,7 @@
   (bind items #a("one" "two" "three"))
   (bind html (items:map (=> (item i)
     (template "<p>" (+ i 1) ". " item "</p>"))))
-  (= el:inner-HTML (html:join ""))
+  (set! el:inner-HTML (html:join ""))
   </script>
 
   <p>If you see a numbered list above, the inline script worked.</p>

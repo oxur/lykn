@@ -1,4 +1,4 @@
 ;; External lykn file loaded via <script src="...">
 (bind el (document:get-element-by-id "output"))
 (bind now (new Date))
-(= el:inner-HTML (template "<p>Loaded at " (now:to-locale-time-string) "</p>"))
+(set! el:inner-HTML (template "<p>Loaded at " (now:to-locale-time-string) "</p>"))

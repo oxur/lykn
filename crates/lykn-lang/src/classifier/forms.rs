@@ -56,6 +56,7 @@ fn classify_surface_form(
         "express" => classify_express(args, span),
         "swap!" => classify_swap(args, span),
         "reset!" => classify_reset(args, span),
+        "set!" => classify_set(args, span),
         "->" => classify_threading(args, span, false, false),
         "->>" => classify_threading(args, span, true, false),
         "some->" => classify_threading(args, span, false, true),
@@ -186,6 +187,31 @@ fn classify_reset(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic>
         return Err(err("reset! requires exactly 2 arguments", span));
     }
     Ok(SurfaceForm::Reset {
+        target: args[0].clone(),
+        value: args[1].clone(),
+        span,
+    })
+}
+
+fn classify_set(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() != 2 {
+        return Err(err(
+            "set! requires exactly 2 arguments: (set! target:prop value)",
+            span,
+        ));
+    }
+    // Target must be colon-syntax (member expression)
+    match &args[0] {
+        SExpr::Atom { value, .. } if value.contains(':') => {}
+        _ => {
+            return Err(err(
+                "set! requires a property path (e.g., obj:prop), not a bare binding. \
+                 Use (bind x val) for new bindings, (reset! cell val) for cells.",
+                span,
+            ));
+        }
+    }
+    Ok(SurfaceForm::Set {
         target: args[0].clone(),
         value: args[1].clone(),
         span,
