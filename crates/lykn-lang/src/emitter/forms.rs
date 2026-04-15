@@ -923,7 +923,9 @@ fn emit_type(
 fn param_to_kernel_names(p: &ParamShape) -> Vec<SExpr> {
     match p {
         ParamShape::Simple(tp) => {
-            if let Some(ref val) = tp.default_value {
+            if tp.is_rest {
+                vec![list(vec![atom("rest"), atom(&tp.name)])]
+            } else if let Some(ref val) = tp.default_value {
                 vec![list(vec![atom("default"), atom(&tp.name), val.clone()])]
             } else {
                 vec![atom(&tp.name)]
@@ -1000,10 +1002,26 @@ fn param_type_checks(p: &ParamShape, func_name: &str, label: &str) -> Vec<SExpr>
         .iter()
         .filter_map(|tp| {
             if tp.type_ann.name == "any" {
-                None
-            } else {
-                emit_type_check(&tp.name, &tp.type_ann.name, func_name, label, tp.name_span)
+                return None;
             }
+            if tp.is_rest {
+                // For rest params, emit a for-of loop that checks each element
+                let el_var = format!("_el__{}", tp.name);
+                let check = emit_type_check(
+                    &el_var,
+                    &tp.type_ann.name,
+                    func_name,
+                    "rest arg",
+                    tp.name_span,
+                )?;
+                return Some(list(vec![
+                    atom("for-of"),
+                    atom(&el_var),
+                    atom(&tp.name),
+                    check,
+                ]));
+            }
+            emit_type_check(&tp.name, &tp.type_ann.name, func_name, label, tp.name_span)
         })
         .collect()
 }
@@ -2016,6 +2034,7 @@ mod tests {
             name: param_name.to_string(),
             name_span: s(),
             default_value: None,
+            is_rest: false,
         }
     }
 
@@ -6111,6 +6130,7 @@ mod tests {
                             name: "age".into(),
                             name_span: s(),
                             default_value: Some(num(0.0)),
+                            is_rest: false,
                         }),
                     ],
                     span: s(),
@@ -6173,6 +6193,7 @@ mod tests {
                     name: "name".into(),
                     name_span: s(),
                     default_value: Some(str_lit("anon")),
+                    is_rest: false,
                 })],
                 span: s(),
             }],
@@ -6356,5 +6377,164 @@ mod tests {
         } else {
             panic!("expected list");
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Top-level default and rest in func :args
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_emit_func_toplevel_default() {
+        // Build a func with a Simple param that has a default_value.
+        // Expect kernel output to contain (default greeting "Hello").
+        let form = SurfaceForm::Func {
+            name: "greet".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![
+                    sp("string", "name"),
+                    ParamShape::Simple(TypedParam {
+                        type_ann: ta("string"),
+                        name: "greeting".into(),
+                        name_span: s(),
+                        default_value: Some(str_lit("Hello")),
+                        is_rest: false,
+                    }),
+                ],
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![atom("name")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+            assert_eq!(values[1].as_atom(), Some("greet"));
+            // Params list: (name (default greeting "Hello"))
+            if let SExpr::List { values: params, .. } = &values[2] {
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0].as_atom(), Some("name"));
+                if let SExpr::List {
+                    values: default_node,
+                    ..
+                } = &params[1]
+                {
+                    assert_eq!(default_node[0].as_atom(), Some("default"));
+                    assert_eq!(default_node[1].as_atom(), Some("greeting"));
+                    assert!(
+                        matches!(&default_node[2], SExpr::String { value, .. } if value == "Hello")
+                    );
+                } else {
+                    panic!("expected default list node, got: {:?}", params[1]);
+                }
+            } else {
+                panic!("expected params list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_func_toplevel_rest() {
+        // Build a func with a Simple param that has is_rest: true.
+        // Expect kernel output to contain (rest messages).
+        let form = SurfaceForm::Func {
+            name: "log".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![
+                    sp("string", "level"),
+                    ParamShape::Simple(TypedParam {
+                        type_ann: ta("any"),
+                        name: "messages".into(),
+                        name_span: s(),
+                        default_value: None,
+                        is_rest: true,
+                    }),
+                ],
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![atom("level")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+            assert_eq!(values[1].as_atom(), Some("log"));
+            // Params list: (level (rest messages))
+            if let SExpr::List { values: params, .. } = &values[2] {
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0].as_atom(), Some("level"));
+                if let SExpr::List {
+                    values: rest_node, ..
+                } = &params[1]
+                {
+                    assert_eq!(rest_node[0].as_atom(), Some("rest"));
+                    assert_eq!(rest_node[1].as_atom(), Some("messages"));
+                } else {
+                    panic!("expected rest list node, got: {:?}", params[1]);
+                }
+            } else {
+                panic!("expected params list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_func_typed_rest_for_of_check() {
+        // Build a func with a rest param typed :number (not :any).
+        // Expect the output to contain a for-of loop for per-element type checking.
+        let form = SurfaceForm::Func {
+            name: "sum".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![ParamShape::Simple(TypedParam {
+                    type_ann: ta("number"),
+                    name: "nums".into(),
+                    name_span: s(),
+                    default_value: None,
+                    is_rest: true,
+                })],
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![atom("nums")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Search the output tree for a (for-of ...) node.
+        fn find_for_of(expr: &SExpr) -> bool {
+            match expr {
+                SExpr::List { values, .. } => {
+                    if values.first().and_then(|v| v.as_atom()) == Some("for-of") {
+                        return true;
+                    }
+                    values.iter().any(find_for_of)
+                }
+                _ => false,
+            }
+        }
+        assert!(
+            find_for_of(&result[0]),
+            "expected for-of type check in output, got: {:?}",
+            result[0]
+        );
     }
 }

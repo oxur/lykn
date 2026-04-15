@@ -124,6 +124,7 @@ mod tests {
             name: name.into(),
             name_span: span(),
             default_value: None,
+            is_rest: false,
         }
     }
 
@@ -353,6 +354,7 @@ mod tests {
                             value: "alice".into(),
                             span: span(),
                         }),
+                        is_rest: false,
                     })],
                     span: span(),
                 }]),
@@ -368,6 +370,7 @@ mod tests {
                             value: "bob".into(),
                             span: span(),
                         }),
+                        is_rest: false,
                     })],
                     span: span(),
                 }]),

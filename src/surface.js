@@ -507,6 +507,13 @@ function paramNameNodes(p) {
 			return [array(sym("array"), ...elems)];
 		}
 	}
+	// Simple param — handle default and rest
+	if (p.defaultValue) {
+		return [array(sym("default"), p.name, p.defaultValue)];
+	}
+	if (p.isRest) {
+		return [array(sym("rest"), p.name)];
+	}
 	return [p.name];
 }
 
@@ -533,6 +540,14 @@ function paramTypeChecks(p, funcName) {
 			if (check) checks.push(check);
 		}
 		return checks;
+	}
+	// Rest param: per-element type check via for-of loop
+	if (p.isRest) {
+		if (p.typeKw.value === "any") return [];
+		const elVar = gensym("el");
+		const innerCheck = buildTypeCheck(elVar, p.typeKw, funcName, "rest arg");
+		if (!innerCheck) return [];
+		return [array(sym("for-of"), elVar, p.name, innerCheck)];
 	}
 	const check = buildTypeCheck(p.name, p.typeKw, funcName, "arg");
 	return check ? [check] : [];
@@ -564,8 +579,46 @@ function paramBoundNames(p) {
 }
 
 /**
+ * Parse a top-level (default :type name value) in :args.
+ */
+function parseDefaultParam(listNode) {
+	const vals = listNode.values;
+	if (vals.length !== 4) {
+		throw new Error(
+			"(default) in :args requires exactly 3 elements: :type name value",
+		);
+	}
+	if (!isKeyword(vals[1])) {
+		throw new Error("(default) first element must be a type keyword");
+	}
+	if (vals[2].type !== "atom") {
+		throw new Error("(default) second element must be a name");
+	}
+	return { typeKw: vals[1], name: vals[2], defaultValue: vals[3] };
+}
+
+/**
+ * Parse a top-level (rest :type name) in :args.
+ */
+function parseRestParam(listNode) {
+	const vals = listNode.values;
+	if (vals.length !== 3) {
+		throw new Error(
+			"(rest) in :args requires exactly 2 elements: :type name",
+		);
+	}
+	if (!isKeyword(vals[1])) {
+		throw new Error("(rest) first element must be a type keyword");
+	}
+	if (vals[2].type !== "atom") {
+		throw new Error("(rest) second element must be a name");
+	}
+	return { typeKw: vals[1], name: vals[2], isRest: true };
+}
+
+/**
  * Parse typed parameter list: (:type name :type name ...) → [{typeKw, name}, ...]
- * Also accepts destructuring patterns: ((object :type name ...) :type name ...)
+ * Also accepts destructuring patterns, (default ...), and (rest ...).
  */
 function parseTypedParams(paramList) {
 	const params = [];
@@ -573,8 +626,19 @@ function parseTypedParams(paramList) {
 	let i = 0;
 	while (i < values.length) {
 		if (isArray(values[i])) {
-			// Destructured param — the list IS the param
-			params.push(parseDestructuredParam(values[i]));
+			const headVal = values[i].values[0];
+			const headName = headVal?.type === "atom" ? headVal.value : "";
+			if (headName === "object" || headName === "array") {
+				params.push(parseDestructuredParam(values[i]));
+			} else if (headName === "default") {
+				params.push(parseDefaultParam(values[i]));
+			} else if (headName === "rest") {
+				params.push(parseRestParam(values[i]));
+			} else {
+				throw new Error(
+					`expected 'object', 'array', 'default', or 'rest' at head of sub-form in :args, got '${headName || values[i].type}'`,
+				);
+			}
 			i += 1;
 		} else if (isKeyword(values[i])) {
 			// Simple param — :type name pair
@@ -587,8 +651,19 @@ function parseTypedParams(paramList) {
 			i += 2;
 		} else {
 			throw new Error(
-				`expected type keyword or destructuring pattern at position ${i}, got ${values[i]?.type ?? "nothing"}`,
+				`expected type keyword or sub-form at position ${i}, got ${values[i]?.type ?? "nothing"}`,
 			);
+		}
+	}
+	// Validate rest constraints
+	const restParams = params.filter((p) => p.isRest);
+	if (restParams.length > 1) {
+		throw new Error("only one rest parameter allowed");
+	}
+	if (restParams.length === 1) {
+		const lastParam = params[params.length - 1];
+		if (!lastParam.isRest) {
+			throw new Error("rest parameter must be the last parameter");
 		}
 	}
 	return params;

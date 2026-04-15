@@ -303,3 +303,107 @@ Deno.test("func: error on rest not last in array", () => {
     "rest element must be last",
   );
 });
+
+// --- Top-level default and rest in :args (DD-25.2) ---
+
+Deno.test("func: top-level default param", () => {
+  const result = lykn(
+    '(func greet :args (:string name (default :string greeting "Hello")) :returns :string :body (template greeting ", " name "!"))',
+  );
+  assertEquals(result.includes('greeting = "Hello"'), true);
+  assertEquals(result.includes('typeof name !== "string"'), true);
+  assertEquals(result.includes('typeof greeting !== "string"'), true);
+});
+
+Deno.test("func: multiple top-level defaults", () => {
+  const result = lykn(
+    "(func f :args ((default :number x 0) (default :number y 0)) :body (+ x y))",
+  );
+  assertEquals(result.includes("x = 0"), true);
+  assertEquals(result.includes("y = 0"), true);
+});
+
+Deno.test("func: top-level rest param :any — no per-element check", () => {
+  const result = lykn(
+    "(func log-all :args (:string level (rest :any messages)) :body (console:log level messages))",
+  );
+  assertEquals(result.includes("...messages"), true);
+  assertEquals(result.includes('typeof level !== "string"'), true);
+  // :any rest — no for-of check
+  assertEquals(result.includes("for (const"), false);
+});
+
+Deno.test("func: top-level rest param :number — per-element check", () => {
+  const result = lykn(
+    "(func sum :args ((rest :number nums)) :returns :number :body (nums:reduce (fn (:number acc :number n) (+ acc n)) 0))",
+  );
+  assertEquals(result.includes("...nums"), true);
+  // Per-element type check via for-of
+  assertEquals(result.includes("for (const"), true);
+  assertEquals(result.includes("of nums"), true);
+});
+
+Deno.test("fn: top-level default", () => {
+  const result = lykn(
+    '(bind f (fn ((default :string name "anon")) (console:log name)))',
+  );
+  assertEquals(result.includes('name = "anon"'), true);
+  assertEquals(result.includes('typeof name !== "string"'), true);
+});
+
+Deno.test("fn: top-level rest :any", () => {
+  const result = lykn(
+    "(bind f (fn ((rest :any args)) (console:log args)))",
+  );
+  assertEquals(result.includes("...args"), true);
+  assertEquals(result.includes("for (const"), false);
+});
+
+Deno.test("fn: top-level rest :string — per-element check", () => {
+  const result = lykn(
+    "(bind f (fn ((rest :string items)) (console:log items)))",
+  );
+  assertEquals(result.includes("...items"), true);
+  assertEquals(result.includes("for (const"), true);
+});
+
+Deno.test("func: mixed destructured + default + rest", () => {
+  const result = lykn(
+    "(func handle :args ((object :string method :string url) (default :number timeout 5000) (rest :any middleware)) :body (console:log method url timeout middleware))",
+  );
+  assertEquals(result.includes("{method, url}"), true);
+  assertEquals(result.includes("timeout = 5000"), true);
+  assertEquals(result.includes("...middleware"), true);
+});
+
+Deno.test("func: default with :any — no type check", () => {
+  const result = lykn(
+    '(func f :args ((default :any name "anon")) :body (console:log name))',
+  );
+  assertEquals(result.includes('name = "anon"'), true);
+  assertEquals(result.includes("typeof name"), false);
+});
+
+Deno.test("func: error on rest not last in :args", () => {
+  assertThrows(
+    () => lykn("(func f :args ((rest :any r) :string x) :body 1)"),
+    Error,
+    "rest parameter must be the last parameter",
+  );
+});
+
+Deno.test("func: error on multiple rest in :args", () => {
+  assertThrows(
+    () => lykn("(func f :args ((rest :any a) (rest :any b)) :body 1)"),
+    Error,
+    "only one rest parameter allowed",
+  );
+});
+
+Deno.test("func: error on default missing value", () => {
+  assertThrows(
+    () => lykn("(func f :args ((default :number x)) :body 1)"),
+    Error,
+    "requires exactly 3 elements",
+  );
+});

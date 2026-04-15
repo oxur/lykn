@@ -13,6 +13,7 @@ pub struct TypedParam {
     pub name: String,
     pub name_span: Span,
     pub default_value: Option<SExpr>,
+    pub is_rest: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

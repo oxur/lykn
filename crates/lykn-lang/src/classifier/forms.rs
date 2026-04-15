@@ -856,6 +856,7 @@ fn parse_simple_typed_params(values: &[SExpr], span: Span) -> Result<Vec<TypedPa
                         name: name.clone(),
                         name_span: *nspan,
                         default_value: None,
+                        is_rest: false,
                     });
                 }
                 _ => return Err(err("parameter name must be an atom", span)),
@@ -875,13 +876,100 @@ fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<ParamShape>, D
     let mut i = 0;
     while i < values.len() {
         match &values[i] {
-            // Destructuring pattern: a list at position i
+            // Sub-form: destructuring, default, or rest
             SExpr::List {
                 values: inner,
                 span: lspan,
                 ..
             } => {
-                params.push(parse_destructured_param(inner, *lspan)?);
+                let head = inner.first().and_then(|e| e.as_atom()).unwrap_or("");
+                match head {
+                    "object" | "array" => {
+                        params.push(parse_destructured_param(inner, *lspan)?);
+                    }
+                    "default" => {
+                        // (default :type name value) — 4 elements
+                        if inner.len() != 4 {
+                            return Err(err(
+                                "(default) in :args requires exactly 3 elements: :type name value",
+                                *lspan,
+                            ));
+                        }
+                        match (&inner[1], &inner[2]) {
+                            (
+                                SExpr::Keyword {
+                                    value: type_name,
+                                    span: kspan,
+                                },
+                                SExpr::Atom {
+                                    value: name,
+                                    span: nspan,
+                                },
+                            ) => {
+                                params.push(ParamShape::Simple(TypedParam {
+                                    type_ann: TypeAnnotation {
+                                        name: type_name.clone(),
+                                        span: *kspan,
+                                    },
+                                    name: name.clone(),
+                                    name_span: *nspan,
+                                    default_value: Some(inner[3].clone()),
+                                    is_rest: false,
+                                }));
+                            }
+                            _ => {
+                                return Err(err(
+                                    "(default) expected :type name value",
+                                    *lspan,
+                                ))
+                            }
+                        }
+                    }
+                    "rest" => {
+                        // (rest :type name) — 3 elements
+                        if inner.len() != 3 {
+                            return Err(err(
+                                "(rest) in :args requires exactly 2 elements: :type name",
+                                *lspan,
+                            ));
+                        }
+                        match (&inner[1], &inner[2]) {
+                            (
+                                SExpr::Keyword {
+                                    value: type_name,
+                                    span: kspan,
+                                },
+                                SExpr::Atom {
+                                    value: name,
+                                    span: nspan,
+                                },
+                            ) => {
+                                params.push(ParamShape::Simple(TypedParam {
+                                    type_ann: TypeAnnotation {
+                                        name: type_name.clone(),
+                                        span: *kspan,
+                                    },
+                                    name: name.clone(),
+                                    name_span: *nspan,
+                                    default_value: None,
+                                    is_rest: true,
+                                }));
+                            }
+                            _ => {
+                                return Err(err("(rest) expected :type name", *lspan))
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(err(
+                            format!(
+                                "expected 'object', 'array', 'default', or 'rest' at head of \
+                                 sub-form in :args, got '{head}'"
+                            ),
+                            *lspan,
+                        ));
+                    }
+                }
                 i += 1;
             }
             // Simple param: keyword at i, atom at i+1
@@ -908,6 +996,7 @@ fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<ParamShape>, D
                             name: name.clone(),
                             name_span: *nspan,
                             default_value: None,
+                            is_rest: false,
                         }));
                     }
                     _ => return Err(err("parameter name must be an atom", span)),
@@ -922,6 +1011,23 @@ fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<ParamShape>, D
             }
         }
     }
+
+    // Validate rest parameter constraints
+    let rest_count = params
+        .iter()
+        .filter(|p| matches!(p, ParamShape::Simple(tp) if tp.is_rest))
+        .count();
+    if rest_count > 1 {
+        return Err(err("only one rest parameter allowed", span));
+    }
+    if rest_count == 1
+        && !params
+            .last()
+            .is_some_and(|p| matches!(p, ParamShape::Simple(tp) if tp.is_rest))
+    {
+        return Err(err("rest parameter must be the last parameter", span));
+    }
+
     Ok(params)
 }
 
@@ -982,6 +1088,7 @@ fn parse_object_destructure(values: &[SExpr], span: Span) -> Result<ParamShape, 
                             name,
                             name_span,
                             default_value: Some(inner[3].clone()),
+                            is_rest: false,
                         }));
                     }
                     "alias" => {
@@ -1061,6 +1168,7 @@ fn parse_object_destructure(values: &[SExpr], span: Span) -> Result<ParamShape, 
                             name: name.clone(),
                             name_span: *nspan,
                             default_value: None,
+                            is_rest: false,
                         }));
                     }
                     _ => return Err(err("field name must be an atom", span)),
@@ -1162,6 +1270,7 @@ fn parse_array_destructure(values: &[SExpr], span: Span) -> Result<ParamShape, D
                             name,
                             name_span,
                             default_value: Some(inner[3].clone()),
+                            is_rest: false,
                         }));
                         i += 1;
                     }
@@ -1241,6 +1350,7 @@ fn parse_array_destructure(values: &[SExpr], span: Span) -> Result<ParamShape, D
                             name: name.clone(),
                             name_span: *nspan,
                             default_value: None,
+                            is_rest: false,
                         }));
                     }
                     _ => return Err(err("element name must be an atom", span)),
@@ -1286,6 +1396,7 @@ fn parse_rest_element(values: &[SExpr], span: Span) -> Result<TypedParam, Diagno
             name: name.clone(),
             name_span: *nspan,
             default_value: None,
+            is_rest: true,
         }),
         _ => Err(err("rest element must be (rest :type name)", span)),
     }
@@ -3850,5 +3961,183 @@ mod tests {
             }
             other => panic!("expected Fn, got {other:?}"),
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Top-level default and rest in :args
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_func_toplevel_default() {
+        // (func f :args (:string name (default :string greeting "Hello")) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![
+                    kw("string"),
+                    atom("name"),
+                    list(vec![
+                        atom("default"),
+                        kw("string"),
+                        atom("greeting"),
+                        string("Hello"),
+                    ]),
+                ]),
+                kw("body"),
+                atom("x"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Func { clauses, .. } => {
+                assert_eq!(clauses.len(), 1);
+                assert_eq!(clauses[0].args.len(), 2);
+                // First param: simple :string name
+                match &clauses[0].args[0] {
+                    ParamShape::Simple(tp) => {
+                        assert_eq!(tp.name, "name");
+                        assert_eq!(tp.type_ann.name, "string");
+                        assert!(tp.default_value.is_none());
+                        assert!(!tp.is_rest);
+                    }
+                    other => panic!("expected Simple, got {other:?}"),
+                }
+                // Second param: default :string greeting "Hello"
+                match &clauses[0].args[1] {
+                    ParamShape::Simple(tp) => {
+                        assert_eq!(tp.name, "greeting");
+                        assert_eq!(tp.type_ann.name, "string");
+                        assert!(tp.default_value.is_some());
+                        assert!(
+                            matches!(&tp.default_value, Some(SExpr::String { value, .. }) if value == "Hello")
+                        );
+                        assert!(!tp.is_rest);
+                    }
+                    other => panic!("expected Simple with default, got {other:?}"),
+                }
+            }
+            other => panic!("expected Func, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_func_toplevel_rest() {
+        // (func f :args (:string level (rest :any messages)) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![
+                    kw("string"),
+                    atom("level"),
+                    list(vec![atom("rest"), kw("any"), atom("messages")]),
+                ]),
+                kw("body"),
+                atom("x"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Func { clauses, .. } => {
+                assert_eq!(clauses.len(), 1);
+                assert_eq!(clauses[0].args.len(), 2);
+                // First param: simple :string level
+                match &clauses[0].args[0] {
+                    ParamShape::Simple(tp) => {
+                        assert_eq!(tp.name, "level");
+                        assert!(!tp.is_rest);
+                    }
+                    other => panic!("expected Simple, got {other:?}"),
+                }
+                // Second param: rest :any messages
+                match &clauses[0].args[1] {
+                    ParamShape::Simple(tp) => {
+                        assert_eq!(tp.name, "messages");
+                        assert_eq!(tp.type_ann.name, "any");
+                        assert!(tp.is_rest);
+                        assert!(tp.default_value.is_none());
+                    }
+                    other => panic!("expected Simple with is_rest, got {other:?}"),
+                }
+            }
+            other => panic!("expected Func, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_func_rest_not_last_error() {
+        // (func f :args ((rest :any r) :string x) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![
+                    list(vec![atom("rest"), kw("any"), atom("r")]),
+                    kw("string"),
+                    atom("x"),
+                ]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        let msg = result.unwrap_err().message;
+        assert!(
+            msg.contains("rest parameter must be the last"),
+            "expected error about rest position, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_classify_func_multiple_rest_error() {
+        // (func f :args ((rest :any a) (rest :any b)) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![
+                    list(vec![atom("rest"), kw("any"), atom("a")]),
+                    list(vec![atom("rest"), kw("any"), atom("b")]),
+                ]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        let msg = result.unwrap_err().message;
+        assert!(
+            msg.contains("only one rest"),
+            "expected error about multiple rest params, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_classify_func_default_wrong_arity_error() {
+        // (func f :args ((default :number x)) :body x) — only 3 elements, requires 4
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![
+                    atom("default"),
+                    kw("number"),
+                    atom("x"),
+                ])]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        let msg = result.unwrap_err().message;
+        assert!(
+            msg.contains("default"),
+            "expected error about default arity, got: {msg}"
+        );
     }
 }

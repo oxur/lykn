@@ -543,6 +543,7 @@ mod tests {
                             name: "a".into(),
                             name_span: span(),
                             default_value: None,
+                            is_rest: false,
                         }),
                         ParamShape::Simple(TypedParam {
                             type_ann: TypeAnnotation {
@@ -552,6 +553,7 @@ mod tests {
                             name: "b".into(),
                             name_span: span(),
                             default_value: None,
+                            is_rest: false,
                         }),
                     ],
                     returns: Some(TypeAnnotation {
@@ -635,6 +637,7 @@ mod tests {
                             name: "a".into(),
                             name_span: span(),
                             default_value: None,
+                            is_rest: false,
                         }),
                         ParamShape::Simple(TypedParam {
                             type_ann: TypeAnnotation {
@@ -644,6 +647,7 @@ mod tests {
                             name: "b".into(),
                             name_span: span(),
                             default_value: None,
+                            is_rest: false,
                         }),
                     ],
                     returns: None,
