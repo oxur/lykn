@@ -131,7 +131,9 @@ impl Analyze for SurfaceForm {
                 for clause in clauses {
                     scope.enter_scope();
                     for param in &clause.args {
-                        scope.introduce(&param.name, param.name_span, false, false);
+                        for tp in param.typed_params() {
+                            scope.introduce(&tp.name, tp.name_span, false, false);
+                        }
                     }
                     // Walk the body so references to params (and outer
                     // bindings) are recorded inside this scope.
@@ -166,7 +168,9 @@ impl Analyze for SurfaceForm {
             SurfaceForm::Fn { params, body, .. } | SurfaceForm::Lambda { params, body, .. } => {
                 scope.enter_scope();
                 for param in params {
-                    scope.introduce(&param.name, param.name_span, false, false);
+                    for tp in param.typed_params() {
+                        scope.introduce(&tp.name, tp.name_span, false, false);
+                    }
                 }
                 for expr in body {
                     track_references_in_expr(expr, scope);
@@ -444,7 +448,8 @@ mod tests {
     use super::*;
     use crate::ast::sexpr::SExpr;
     use crate::ast::surface::{
-        Constructor, FuncClause, MatchClause, Pattern, SurfaceForm, TypeAnnotation, TypedParam,
+        Constructor, FuncClause, MatchClause, ParamShape, Pattern, SurfaceForm, TypeAnnotation,
+        TypedParam,
     };
     use crate::reader::source_loc::Span;
 
@@ -530,22 +535,22 @@ mod tests {
                 name_span: span(),
                 clauses: vec![FuncClause {
                     args: vec![
-                        TypedParam {
+                        ParamShape::Simple(TypedParam {
                             type_ann: TypeAnnotation {
                                 name: "number".into(),
                                 span: span(),
                             },
                             name: "a".into(),
                             name_span: span(),
-                        },
-                        TypedParam {
+                        }),
+                        ParamShape::Simple(TypedParam {
                             type_ann: TypeAnnotation {
                                 name: "number".into(),
                                 span: span(),
                             },
                             name: "b".into(),
                             name_span: span(),
-                        },
+                        }),
                     ],
                     returns: Some(TypeAnnotation {
                         name: "number".into(),
@@ -620,22 +625,22 @@ mod tests {
                 name_span: span(),
                 clauses: vec![FuncClause {
                     args: vec![
-                        TypedParam {
+                        ParamShape::Simple(TypedParam {
                             type_ann: TypeAnnotation {
                                 name: "number".into(),
                                 span: span(),
                             },
                             name: "a".into(),
                             name_span: span(),
-                        },
-                        TypedParam {
+                        }),
+                        ParamShape::Simple(TypedParam {
                             type_ann: TypeAnnotation {
                                 name: "number".into(),
                                 span: span(),
                             },
                             name: "b".into(),
                             name_span: span(),
-                        },
+                        }),
                     ],
                     returns: None,
                     pre: None,

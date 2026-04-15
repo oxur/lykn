@@ -1,8 +1,8 @@
 use crate::analysis::type_registry::TypeRegistry;
 use crate::ast::sexpr::SExpr;
 use crate::ast::surface::{
-    Constructor, FuncClause, MatchClause, Pattern, SurfaceForm, ThreadingStep, TypeAnnotation,
-    TypedParam,
+    ArrayParamElement, Constructor, FuncClause, MatchClause, ParamShape, Pattern, SurfaceForm,
+    ThreadingStep, TypeAnnotation,
 };
 use crate::reader::source_loc::Span;
 
@@ -916,16 +916,55 @@ fn emit_type(
 }
 
 // ---------------------------------------------------------------------------
+// ParamShape helpers
+// ---------------------------------------------------------------------------
+
+/// Convert a ParamShape to kernel parameter name nodes.
+fn param_to_kernel_names(p: &ParamShape) -> Vec<SExpr> {
+    match p {
+        ParamShape::Simple(tp) => vec![atom(&tp.name)],
+        ParamShape::DestructuredObject { fields, .. } => {
+            let mut items = vec![atom("object")];
+            items.extend(fields.iter().map(|f| atom(&f.name)));
+            vec![list(items)]
+        }
+        ParamShape::DestructuredArray { elements, .. } => {
+            let mut items = vec![atom("array")];
+            items.extend(elements.iter().map(|e| match e {
+                ArrayParamElement::Typed(tp) => atom(&tp.name),
+                ArrayParamElement::Rest(tp) => list(vec![atom("rest"), atom(&tp.name)]),
+                ArrayParamElement::Skip(_) => atom("_"),
+            }));
+            vec![list(items)]
+        }
+    }
+}
+
+/// Emit type checks for all typed fields in a ParamShape.
+fn param_type_checks(p: &ParamShape, func_name: &str, label: &str) -> Vec<SExpr> {
+    p.typed_params()
+        .iter()
+        .filter_map(|tp| {
+            if tp.type_ann.name == "any" {
+                None
+            } else {
+                emit_type_check(&tp.name, &tp.type_ann.name, func_name, label, tp.name_span)
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Fn / Lambda emission
 // ---------------------------------------------------------------------------
 
 fn emit_fn_expr(
-    params: &[TypedParam],
+    params: &[ParamShape],
     body: &[SExpr],
     ctx: &mut EmitterContext,
     registry: &TypeRegistry,
 ) -> SExpr {
-    let param_names: Vec<SExpr> = params.iter().map(|p| atom(&p.name)).collect();
+    let param_names: Vec<SExpr> = params.iter().flat_map(param_to_kernel_names).collect();
 
     let mut items = vec![atom("=>"), list(param_names)];
 
@@ -933,15 +972,10 @@ fn emit_fn_expr(
     let mut has_type_checks = false;
     if !ctx.strip_assertions {
         for param in params {
-            if let Some(check) = emit_type_check(
-                &param.name,
-                &param.type_ann.name,
-                "anonymous",
-                "arg",
-                param.name_span,
-            ) {
-                items.push(check);
+            let checks = param_type_checks(param, "anonymous", "arg");
+            if !checks.is_empty() {
                 has_type_checks = true;
+                items.extend(checks);
             }
         }
     }
@@ -985,22 +1019,14 @@ fn emit_func_single(
     ctx: &mut EmitterContext,
     registry: &TypeRegistry,
 ) -> SExpr {
-    let param_names: Vec<SExpr> = clause.args.iter().map(|p| atom(&p.name)).collect();
+    let param_names: Vec<SExpr> = clause.args.iter().flat_map(param_to_kernel_names).collect();
 
     let mut items = vec![atom("function"), atom(name), list(param_names)];
 
     // Type checks for parameters
     if !ctx.strip_assertions {
         for param in &clause.args {
-            if let Some(check) = emit_type_check(
-                &param.name,
-                &param.type_ann.name,
-                name,
-                "arg",
-                param.name_span,
-            ) {
-                items.push(check);
-            }
+            items.extend(param_type_checks(param, name, "arg"));
         }
     }
 
@@ -1112,8 +1138,16 @@ fn emit_func_multi(
             return arity_cmp;
         }
         // More typed args first
-        let typed_a = ca.args.iter().filter(|p| p.type_ann.name != "any").count();
-        let typed_b = cb.args.iter().filter(|p| p.type_ann.name != "any").count();
+        let typed_a = ca
+            .args
+            .iter()
+            .filter(|p| p.dispatch_type() != "any")
+            .count();
+        let typed_b = cb
+            .args
+            .iter()
+            .filter(|p| p.dispatch_type() != "any")
+            .count();
         typed_b.cmp(&typed_a)
     });
 
@@ -1136,10 +1170,10 @@ fn emit_func_multi(
 
         // Type dispatch checks (only for non-any types)
         for (i, param) in clause.args.iter().enumerate() {
-            if param.type_ann.name != "any" {
+            let dtype = param.dispatch_type();
+            if dtype != "any" {
                 let arg_access = list(vec![atom("get"), atom("args"), num(i as f64)]);
-                // For dispatch, just check typeof
-                let dispatch_check = build_dispatch_check(&param.type_ann.name, &arg_access);
+                let dispatch_check = build_dispatch_check(dtype, &arg_access);
                 if let Some(check) = dispatch_check {
                     conditions.push(check);
                 }
@@ -1159,25 +1193,21 @@ fn emit_func_multi(
 
         // Bind parameters from args array
         for (i, param) in clause.args.iter().enumerate() {
-            block_items.push(list(vec![
-                atom("const"),
-                atom(&param.name),
-                list(vec![atom("get"), atom("args"), num(i as f64)]),
-            ]));
+            let arg_access = list(vec![atom("get"), atom("args"), num(i as f64)]);
+            let binding = param_to_kernel_names(param);
+            if binding.len() == 1 {
+                block_items.push(list(vec![
+                    atom("const"),
+                    binding.into_iter().next().unwrap(),
+                    arg_access,
+                ]));
+            }
         }
 
         // Full type checks
         if !ctx.strip_assertions {
             for param in &clause.args {
-                if let Some(check) = emit_type_check(
-                    &param.name,
-                    &param.type_ann.name,
-                    name,
-                    "arg",
-                    param.name_span,
-                ) {
-                    block_items.push(check);
-                }
+                block_items.extend(param_type_checks(param, name, "arg"));
             }
         }
 
@@ -1910,8 +1940,8 @@ mod tests {
     use super::*;
     use crate::analysis::type_registry::{ConstructorDef, FieldDef, TypeDef, TypeRegistry};
     use crate::ast::surface::{
-        Constructor, FuncClause, MatchClause, Pattern, SurfaceForm, ThreadingStep, TypeAnnotation,
-        TypedParam,
+        Constructor, FuncClause, MatchClause, ParamShape, Pattern, SurfaceForm, ThreadingStep,
+        TypeAnnotation, TypedParam,
     };
     use crate::emitter::context::EmitterContext;
 
@@ -1932,6 +1962,10 @@ mod tests {
             name: param_name.to_string(),
             name_span: s(),
         }
+    }
+
+    fn sp(type_name: &str, param_name: &str) -> ParamShape {
+        tp(type_name, param_name).into()
     }
 
     fn ctx() -> EmitterContext {
@@ -2396,7 +2430,7 @@ mod tests {
     #[test]
     fn test_emit_fn() {
         let form = SurfaceForm::Fn {
-            params: vec![tp("number", "x")],
+            params: vec![sp("number", "x")],
             body: vec![list(vec![atom("+"), atom("x"), num(1.0)])],
             span: s(),
         };
@@ -2418,7 +2452,7 @@ mod tests {
             name: "add".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "a"), tp("number", "b")],
+                args: vec![sp("number", "a"), sp("number", "b")],
                 returns: None,
                 pre: None,
                 post: None,
@@ -2447,7 +2481,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -2455,7 +2489,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -2802,7 +2836,7 @@ mod tests {
             name: "add".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "a"), tp("number", "b")],
+                args: vec![sp("number", "a"), sp("number", "b")],
                 returns: None,
                 pre: Some(list(vec![atom(">"), atom("a"), num(0.0)])),
                 post: None,
@@ -2832,7 +2866,7 @@ mod tests {
 
     #[test]
     fn test_emit_lambda_same_as_fn() {
-        let params = vec![tp("any", "x")];
+        let params = vec![sp("any", "x")];
         let body = vec![atom("x")];
 
         let fn_form = SurfaceForm::Fn {
@@ -3779,7 +3813,7 @@ mod tests {
             name: "log".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("string", "msg")],
+                args: vec![sp("string", "msg")],
                 returns: Some(ta("void")),
                 pre: None,
                 post: None,
@@ -3812,7 +3846,7 @@ mod tests {
             name: "double".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "x")],
+                args: vec![sp("number", "x")],
                 returns: Some(ta("number")),
                 pre: None,
                 post: None,
@@ -3845,7 +3879,7 @@ mod tests {
             name: "identity".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("any", "x")],
+                args: vec![sp("any", "x")],
                 returns: Some(ta("any")),
                 pre: None,
                 post: None,
@@ -3876,7 +3910,7 @@ mod tests {
             name: "double".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "x")],
+                args: vec![sp("number", "x")],
                 returns: Some(ta("number")),
                 pre: None,
                 post: None,
@@ -3911,7 +3945,7 @@ mod tests {
             name: "sqrt".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "x")],
+                args: vec![sp("number", "x")],
                 returns: None,
                 pre: Some(list(vec![atom(">="), atom("x"), num(0.0)])),
                 post: None,
@@ -3944,7 +3978,7 @@ mod tests {
             name: "abs".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "x")],
+                args: vec![sp("number", "x")],
                 returns: None,
                 pre: None,
                 post: Some(list(vec![atom(">="), atom("%"), num(0.0)])),
@@ -3980,7 +4014,7 @@ mod tests {
             name: "abs-val".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("number", "x")],
+                args: vec![sp("number", "x")],
                 returns: None,
                 pre: None,
                 post: Some(list(vec![atom(">="), atom("%"), num(0.0)])),
@@ -4030,7 +4064,7 @@ mod tests {
             name: "process".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("any", "x")],
+                args: vec![sp("any", "x")],
                 returns: None,
                 pre: None,
                 post: Some(list(vec![atom("!="), atom("%"), atom("null")])),
@@ -4059,7 +4093,7 @@ mod tests {
             name: "process".into(),
             name_span: s(),
             clauses: vec![FuncClause {
-                args: vec![tp("any", "x")],
+                args: vec![sp("any", "x")],
                 returns: Some(ta("number")),
                 pre: None,
                 post: None,
@@ -4173,7 +4207,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("any", "x")],
+                    args: vec![sp("any", "x")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4181,7 +4215,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("any", "x"), tp("any", "y")],
+                    args: vec![sp("any", "x"), sp("any", "y")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4215,7 +4249,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: None,
                     post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
@@ -4223,7 +4257,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4245,7 +4279,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: Some(list(vec![atom(">"), atom("x"), num(0.0)])),
                     post: None,
@@ -4253,7 +4287,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4275,7 +4309,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4283,7 +4317,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4305,7 +4339,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4313,7 +4347,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4335,7 +4369,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: None,
                     post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
@@ -4343,7 +4377,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -4365,7 +4399,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: None,
                     post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
@@ -4373,7 +4407,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -5145,7 +5179,7 @@ mod tests {
     #[test]
     fn test_fn_strip_assertions() {
         let form = SurfaceForm::Fn {
-            params: vec![tp("number", "x")],
+            params: vec![sp("number", "x")],
             body: vec![atom("x")],
             span: s(),
         };
@@ -5172,7 +5206,7 @@ mod tests {
     fn test_fn_typed_returns_last_expression() {
         // (fn (:number x) (* x 2)) should emit (=> (x) <type-check> (return (* x 2)))
         let form = SurfaceForm::Fn {
-            params: vec![tp("number", "x")],
+            params: vec![sp("number", "x")],
             body: vec![list(vec![
                 atom("*"),
                 atom("x"),
@@ -5207,7 +5241,7 @@ mod tests {
     fn test_fn_typed_multi_body_returns_last() {
         // (fn (:number x) (console:log x) (+ x 1)) should return last expr
         let form = SurfaceForm::Fn {
-            params: vec![tp("number", "x")],
+            params: vec![sp("number", "x")],
             body: vec![
                 list(vec![atom("console.log"), atom("x")]),
                 list(vec![
@@ -5245,7 +5279,7 @@ mod tests {
     fn test_fn_any_no_return_wrapper() {
         // (fn (:any x) x) should NOT get a return wrapper (concise arrow body)
         let form = SurfaceForm::Fn {
-            params: vec![tp("any", "x")],
+            params: vec![sp("any", "x")],
             body: vec![atom("x")],
             span: s(),
         };
@@ -5309,7 +5343,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("number", "x")],
+                    args: vec![sp("number", "x")],
                     returns: None,
                     pre: Some(list(vec![atom(">"), atom("x"), num(0.0)])),
                     post: Some(list(vec![atom(">"), atom("%"), num(0.0)])),
@@ -5317,7 +5351,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("string", "s")],
+                    args: vec![sp("string", "s")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -5343,7 +5377,7 @@ mod tests {
             name_span: s(),
             clauses: vec![
                 FuncClause {
-                    args: vec![tp("any", "x")],
+                    args: vec![sp("any", "x")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -5351,7 +5385,7 @@ mod tests {
                     span: s(),
                 },
                 FuncClause {
-                    args: vec![tp("any", "x"), tp("any", "y")],
+                    args: vec![sp("any", "x"), sp("any", "y")],
                     returns: None,
                     pre: None,
                     post: None,
@@ -5773,6 +5807,152 @@ mod tests {
             }
         } else {
             panic!("expected list");
+        }
+    }
+
+    // =======================================================================
+    // Destructured parameters (DD-25)
+    // =======================================================================
+
+    #[test]
+    fn test_emit_func_single_clause_object_destructure() {
+        let form = SurfaceForm::Func {
+            name: "greet".into(),
+            name_span: s(),
+            clauses: vec![FuncClause {
+                args: vec![ParamShape::DestructuredObject {
+                    fields: vec![tp("string", "name"), tp("number", "age")],
+                    span: s(),
+                }],
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![atom("name")],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+            assert_eq!(values[1].as_atom(), Some("greet"));
+            // Param list should contain (object name age)
+            if let SExpr::List { values: params, .. } = &values[2] {
+                assert_eq!(params.len(), 1);
+                if let SExpr::List {
+                    values: obj_param, ..
+                } = &params[0]
+                {
+                    assert_eq!(obj_param[0].as_atom(), Some("object"));
+                    assert_eq!(obj_param[1].as_atom(), Some("name"));
+                    assert_eq!(obj_param[2].as_atom(), Some("age"));
+                } else {
+                    panic!("expected object destructuring list");
+                }
+            } else {
+                panic!("expected params list");
+            }
+            // Should have type check nodes (if blocks) for each field
+            let if_count = values
+                .iter()
+                .filter(|v| {
+                    if let SExpr::List { values, .. } = v {
+                        values.first().and_then(|f| f.as_atom()) == Some("if")
+                    } else {
+                        false
+                    }
+                })
+                .count();
+            assert_eq!(if_count, 2, "should have 2 type checks (one per field)");
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_fn_object_destructure() {
+        let form = SurfaceForm::Fn {
+            params: vec![ParamShape::DestructuredObject {
+                fields: vec![tp("string", "name"), tp("number", "age")],
+                span: s(),
+            }],
+            body: vec![atom("name")],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("=>"));
+            // Param list should contain (object name age)
+            if let SExpr::List { values: params, .. } = &values[1] {
+                assert_eq!(params.len(), 1);
+                if let SExpr::List {
+                    values: obj_param, ..
+                } = &params[0]
+                {
+                    assert_eq!(obj_param[0].as_atom(), Some("object"));
+                    assert_eq!(obj_param[1].as_atom(), Some("name"));
+                    assert_eq!(obj_param[2].as_atom(), Some("age"));
+                } else {
+                    panic!("expected object destructuring list");
+                }
+            } else {
+                panic!("expected params list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_func_multi_clause_mixed_destructure_dispatch() {
+        let form = SurfaceForm::Func {
+            name: "process".into(),
+            name_span: s(),
+            clauses: vec![
+                FuncClause {
+                    args: vec![ParamShape::DestructuredObject {
+                        fields: vec![tp("string", "name")],
+                        span: s(),
+                    }],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("name")],
+                    span: s(),
+                },
+                FuncClause {
+                    args: vec![sp("string", "s")],
+                    returns: None,
+                    pre: None,
+                    post: None,
+                    body: vec![atom("s")],
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function"));
+            assert_eq!(values[1].as_atom(), Some("process"));
+            // Should have rest params for multi-clause dispatch
+            if let SExpr::List { values: params, .. } = &values[2] {
+                if let SExpr::List { values: rest, .. } = &params[0] {
+                    assert_eq!(rest[0].as_atom(), Some("rest"));
+                } else {
+                    panic!("expected rest param");
+                }
+            } else {
+                panic!("expected params list");
+            }
+        } else {
+            panic!("expected function");
         }
     }
 

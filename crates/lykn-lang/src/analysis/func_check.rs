@@ -55,10 +55,11 @@ pub fn check_func_overlap(form: &SurfaceForm, registry: &TypeRegistry) -> Vec<Di
                     .args
                     .iter()
                     .map(|param| {
-                        if param.type_ann.name == "any" {
+                        let dtype = param.dispatch_type();
+                        if dtype == "any" {
                             DeconPattern::Wildcard
                         } else {
-                            DeconPattern::TypeKeyword(param.type_ann.name.clone())
+                            DeconPattern::TypeKeyword(dtype.to_string())
                         }
                     })
                     .collect()
@@ -99,7 +100,7 @@ mod tests {
     use super::*;
     use crate::analysis::prelude::register_prelude_types;
     use crate::analysis::type_registry::TypeRegistry;
-    use crate::ast::surface::{FuncClause, SurfaceForm, TypeAnnotation, TypedParam};
+    use crate::ast::surface::{FuncClause, ParamShape, SurfaceForm, TypeAnnotation, TypedParam};
     use crate::reader::source_loc::Span;
 
     fn span() -> Span {
@@ -125,7 +126,7 @@ mod tests {
 
     fn func_clause(params: Vec<TypedParam>) -> FuncClause {
         FuncClause {
-            args: params,
+            args: params.into_iter().map(ParamShape::from).collect(),
             returns: None,
             pre: None,
             post: None,
@@ -220,6 +221,90 @@ mod tests {
             span: span(),
         };
         assert!(check_func_overlap(&form, &reg).is_empty());
+    }
+
+    // ---------------------------------------------------------------
+    // Destructured parameter overlap detection (DD-25)
+    // ---------------------------------------------------------------
+
+    fn func_clause_with_shapes(params: Vec<ParamShape>) -> FuncClause {
+        FuncClause {
+            args: params,
+            returns: None,
+            pre: None,
+            post: None,
+            body: vec![],
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn test_overlap_two_object_destructures() {
+        let reg = registry();
+        let form = func_form(
+            "f",
+            vec![
+                func_clause_with_shapes(vec![ParamShape::DestructuredObject {
+                    fields: vec![typed_param("name", "string"), typed_param("age", "number")],
+                    span: span(),
+                }]),
+                func_clause_with_shapes(vec![ParamShape::DestructuredObject {
+                    fields: vec![typed_param("label", "string")],
+                    span: span(),
+                }]),
+            ],
+        );
+        let diags = check_func_overlap(&form, &reg);
+        assert!(
+            !diags.is_empty(),
+            "two object destructures at same position should overlap"
+        );
+        assert!(diags[0].message.contains("overlap"));
+    }
+
+    #[test]
+    fn test_no_overlap_object_vs_string() {
+        let reg = registry();
+        let form = func_form(
+            "f",
+            vec![
+                func_clause_with_shapes(vec![ParamShape::DestructuredObject {
+                    fields: vec![typed_param("name", "string")],
+                    span: span(),
+                }]),
+                func_clause(vec![typed_param("s", "string")]),
+            ],
+        );
+        let diags = check_func_overlap(&form, &reg);
+        assert!(
+            diags.is_empty(),
+            "object vs string should not overlap, got: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn test_no_overlap_object_vs_array_destructure() {
+        let reg = registry();
+        let form = func_form(
+            "f",
+            vec![
+                func_clause_with_shapes(vec![ParamShape::DestructuredObject {
+                    fields: vec![typed_param("name", "string")],
+                    span: span(),
+                }]),
+                func_clause_with_shapes(vec![ParamShape::DestructuredArray {
+                    elements: vec![crate::ast::surface::ArrayParamElement::Typed(typed_param(
+                        "first", "number",
+                    ))],
+                    span: span(),
+                }]),
+            ],
+        );
+        let diags = check_func_overlap(&form, &reg);
+        assert!(
+            diags.is_empty(),
+            "object vs array should not overlap, got: {diags:?}"
+        );
     }
 
     #[test]

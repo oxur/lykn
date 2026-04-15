@@ -212,21 +212,255 @@ function parseKeywordClauses(args) {
 }
 
 /**
- * Parse typed parameter list: (:type name :type name ...) → [{type, name}, ...]
+ * Parse a destructuring pattern list: (object :type name ...) or (array :type name ...)
+ * Returns { destructured: true, kind, fields, rest? }
+ */
+function parseDestructuredParam(listNode) {
+	const values = listNode.values;
+	if (values.length === 0) {
+		throw new Error(
+			"empty destructuring pattern — at least one field required",
+		);
+	}
+	const head = values[0];
+	if (head.type !== "atom" || (head.value !== "object" && head.value !== "array")) {
+		throw new Error(
+			`expected 'object' or 'array' at head of destructuring pattern, got '${head.value ?? head.type}'`,
+		);
+	}
+	const kind = head.value;
+	const inner = values.slice(1);
+
+	if (inner.length === 0) {
+		throw new Error(
+			"empty destructuring pattern — at least one field required",
+		);
+	}
+
+	if (kind === "object") {
+		return parseObjectDestructure(inner, listNode);
+	}
+	return parseArrayDestructure(inner, listNode);
+}
+
+function parseObjectDestructure(values, parentNode) {
+	const fields = [];
+	let i = 0;
+	while (i < values.length) {
+		const cur = values[i];
+		// Check for deferred features in type position
+		if (isArray(cur)) {
+			const headVal = cur.values[0];
+			const headName = headVal?.type === "atom" ? headVal.value : "";
+			if (headName === "default") {
+				throw new Error(
+					"default values in destructured params are not yet supported — use a typed param with body destructuring and default",
+				);
+			}
+			if (headName === "object" || headName === "array" || headName === "alias") {
+				throw new Error(
+					"nested destructuring in func/fn params is not yet supported — use a typed param with body destructuring",
+				);
+			}
+			throw new Error(
+				`expected type keyword at position ${i} in destructuring pattern`,
+			);
+		}
+		if (!isKeyword(cur)) {
+			if (cur.type === "atom") {
+				throw new Error(
+					`field '${cur.value}' missing type annotation (use :any to opt out)`,
+				);
+			}
+			throw new Error(
+				`expected type keyword at position ${i} in destructuring pattern`,
+			);
+		}
+		if (i + 1 >= values.length) {
+			throw new Error(
+				`type keyword :${cur.value} has no field name in destructuring pattern`,
+			);
+		}
+		const nameNode = values[i + 1];
+		// Check for nested destructuring in name position
+		if (isArray(nameNode)) {
+			const headVal = nameNode.values[0];
+			const headName = headVal?.type === "atom" ? headVal.value : "";
+			if (headName === "object" || headName === "array" || headName === "alias") {
+				throw new Error(
+					"nested destructuring in func/fn params is not yet supported — use a typed param with body destructuring",
+				);
+			}
+			throw new Error("field name must be an atom");
+		}
+		if (nameNode.type !== "atom") {
+			throw new Error("field name must be an atom");
+		}
+		fields.push({ typeKw: cur, name: nameNode });
+		i += 2;
+	}
+	return { destructured: true, kind: "object", fields };
+}
+
+function parseArrayDestructure(values, parentNode) {
+	const fields = [];
+	let rest = null;
+	let i = 0;
+	while (i < values.length) {
+		const cur = values[i];
+		// Skip element: _
+		if (cur.type === "atom" && cur.value === "_") {
+			fields.push({ skip: true, name: cur });
+			i += 1;
+			continue;
+		}
+		// Rest element: (rest :type name)
+		if (isArray(cur)) {
+			const headVal = cur.values[0];
+			const headName = headVal?.type === "atom" ? headVal.value : "";
+			if (headName === "rest") {
+				if (cur.values.length !== 3) {
+					throw new Error("rest element must be (rest :type name)");
+				}
+				if (i + 1 !== values.length) {
+					throw new Error(
+						"rest element must be last in array destructuring",
+					);
+				}
+				if (!isKeyword(cur.values[1])) {
+					throw new Error("rest element must be (rest :type name)");
+				}
+				if (cur.values[2].type !== "atom") {
+					throw new Error("rest element must be (rest :type name)");
+				}
+				rest = { typeKw: cur.values[1], name: cur.values[2] };
+				i += 1;
+				continue;
+			}
+			if (headName === "default") {
+				throw new Error(
+					"default values in destructured params are not yet supported — use a typed param with body destructuring and default",
+				);
+			}
+			if (headName === "object" || headName === "array" || headName === "alias") {
+				throw new Error(
+					"nested destructuring in func/fn params is not yet supported — use a typed param with body destructuring",
+				);
+			}
+			throw new Error(
+				`unexpected list in array destructuring at position ${i}`,
+			);
+		}
+		// Typed element: :type name
+		if (isKeyword(cur)) {
+			if (i + 1 >= values.length) {
+				throw new Error(
+					`type keyword :${cur.value} has no element name`,
+				);
+			}
+			const nameNode = values[i + 1];
+			if (nameNode.type !== "atom") {
+				throw new Error("element name must be an atom");
+			}
+			fields.push({ typeKw: cur, name: nameNode });
+			i += 2;
+			continue;
+		}
+		// Bare name without type keyword
+		if (cur.type === "atom") {
+			throw new Error(
+				`field '${cur.value}' missing type annotation (use :any to opt out)`,
+			);
+		}
+		throw new Error(
+			`expected type keyword, _, or (rest ...) at position ${i} in array destructuring`,
+		);
+	}
+	return { destructured: true, kind: "array", fields, rest };
+}
+
+// --- Param shape helpers ---
+
+/** Get kernel param name nodes for a function signature. */
+function paramNameNodes(p) {
+	if (p.destructured) {
+		if (p.kind === "object") {
+			return [array(sym("object"), ...p.fields.map((f) => f.name))];
+		}
+		if (p.kind === "array") {
+			const elems = p.fields.map((f) =>
+				f.skip ? sym("_") : f.name,
+			);
+			if (p.rest) {
+				elems.push(array(sym("rest"), p.rest.name));
+			}
+			return [array(sym("array"), ...elems)];
+		}
+	}
+	return [p.name];
+}
+
+/** Get type check assertions for a param. */
+function paramTypeChecks(p, funcName) {
+	if (p.destructured) {
+		const checks = [];
+		const allFields = [
+			...p.fields.filter((f) => !f.skip),
+			...(p.rest ? [p.rest] : []),
+		];
+		for (const f of allFields) {
+			const check = buildTypeCheck(f.name, f.typeKw, funcName, "arg");
+			if (check) checks.push(check);
+		}
+		return checks;
+	}
+	const check = buildTypeCheck(p.name, p.typeKw, funcName, "arg");
+	return check ? [check] : [];
+}
+
+/** Get the dispatch type string for multi-clause dispatch. */
+function paramDispatchType(p) {
+	if (p.destructured) return p.kind;
+	return p.typeKw.value;
+}
+
+/** Get all bound name nodes for a param. */
+function paramBoundNames(p) {
+	if (p.destructured) {
+		const names = p.fields.filter((f) => !f.skip).map((f) => f.name);
+		if (p.rest) names.push(p.rest.name);
+		return names;
+	}
+	return [p.name];
+}
+
+/**
+ * Parse typed parameter list: (:type name :type name ...) → [{typeKw, name}, ...]
+ * Also accepts destructuring patterns: ((object :type name ...) :type name ...)
  */
 function parseTypedParams(paramList) {
 	const params = [];
 	const values = paramList.values;
-	for (let i = 0; i < values.length; i += 2) {
-		if (!isKeyword(values[i])) {
+	let i = 0;
+	while (i < values.length) {
+		if (isArray(values[i])) {
+			// Destructured param — the list IS the param
+			params.push(parseDestructuredParam(values[i]));
+			i += 1;
+		} else if (isKeyword(values[i])) {
+			// Simple param — :type name pair
+			if (i + 1 >= values.length) {
+				throw new Error(
+					`type keyword :${values[i].value} has no parameter name`,
+				);
+			}
+			params.push({ typeKw: values[i], name: values[i + 1] });
+			i += 2;
+		} else {
 			throw new Error(
-				`expected type keyword at position ${i}, got ${values[i]?.type ?? "nothing"}`,
+				`expected type keyword or destructuring pattern at position ${i}, got ${values[i]?.type ?? "nothing"}`,
 			);
 		}
-		if (i + 1 >= values.length) {
-			throw new Error(`type keyword :${values[i].value} has no parameter name`);
-		}
-		params.push({ typeKw: values[i], name: values[i + 1] });
 	}
 	return params;
 }
@@ -840,13 +1074,12 @@ export function registerSurfaceMacros(macroEnv) {
 
 		// Parse typed params
 		const params = parseTypedParams(paramList);
-		const paramNames = params.map((p) => p.name);
+		const pNames = params.flatMap((p) => paramNameNodes(p));
 
 		// Build type checks
 		const typeChecks = [];
 		for (const p of params) {
-			const check = buildTypeCheck(p.name, p.typeKw, "anonymous", "arg");
-			if (check) typeChecks.push(check);
+			typeChecks.push(...paramTypeChecks(p, "anonymous"));
 		}
 
 		// When type checks are present, the arrow gets a block body, so we must
@@ -855,9 +1088,9 @@ export function registerSurfaceMacros(macroEnv) {
 			const allBody = [...typeChecks, ...bodyForms.slice(0, -1)];
 			const lastExpr = bodyForms[bodyForms.length - 1];
 			allBody.push(array(sym("return"), lastExpr));
-			return array(sym("=>"), array(...paramNames), ...allBody);
+			return array(sym("=>"), array(...pNames), ...allBody);
 		}
-		return array(sym("=>"), array(...paramNames), ...typeChecks, ...bodyForms);
+		return array(sym("=>"), array(...pNames), ...typeChecks, ...bodyForms);
 	};
 
 	macroEnv.set("fn", fnMacro);
@@ -1003,15 +1236,14 @@ export function registerSurfaceMacros(macroEnv) {
 		if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
 			params = parseTypedParams(argsClause[0]);
 		}
-		const paramNames = params.map((p) => p.name);
+		const pNames = params.flatMap((p) => paramNameNodes(p));
 
 		// Build function body statements
 		const bodyStmts = [];
 
 		// Type checks for params
 		for (const p of params) {
-			const check = buildTypeCheck(p.name, p.typeKw, funcName, "arg");
-			if (check) bodyStmts.push(check);
+			bodyStmts.push(...paramTypeChecks(p, funcName));
 		}
 
 		// Pre-condition
@@ -1125,7 +1357,7 @@ export function registerSurfaceMacros(macroEnv) {
 		return array(
 			sym("function"),
 			funcNameNode,
-			array(...paramNames),
+			array(...pNames),
 			...bodyStmts,
 		);
 	}
@@ -1142,7 +1374,7 @@ export function registerSurfaceMacros(macroEnv) {
 			if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
 				params = parseTypedParams(argsClause[0]);
 			}
-			const typedCount = params.filter((p) => p.typeKw.value !== "any").length;
+			const typedCount = params.filter((p) => paramDispatchType(p) !== "any").length;
 			return { clauses, params, typedCount, arity: params.length };
 		});
 
@@ -1172,13 +1404,14 @@ export function registerSurfaceMacros(macroEnv) {
 
 			for (let i = 0; i < params.length; i++) {
 				const p = params[i];
-				if (p.typeKw.value === "any") continue;
+				const dtype = paramDispatchType(p);
+				if (dtype === "any") continue;
 				const argAccess = array(sym("get"), argsVar, {
 					type: "number",
 					value: i,
 				});
 				// Inline type check for dispatch
-				switch (p.typeKw.value) {
+				switch (dtype) {
 					case "number":
 						conditions.push(
 							array(sym("==="), array(sym("typeof"), argAccess), {
@@ -1238,19 +1471,26 @@ export function registerSurfaceMacros(macroEnv) {
 
 			// Bind params from args
 			for (let i = 0; i < params.length; i++) {
-				clauseBody.push(
-					array(
-						sym("const"),
-						params[i].name,
-						array(sym("get"), argsVar, { type: "number", value: i }),
-					),
-				);
+				const p = params[i];
+				const argAccess = array(sym("get"), argsVar, {
+					type: "number",
+					value: i,
+				});
+				if (p.destructured) {
+					// const (object name1 name2) = get(args, i)
+					clauseBody.push(
+						array(sym("const"), paramNameNodes(p)[0], argAccess),
+					);
+				} else {
+					clauseBody.push(
+						array(sym("const"), p.name, argAccess),
+					);
+				}
 			}
 
 			// Full type checks (with NaN exclusion etc.)
 			for (const p of params) {
-				const check = buildTypeCheck(p.name, p.typeKw, funcName, "arg");
-				if (check) clauseBody.push(check);
+				clauseBody.push(...paramTypeChecks(p, funcName));
 			}
 
 			// Pre-condition

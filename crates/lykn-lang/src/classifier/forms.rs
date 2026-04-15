@@ -291,7 +291,7 @@ fn classify_type(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> 
                     SExpr::Atom { value, span: nspan } => (value.clone(), *nspan),
                     _ => return Err(err("constructor name must be an atom", *cspan)),
                 };
-                let fields = parse_typed_params(&values[1..], *cspan)?;
+                let fields = parse_simple_typed_params(&values[1..], *cspan)?;
                 constructors.push(Constructor {
                     name: ctor_name.0,
                     name_span: ctor_name.1,
@@ -832,7 +832,8 @@ fn classify_not(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
     })
 }
 
-fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<TypedParam>, Diagnostic> {
+/// Parse simple typed params (keyword-name pairs only). Used for type constructors.
+fn parse_simple_typed_params(values: &[SExpr], span: Span) -> Result<Vec<TypedParam>, Diagnostic> {
     if !values.len().is_multiple_of(2) {
         return Err(err("typed parameters must be keyword-name pairs", span));
     }
@@ -864,6 +865,312 @@ fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<TypedParam>, D
         }
     }
     Ok(params)
+}
+
+/// Parse typed params with support for destructuring patterns.
+/// Returns Vec<ParamShape> — each element is either Simple or Destructured.
+fn parse_typed_params(values: &[SExpr], span: Span) -> Result<Vec<ParamShape>, Diagnostic> {
+    let mut params = Vec::new();
+    let mut i = 0;
+    while i < values.len() {
+        match &values[i] {
+            // Destructuring pattern: a list at position i
+            SExpr::List {
+                values: inner,
+                span: lspan,
+                ..
+            } => {
+                params.push(parse_destructured_param(inner, *lspan)?);
+                i += 1;
+            }
+            // Simple param: keyword at i, atom at i+1
+            SExpr::Keyword {
+                value: type_name,
+                span: kspan,
+            } => {
+                if i + 1 >= values.len() {
+                    return Err(err(
+                        format!("type keyword :{type_name} has no parameter name"),
+                        span,
+                    ));
+                }
+                match &values[i + 1] {
+                    SExpr::Atom {
+                        value: name,
+                        span: nspan,
+                    } => {
+                        params.push(ParamShape::Simple(TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: type_name.clone(),
+                                span: *kspan,
+                            },
+                            name: name.clone(),
+                            name_span: *nspan,
+                        }));
+                    }
+                    _ => return Err(err("parameter name must be an atom", span)),
+                }
+                i += 2;
+            }
+            _ => {
+                return Err(err(
+                    format!("expected type keyword or destructuring pattern at position {i}"),
+                    span,
+                ));
+            }
+        }
+    }
+    Ok(params)
+}
+
+fn parse_destructured_param(values: &[SExpr], span: Span) -> Result<ParamShape, Diagnostic> {
+    if values.is_empty() {
+        return Err(err(
+            "empty destructuring pattern — at least one field required",
+            span,
+        ));
+    }
+    let head = match &values[0] {
+        SExpr::Atom { value, .. } => value.as_str(),
+        _ => {
+            return Err(err(
+                "destructuring pattern must start with 'object' or 'array'",
+                span,
+            ));
+        }
+    };
+    match head {
+        "object" => parse_object_destructure(&values[1..], span),
+        "array" => parse_array_destructure(&values[1..], span),
+        _ => Err(err(
+            format!("destructuring pattern must start with 'object' or 'array', got '{head}'"),
+            span,
+        )),
+    }
+}
+
+fn parse_object_destructure(values: &[SExpr], span: Span) -> Result<ParamShape, Diagnostic> {
+    if values.is_empty() {
+        return Err(err(
+            "empty destructuring pattern — at least one field required",
+            span,
+        ));
+    }
+    let mut fields = Vec::new();
+    let mut i = 0;
+    while i < values.len() {
+        match &values[i] {
+            // Check for deferred features in type position
+            SExpr::List { values: inner, .. } => {
+                let head_name = inner.first().and_then(|e| e.as_atom()).unwrap_or("");
+                if head_name == "default" {
+                    return Err(err(
+                        "default values in destructured params are not yet supported \
+                         — use a typed param with body destructuring and default",
+                        span,
+                    ));
+                }
+                if head_name == "object" || head_name == "array" || head_name == "alias" {
+                    return Err(err(
+                        "nested destructuring in func/fn params is not yet supported \
+                         — use a typed param with body destructuring",
+                        span,
+                    ));
+                }
+                return Err(err(
+                    format!("expected type keyword at position {i} in destructuring pattern"),
+                    span,
+                ));
+            }
+            SExpr::Keyword {
+                value: type_name,
+                span: kspan,
+            } => {
+                if i + 1 >= values.len() {
+                    return Err(err(
+                        format!(
+                            "type keyword :{type_name} has no field name in destructuring pattern"
+                        ),
+                        span,
+                    ));
+                }
+                match &values[i + 1] {
+                    SExpr::Atom {
+                        value: name,
+                        span: nspan,
+                    } => {
+                        fields.push(TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: type_name.clone(),
+                                span: *kspan,
+                            },
+                            name: name.clone(),
+                            name_span: *nspan,
+                        });
+                    }
+                    // Nested destructuring in name position
+                    SExpr::List { values: inner, .. } => {
+                        let head_name = inner.first().and_then(|e| e.as_atom()).unwrap_or("");
+                        if head_name == "object" || head_name == "array" || head_name == "alias" {
+                            return Err(err(
+                                "nested destructuring in func/fn params is not yet supported \
+                                 — use a typed param with body destructuring",
+                                span,
+                            ));
+                        }
+                        return Err(err("field name must be an atom", span));
+                    }
+                    _ => return Err(err("field name must be an atom", span)),
+                }
+                i += 2;
+            }
+            SExpr::Atom { value: name, .. } => {
+                return Err(err(
+                    format!("field '{name}' missing type annotation (use :any to opt out)"),
+                    span,
+                ));
+            }
+            _ => {
+                return Err(err(
+                    format!("expected type keyword at position {i} in destructuring pattern"),
+                    span,
+                ));
+            }
+        }
+    }
+    Ok(ParamShape::DestructuredObject { fields, span })
+}
+
+fn parse_array_destructure(values: &[SExpr], span: Span) -> Result<ParamShape, Diagnostic> {
+    if values.is_empty() {
+        return Err(err(
+            "empty destructuring pattern — at least one field required",
+            span,
+        ));
+    }
+    let mut elements = Vec::new();
+    let mut i = 0;
+    while i < values.len() {
+        match &values[i] {
+            // Skip element: _
+            SExpr::Atom { value, span: aspan } if value == "_" => {
+                elements.push(ArrayParamElement::Skip(*aspan));
+                i += 1;
+            }
+            // Rest or deferred feature list
+            SExpr::List {
+                values: inner,
+                span: lspan,
+                ..
+            } => {
+                let head_name = inner.first().and_then(|e| e.as_atom()).unwrap_or("");
+                match head_name {
+                    "rest" => {
+                        if inner.len() != 3 {
+                            return Err(err("rest element must be (rest :type name)", *lspan));
+                        }
+                        if i + 1 != values.len() {
+                            return Err(err(
+                                "rest element must be last in array destructuring",
+                                span,
+                            ));
+                        }
+                        let tp = parse_rest_element(&inner[1..], *lspan)?;
+                        elements.push(ArrayParamElement::Rest(tp));
+                        i += 1;
+                    }
+                    "default" => {
+                        return Err(err(
+                            "default values in destructured params are not yet supported \
+                             — use a typed param with body destructuring and default",
+                            span,
+                        ));
+                    }
+                    "object" | "array" | "alias" => {
+                        return Err(err(
+                            "nested destructuring in func/fn params is not yet supported \
+                             — use a typed param with body destructuring",
+                            span,
+                        ));
+                    }
+                    _ => {
+                        return Err(err(
+                            format!("unexpected list in array destructuring at position {i}"),
+                            span,
+                        ));
+                    }
+                }
+            }
+            // Typed element: :type name
+            SExpr::Keyword {
+                value: type_name,
+                span: kspan,
+            } => {
+                if i + 1 >= values.len() {
+                    return Err(err(
+                        format!("type keyword :{type_name} has no element name"),
+                        span,
+                    ));
+                }
+                match &values[i + 1] {
+                    SExpr::Atom {
+                        value: name,
+                        span: nspan,
+                    } => {
+                        elements.push(ArrayParamElement::Typed(TypedParam {
+                            type_ann: TypeAnnotation {
+                                name: type_name.clone(),
+                                span: *kspan,
+                            },
+                            name: name.clone(),
+                            name_span: *nspan,
+                        }));
+                    }
+                    _ => return Err(err("element name must be an atom", span)),
+                }
+                i += 2;
+            }
+            // Bare name without type keyword
+            SExpr::Atom { value: name, .. } => {
+                return Err(err(
+                    format!("field '{name}' missing type annotation (use :any to opt out)"),
+                    span,
+                ));
+            }
+            _ => {
+                return Err(err(
+                    format!(
+                        "expected type keyword, _, or (rest ...) at position {i} in array destructuring"
+                    ),
+                    span,
+                ));
+            }
+        }
+    }
+    Ok(ParamShape::DestructuredArray { elements, span })
+}
+
+fn parse_rest_element(values: &[SExpr], span: Span) -> Result<TypedParam, Diagnostic> {
+    match (&values[0], &values[1]) {
+        (
+            SExpr::Keyword {
+                value: type_name,
+                span: kspan,
+            },
+            SExpr::Atom {
+                value: name,
+                span: nspan,
+            },
+        ) => Ok(TypedParam {
+            type_ann: TypeAnnotation {
+                name: type_name.clone(),
+                span: *kspan,
+            },
+            name: name.clone(),
+            name_span: *nspan,
+        }),
+        _ => Err(err("rest element must be (rest :type name)", span)),
+    }
 }
 
 #[cfg(test)]
@@ -1478,8 +1785,8 @@ mod tests {
                 assert_eq!(name, "add");
                 assert_eq!(clauses.len(), 1);
                 assert_eq!(clauses[0].args.len(), 2);
-                assert_eq!(clauses[0].args[0].name, "a");
-                assert_eq!(clauses[0].args[1].name, "b");
+                assert_eq!(clauses[0].args[0].bound_names(), vec!["a"]);
+                assert_eq!(clauses[0].args[1].bound_names(), vec!["b"]);
             }
             other => panic!("expected Func, got {other:?}"),
         }
@@ -2125,7 +2432,7 @@ mod tests {
         match result {
             SurfaceForm::Fn { params, body, .. } => {
                 assert_eq!(params.len(), 1);
-                assert_eq!(params[0].name, "x");
+                assert_eq!(params[0].bound_names(), vec!["x"]);
                 assert_eq!(body.len(), 1);
             }
             other => panic!("expected Fn, got {other:?}"),
@@ -2192,7 +2499,7 @@ mod tests {
         match result {
             SurfaceForm::Lambda { params, body, .. } => {
                 assert_eq!(params.len(), 1);
-                assert_eq!(params[0].name, "s");
+                assert_eq!(params[0].bound_names(), vec!["s"]);
                 assert_eq!(body.len(), 1);
             }
             other => panic!("expected Lambda, got {other:?}"),
@@ -2462,10 +2769,15 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
-    fn test_typed_params_odd_count_error() {
+    fn test_typed_params_trailing_keyword_error() {
         let result = form("fn", vec![list(vec![kw("number")]), atom("body")]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().message.contains("keyword-name pairs"));
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("has no parameter name")
+        );
     }
 
     #[test]
@@ -2518,15 +2830,258 @@ mod tests {
         match result {
             SurfaceForm::Fn { params, .. } => {
                 assert_eq!(params.len(), 3);
-                assert_eq!(params[0].type_ann.name, "number");
-                assert_eq!(params[0].name, "x");
-                assert_eq!(params[1].type_ann.name, "string");
-                assert_eq!(params[1].name, "y");
-                assert_eq!(params[2].type_ann.name, "bool");
-                assert_eq!(params[2].name, "z");
+                assert_eq!(params[0].dispatch_type(), "number");
+                assert_eq!(params[0].bound_names(), vec!["x"]);
+                assert_eq!(params[1].dispatch_type(), "string");
+                assert_eq!(params[1].bound_names(), vec!["y"]);
+                assert_eq!(params[2].dispatch_type(), "bool");
+                assert_eq!(params[2].bound_names(), vec!["z"]);
             }
             other => panic!("expected Fn, got {other:?}"),
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Destructured parameters (DD-25)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_func_object_destructure() {
+        // (func f :args ((object :string name :number age)) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![
+                    atom("object"),
+                    kw("string"),
+                    atom("name"),
+                    kw("number"),
+                    atom("age"),
+                ])]),
+                kw("body"),
+                atom("x"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Func { clauses, .. } => {
+                assert_eq!(clauses.len(), 1);
+                assert_eq!(clauses[0].args.len(), 1);
+                match &clauses[0].args[0] {
+                    ParamShape::DestructuredObject { fields, .. } => {
+                        assert_eq!(fields.len(), 2);
+                        assert_eq!(fields[0].name, "name");
+                        assert_eq!(fields[0].type_ann.name, "string");
+                        assert_eq!(fields[1].name, "age");
+                        assert_eq!(fields[1].type_ann.name, "number");
+                    }
+                    other => panic!("expected DestructuredObject, got {other:?}"),
+                }
+            }
+            other => panic!("expected Func, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_func_array_destructure_with_rest() {
+        // (func f :args ((array :number first (rest :number remaining))) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![
+                    atom("array"),
+                    kw("number"),
+                    atom("first"),
+                    list(vec![atom("rest"), kw("number"), atom("remaining")]),
+                ])]),
+                kw("body"),
+                atom("x"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Func { clauses, .. } => {
+                assert_eq!(clauses.len(), 1);
+                assert_eq!(clauses[0].args.len(), 1);
+                match &clauses[0].args[0] {
+                    ParamShape::DestructuredArray { elements, .. } => {
+                        assert_eq!(elements.len(), 2);
+                        match &elements[0] {
+                            ArrayParamElement::Typed(tp) => {
+                                assert_eq!(tp.name, "first");
+                                assert_eq!(tp.type_ann.name, "number");
+                            }
+                            other => panic!("expected Typed, got {other:?}"),
+                        }
+                        match &elements[1] {
+                            ArrayParamElement::Rest(tp) => {
+                                assert_eq!(tp.name, "remaining");
+                                assert_eq!(tp.type_ann.name, "number");
+                            }
+                            other => panic!("expected Rest, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected DestructuredArray, got {other:?}"),
+                }
+            }
+            other => panic!("expected Func, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_func_mixed_destructured_and_simple() {
+        // (func f :args ((object :string name) :string action) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![
+                    list(vec![atom("object"), kw("string"), atom("name")]),
+                    kw("string"),
+                    atom("action"),
+                ]),
+                kw("body"),
+                atom("x"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Func { clauses, .. } => {
+                assert_eq!(clauses.len(), 1);
+                assert_eq!(clauses[0].args.len(), 2);
+                assert!(matches!(
+                    &clauses[0].args[0],
+                    ParamShape::DestructuredObject { fields, .. } if fields.len() == 1
+                ));
+                assert!(matches!(
+                    &clauses[0].args[1],
+                    ParamShape::Simple(tp) if tp.name == "action" && tp.type_ann.name == "string"
+                ));
+            }
+            other => panic!("expected Func, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_fn_with_object_destructuring() {
+        // (fn ((object :string name)) x)
+        let result = form(
+            "fn",
+            vec![
+                list(vec![list(vec![atom("object"), kw("string"), atom("name")])]),
+                atom("x"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Fn { params, body, .. } => {
+                assert_eq!(params.len(), 1);
+                match &params[0] {
+                    ParamShape::DestructuredObject { fields, .. } => {
+                        assert_eq!(fields.len(), 1);
+                        assert_eq!(fields[0].name, "name");
+                    }
+                    other => panic!("expected DestructuredObject, got {other:?}"),
+                }
+                assert_eq!(body.len(), 1);
+            }
+            other => panic!("expected Fn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_func_empty_object_destructure_error() {
+        // (func f :args ((object)) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![atom("object")])]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("empty destructuring pattern")
+        );
+    }
+
+    #[test]
+    fn test_classify_func_bare_name_in_object_destructure_error() {
+        // (func f :args ((object name)) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![atom("object"), atom("name")])]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("missing type annotation")
+        );
+    }
+
+    #[test]
+    fn test_classify_func_nested_destructure_error() {
+        // (func f :args ((object :string (object :string inner))) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![
+                    atom("object"),
+                    kw("string"),
+                    list(vec![atom("object"), kw("string"), atom("inner")]),
+                ])]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("nested destructuring"));
+    }
+
+    #[test]
+    fn test_classify_func_default_in_destructure_error() {
+        // (func f :args ((object (default :string name "anon"))) :body x)
+        let result = form(
+            "func",
+            vec![
+                atom("f"),
+                kw("args"),
+                list(vec![list(vec![
+                    atom("object"),
+                    list(vec![
+                        atom("default"),
+                        kw("string"),
+                        atom("name"),
+                        string("anon"),
+                    ]),
+                ])]),
+                kw("body"),
+                atom("x"),
+            ],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("default values"));
     }
 
     // ---------------------------------------------------------------

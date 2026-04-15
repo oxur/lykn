@@ -15,8 +15,76 @@ pub struct TypedParam {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ArrayParamElement {
+    Typed(TypedParam),
+    Rest(TypedParam),
+    Skip(Span),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParamShape {
+    Simple(TypedParam),
+    DestructuredObject {
+        fields: Vec<TypedParam>,
+        span: Span,
+    },
+    DestructuredArray {
+        elements: Vec<ArrayParamElement>,
+        span: Span,
+    },
+}
+
+impl From<TypedParam> for ParamShape {
+    fn from(tp: TypedParam) -> Self {
+        ParamShape::Simple(tp)
+    }
+}
+
+impl ParamShape {
+    /// All typed params — flattened.
+    pub fn typed_params(&self) -> Vec<&TypedParam> {
+        match self {
+            Self::Simple(tp) => vec![tp],
+            Self::DestructuredObject { fields, .. } => fields.iter().collect(),
+            Self::DestructuredArray { elements, .. } => elements
+                .iter()
+                .filter_map(|e| match e {
+                    ArrayParamElement::Typed(tp) | ArrayParamElement::Rest(tp) => Some(tp),
+                    ArrayParamElement::Skip(_) => None,
+                })
+                .collect(),
+        }
+    }
+
+    /// All bound names — for scope tracking.
+    pub fn bound_names(&self) -> Vec<&str> {
+        self.typed_params()
+            .iter()
+            .map(|tp| tp.name.as_str())
+            .collect()
+    }
+
+    /// The type keyword for dispatch purposes.
+    pub fn dispatch_type(&self) -> &str {
+        match self {
+            Self::Simple(tp) => &tp.type_ann.name,
+            Self::DestructuredObject { .. } => "object",
+            Self::DestructuredArray { .. } => "array",
+        }
+    }
+
+    /// The span of this param shape.
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Simple(tp) => tp.name_span,
+            Self::DestructuredObject { span, .. } | Self::DestructuredArray { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct FuncClause {
-    pub args: Vec<TypedParam>,
+    pub args: Vec<ParamShape>,
     pub returns: Option<TypeAnnotation>,
     pub pre: Option<SExpr>,
     pub post: Option<SExpr>,
@@ -153,12 +221,12 @@ pub enum SurfaceForm {
         span: Span,
     },
     Fn {
-        params: Vec<TypedParam>,
+        params: Vec<ParamShape>,
         body: Vec<SExpr>,
         span: Span,
     },
     Lambda {
-        params: Vec<TypedParam>,
+        params: Vec<ParamShape>,
         body: Vec<SExpr>,
         span: Span,
     },
