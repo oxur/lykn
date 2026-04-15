@@ -318,9 +318,80 @@ function add(a, b) {
 }
 ```
 
+**Destructured parameters** (DD-25) — a destructuring pattern
+(`object` or `array`) can appear in `:args` where a `:type name`
+pair would go. Every field inside the pattern requires a type keyword.
+
+```lykn
+;; Object destructuring — fields are typed
+(func greet
+  :args ((object :string name :number age))
+  :returns :string
+  :body (template name " is " age))
+```
+```js
+function greet({name, age}) {
+  if (typeof name !== "string")
+    throw new TypeError("greet: arg 'name' expected string, got " + typeof name);
+  if (typeof age !== "number" || Number.isNaN(age))
+    throw new TypeError("greet: arg 'age' expected number, got " + typeof age);
+  return `${name} is ${age}`;
+}
+```
+
+```lykn
+;; Array destructuring with rest
+(func first-and-rest
+  :args ((array :number head (rest :number tail)))
+  :body (console:log head tail))
+
+;; Mixed destructured + simple
+(func handler
+  :args ((object :string method :string url) :any body)
+  :body (console:log method url body))
+```
+
+**Default values** (DD-25.1) — `(default :type name value)` inside
+a destructuring pattern:
+
+```lykn
+(func connect
+  :args ((object :string host
+                 :number port
+                 (default :boolean ssl true)))
+  :body (open-connection host port ssl))
+```
+```js
+function connect({host, port, ssl = true}) {
+  // per-field type checks ...
+  openConnection(host, port, ssl);
+}
+```
+
+**Nested destructuring** (DD-25.1) — use `alias` for object
+nesting (names the intermediate property). Array nesting is
+positional (no alias needed).
+
+```lykn
+(func f
+  :args ((object :string name
+                 (alias :any addr (object :string city :string zip))))
+  :body (template name " in " city))
+```
+```js
+function f({name, addr: {city, zip}}) {
+  // type checks for name, city, zip ...
+}
+```
+
+**Multi-clause dispatch**: destructured `object` params dispatch as
+`:object`, destructured `array` as `:array`. Two clauses that both
+destructure objects at the same position overlap — compile error.
+
 ### fn (surface) — anonymous, arrow output
 
-`fn` creates typed arrow functions. Same typed parameter syntax as `func`.
+`fn` creates typed arrow functions. Same typed parameter syntax as
+`func`, including destructured params.
 
 ```lykn
 (fn (:number x) (* x 2))
@@ -349,6 +420,21 @@ With `:any` (no type check):
 ```
 ```js
 (x) => x
+```
+
+With destructured params (DD-25):
+
+```lykn
+(fn ((object :string name :number age)) (console:log name age))
+```
+```js
+({name, age}) => {
+  if (typeof name !== "string")
+    throw new TypeError("anonymous: arg 'name' expected string, got " + typeof name);
+  if (typeof age !== "number" || Number.isNaN(age))
+    throw new TypeError("anonymous: arg 'age' expected number, got " + typeof age);
+  console.log(name, age);
+}
 ```
 
 ### lambda (surface) — alias for fn

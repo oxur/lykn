@@ -150,6 +150,9 @@ counter.value = 0;
 - **`:returns` for return type checking**: runtime check on return value. **SHOULD**
 - **Multi-clause `func`**: arity + type dispatch. Overlap is a compile error. **CONSIDER**
 - **Zero-arg shorthand**: `(func name (body-expr))` for simple functions. **SHOULD**
+- **Destructured params** (DD-25): `(object ...)` or `(array ...)` patterns in `:args` with per-field type annotations. Idiomatic for named/keyword parameters. **SHOULD** for 3+ related params.
+- **Defaults in destructured params** (DD-25.1): `(default :type name value)` inside destructuring patterns. **SHOULD**
+- **Nested destructuring** (DD-25.1): `(alias :type name (object/array ...))` for nesting in object params. Array nesting is positional. **CONSIDER**
 
 ```lykn
 ;; Full func with contracts
@@ -164,6 +167,12 @@ counter.value = 0;
 
 ;; Anonymous function
 (bind doubled (fn (:number x) (* x 2)))
+
+;; Destructured params — named/keyword argument pattern
+(func connect
+  :args ((object :string host :number port (default :boolean ssl true)))
+  :body (open-connection host port ssl))
+;; Called as: (connect (obj :host "localhost" :port 5432))
 
 ;; Multi-clause dispatch
 (func describe
