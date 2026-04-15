@@ -50,6 +50,14 @@ compiler (no runtime dependencies). 73KB browser bundle.
 (swap! counter (=> (n) (+ n 1)))
 (console:log (express counter))
 
+;; Generator with typed yields
+(genfunc range
+  :args (:number start :number end)
+  :yields :number
+  :body
+  (for (let i start) (< i end) (+= i 1)
+    (yield i)))
+
 ;; Macros still work — define your own forms
 (macro when (test (rest body))
   `(if ,test (block ,@body)))

@@ -382,30 +382,68 @@ interop.
 
 **Strength**: SHOULD
 
-**Summary**: Use the kernel `function*` form for lazy evaluation,
-infinite sequences, and implementing `Symbol:iterator`.
+**Summary**: Use `genfunc` (surface) for typed generators with
+`:yields` runtime checks, or the kernel `function*` form when you
+don't need per-yield type checking.
 
 ```lykn
-;; Good — lazy infinite sequence
-(function* naturals ((start))
-  (bind n (cell (?? start 0)))
+;; PREFERRED — surface genfunc with typed yields
+(genfunc naturals
+  :yields :number
+  :body
+  (let n 0)
   (while true
-    (yield (express n))
-    (swap! n (fn (:number x) (+ x 1)))))
+    (yield n)
+    (+= n 1)))
 
-;; Good — lazy transformation (no intermediate array)
-(function* lazy-map (iterable fn)
-  (for-of x iterable (yield (fn x))))
+;; PREFERRED — typed lazy transformation
+(genfunc lazy-map
+  :args (:any iterable :function f)
+  :yields :any
+  :body
+  (for-of x iterable (yield (f x))))
 
-;; Good — lazy filter
-(function* lazy-filter (iterable pred)
+;; PREFERRED — typed lazy filter
+(genfunc lazy-filter
+  :args (:any iterable :function pred)
+  :yields :any
+  :body
   (for-of x iterable
     (if (pred x) (yield x))))
 ```
 
-**Key rules**: `function*` syntax only (no arrow generators). `yield`
-cannot appear inside nested callbacks — use `for-of` inside the
-generator.
+When you need per-yield type checking:
+
+```lykn
+;; :yields :number — each yield is runtime-checked in dev mode
+(genfunc range
+  :args (:number start :number end)
+  :yields :number
+  :body
+  (for (let i start) (< i end) (+= i 1)
+    (yield i)))
+```
+
+Anonymous generators via `genfn`:
+
+```lykn
+(bind gen (genfn (:number n)
+  :yields :number
+  (for (let i 0) (< i n) (+= i 1)
+    (yield i))))
+```
+
+Kernel `function*` is still available when you don't need type
+annotations:
+
+```lykn
+(function* simple () (yield 1) (yield 2) (yield 3))
+```
+
+**Key rules**: `yield` cannot appear inside nested callbacks —
+use `for-of` inside the generator. `yield*` delegates to another
+iterable and is not type-checked (the delegated generator handles
+its own checks). Async generators: `(async (genfunc ...))`.
 
 **See also**: `02-api-design.md` ID-20, ID-21
 

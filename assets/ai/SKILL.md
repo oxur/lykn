@@ -191,6 +191,41 @@ counter.value = 0;
 
 ---
 
+## Generators
+
+- **`genfunc` for named generators**: keyword-labeled clauses like `func`, plus `:yields :type` for per-yield runtime checks. **SHOULD**
+- **`genfn` for anonymous generators**: like `fn` but produces `function*`. Optional `:yields :type`. **SHOULD**
+- **`yield` / `yield*`**: kernel forms, used inside generator bodies. `yield*` delegates to another iterable. **MUST** use inside `genfunc`/`genfn`/`function*` only.
+- **`for-await-of`**: kernel form for async iteration. **MUST** use inside `async` context.
+- **Async generators**: `(async (genfunc ...))` composes naturally. **CONSIDER**
+
+```lykn
+;; Typed generator with :yields runtime checks
+(genfunc range
+  :args (:number start :number end)
+  :yields :number
+  :body
+  (for (let i start) (< i end) (+= i 1)
+    (yield i)))
+
+;; Anonymous generator
+(bind gen (genfn () (yield 1) (yield 2)))
+
+;; Async generator
+(async (genfunc fetch-pages
+  :args (:string url)
+  :body
+  (let page 1)
+  (while true
+    (bind response (await (fetch (template url "?page=" page))))
+    (bind data (await (response:json)))
+    (if (= data:results:length 0) (return))
+    (yield data:results)
+    (+= page 1))))
+```
+
+---
+
 ## Types & Pattern Matching
 
 - **`type` for algebraic data types**: tagged objects with named fields, constructor validation. **SHOULD**

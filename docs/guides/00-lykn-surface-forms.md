@@ -452,6 +452,82 @@ With destructured params (DD-25):
 }
 ```
 
+### genfunc (surface) — named generator with typed yields
+
+`genfunc` defines named generator functions with optional typed
+parameters, `:yields` type checking, and contracts. Parallels `func`.
+
+```lykn
+(genfunc range
+  :args (:number start :number end)
+  :yields :number
+  :body
+  (for (let i start) (< i end) (+= i 1)
+    (yield i)))
+```
+```js
+function* range(start, end) {
+  if (typeof start !== "number" || Number.isNaN(start))
+    throw new TypeError("range: arg 'start' expected number, got " + typeof start);
+  if (typeof end !== "number" || Number.isNaN(end))
+    throw new TypeError("range: arg 'end' expected number, got " + typeof end);
+  for (let i = start; i < end; i += 1) {
+    yield (() => {
+      const yv = i;
+      if (typeof yv !== "number" || Number.isNaN(yv))
+        throw new TypeError("range: yield expected number, got " + typeof yv);
+      return yv;
+    })();
+  }
+}
+```
+
+`:yields :type` emits per-yield runtime type checks in dev mode via
+IIFE wrappers. `:yields :any` skips checks. Omitting `:yields`
+also skips checks. `yield*` (delegation) is never instrumented —
+the delegated generator is responsible for its own checks.
+
+Zero-arg shorthand (no `:args`):
+
+```lykn
+(genfunc fibonacci
+  :yields :number
+  :body
+  (let a 0) (let b 1)
+  (while true
+    (yield a)
+    (let temp a) (= a b) (= b (+ temp b))))
+```
+
+Async generators: `(async (genfunc ...))` or
+`(export (async (genfunc ...)))`.
+
+### genfn (surface) — anonymous typed generator
+
+`genfn` creates anonymous generator expressions. Same typed
+parameter syntax as `fn`, with optional `:yields` annotation.
+
+```lykn
+(bind gen (genfn (:number start :number end)
+  :yields :number
+  (for (let i start) (< i end) (+= i 1)
+    (yield i))))
+```
+```js
+const gen = function* (start, end) {
+  // param type checks ...
+  for (let i = start; i < end; i += 1) {
+    yield /* checked */;
+  }
+};
+```
+
+Without `:yields`:
+
+```lykn
+(bind gen (genfn () (yield 1) (yield 2)))
+```
+
 ---
 
 ## Types & Pattern Matching
@@ -1298,6 +1374,11 @@ to the kernel compiler unchanged.
 | `(async (=> () (await (fetch url))))` | `async () => await fetch(url)` | Async wrapper |
 | `(=> ((default x 0)) x)` | `(x = 0) => x` | Default parameter |
 | `(function f (a (rest args)) (return args))` | `function f(a, ...args) { return args; }` | Rest parameter |
+| `(function* gen () (yield 1) (yield 2))` | `function* gen() { yield 1; yield 2; }` | Generator |
+| `(yield expr)` | `yield expr` | Yield value |
+| `(yield* other)` | `yield* other` | Delegate to iterable |
+| `(for-await-of item stream (process item))` | `for await (const item of stream) { process(item); }` | Async iteration |
+| `(async (function* gen () ...))` | `async function* gen() { ... }` | Async generator |
 
 ---
 
