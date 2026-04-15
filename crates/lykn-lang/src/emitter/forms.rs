@@ -1,8 +1,8 @@
 use crate::analysis::type_registry::TypeRegistry;
 use crate::ast::sexpr::SExpr;
 use crate::ast::surface::{
-    ArrayParamElement, Constructor, DestructuredField, FuncClause, MatchClause, ParamShape,
-    Pattern, SurfaceForm, ThreadingStep, TypeAnnotation,
+    ArrayParamElement, Constructor, DestructuredField, FuncClause, GenfuncClause, MatchClause,
+    ParamShape, Pattern, SurfaceForm, ThreadingStep, TypeAnnotation,
 };
 use crate::reader::source_loc::Span;
 
@@ -193,6 +193,25 @@ pub fn emit_form(
             span,
             ..
         } => emit_func(name, *name_span, clauses, *span, ctx, registry),
+        SurfaceForm::Genfunc {
+            name,
+            name_span,
+            clauses,
+            span,
+            ..
+        } => emit_genfunc(name, *name_span, clauses, *span, ctx, registry),
+        SurfaceForm::Genfn {
+            params,
+            yields,
+            body,
+            ..
+        } => vec![emit_genfn_expr(
+            params,
+            yields.as_ref(),
+            body,
+            ctx,
+            registry,
+        )],
         SurfaceForm::Match {
             target, clauses, ..
         } => vec![emit_match(target, clauses, ctx, registry)],
@@ -1418,6 +1437,176 @@ fn build_dispatch_check(type_keyword: &str, expr: &SExpr) -> Option<SExpr> {
 }
 
 // ---------------------------------------------------------------------------
+// Genfunc / Genfn emission (generator functions)
+// ---------------------------------------------------------------------------
+
+fn emit_genfunc(
+    name: &str,
+    _name_span: Span,
+    clauses: &[GenfuncClause],
+    _span: Span,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> Vec<SExpr> {
+    // For now, only single-clause genfunc is supported (matching JS behaviour)
+    if clauses.len() == 1 {
+        vec![emit_genfunc_single(name, &clauses[0], ctx, registry)]
+    } else {
+        // Multi-clause generators: emit each clause individually
+        // For now, treat each as a single clause (future: dispatch like func_multi)
+        vec![emit_genfunc_single(name, &clauses[0], ctx, registry)]
+    }
+}
+
+fn emit_genfunc_single(
+    name: &str,
+    clause: &GenfuncClause,
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let param_names: Vec<SExpr> = clause.args.iter().flat_map(param_to_kernel_names).collect();
+
+    let mut items = vec![atom("function*"), atom(name), list(param_names)];
+
+    // Type checks for parameters
+    if !ctx.strip_assertions {
+        for param in &clause.args {
+            items.extend(param_type_checks(param, name, "arg"));
+        }
+    }
+
+    // Pre-condition
+    if !ctx.strip_assertions
+        && let Some(ref pre) = clause.pre
+    {
+        items.push(emit_pre_check(name, pre, clause.span));
+    }
+
+    // Instrument yields in the body if :yields type is specified and not :any
+    let raw_body = emit_body(&clause.body, ctx, registry);
+    let body = if !ctx.strip_assertions {
+        if let Some(ref yields_ann) = clause.yields {
+            if yields_ann.name != "any" {
+                raw_body
+                    .into_iter()
+                    .map(|expr| instrument_yields(&expr, &yields_ann.name, name, &mut ctx.gensym))
+                    .collect()
+            } else {
+                raw_body
+            }
+        } else {
+            raw_body
+        }
+    } else {
+        raw_body
+    };
+
+    items.extend(body);
+
+    list(items)
+}
+
+fn emit_genfn_expr(
+    params: &[ParamShape],
+    yields: Option<&TypeAnnotation>,
+    body: &[SExpr],
+    ctx: &mut EmitterContext,
+    registry: &TypeRegistry,
+) -> SExpr {
+    let param_names: Vec<SExpr> = params.iter().flat_map(param_to_kernel_names).collect();
+
+    let mut items = vec![atom("function*"), list(param_names)];
+
+    // Type checks
+    if !ctx.strip_assertions {
+        for param in params {
+            items.extend(param_type_checks(param, "anonymous", "arg"));
+        }
+    }
+
+    // Instrument yields in the body if :yields type is specified and not :any
+    let raw_body = emit_body(body, ctx, registry);
+    let emitted_body = if !ctx.strip_assertions {
+        if let Some(yields_ann) = yields {
+            if yields_ann.name != "any" {
+                raw_body
+                    .into_iter()
+                    .map(|expr| {
+                        instrument_yields(&expr, &yields_ann.name, "anonymous", &mut ctx.gensym)
+                    })
+                    .collect()
+            } else {
+                raw_body
+            }
+        } else {
+            raw_body
+        }
+    } else {
+        raw_body
+    };
+
+    items.extend(emitted_body);
+
+    list(items)
+}
+
+/// Recursively walk an S-expression tree and instrument `(yield expr)` forms
+/// with runtime type checks on the yielded value. Leaves `(yield* ...)` unchanged.
+fn instrument_yields(
+    expr: &SExpr,
+    yields_type: &str,
+    func_name: &str,
+    gensym: &mut super::gensym::EmitterGensym,
+) -> SExpr {
+    match expr {
+        SExpr::List { values, span } if !values.is_empty() => {
+            let head = values[0].as_atom();
+
+            // (yield expr) -> instrument with type check IIFE
+            if head == Some("yield") && values.len() >= 2 {
+                let inner = instrument_yields(&values[1], yields_type, func_name, gensym);
+                let var_name = gensym.next("yv");
+                if let Some(check) =
+                    emit_type_check(&var_name, yields_type, func_name, "yield", *span)
+                {
+                    let iife = list(vec![list(vec![
+                        atom("=>"),
+                        list(vec![]),
+                        list(vec![atom("const"), atom(&var_name), inner]),
+                        check,
+                        list(vec![atom("return"), atom(&var_name)]),
+                    ])]);
+                    return SExpr::List {
+                        values: vec![atom("yield"), iife],
+                        span: *span,
+                    };
+                }
+                return SExpr::List {
+                    values: vec![atom("yield"), inner],
+                    span: *span,
+                };
+            }
+
+            // (yield* ...) -> leave as-is
+            if head == Some("yield*") {
+                return expr.clone();
+            }
+
+            // Recurse into all sub-expressions
+            let new_values: Vec<SExpr> = values
+                .iter()
+                .map(|v| instrument_yields(v, yields_type, func_name, gensym))
+                .collect();
+            SExpr::List {
+                values: new_values,
+                span: *span,
+            }
+        }
+        _ => expr.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Match emission
 // ---------------------------------------------------------------------------
 
@@ -2034,8 +2223,8 @@ mod tests {
     use super::*;
     use crate::analysis::type_registry::{ConstructorDef, FieldDef, TypeDef, TypeRegistry};
     use crate::ast::surface::{
-        Constructor, DestructuredField, FuncClause, MatchClause, ParamShape, Pattern, SurfaceForm,
-        ThreadingStep, TypeAnnotation, TypedParam,
+        Constructor, DestructuredField, FuncClause, GenfuncClause, MatchClause, ParamShape,
+        Pattern, SurfaceForm, ThreadingStep, TypeAnnotation, TypedParam,
     };
     use crate::emitter::context::EmitterContext;
 
@@ -6634,6 +6823,213 @@ mod tests {
                 }
             }
             _ => panic!("expected list"),
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Genfunc emission
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_emit_genfunc_simple() {
+        let form = SurfaceForm::Genfunc {
+            name: "gen".into(),
+            name_span: s(),
+            clauses: vec![GenfuncClause {
+                args: vec![],
+                yields: None,
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("yield"), num(1.0)])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let registry = TypeRegistry::default();
+        let mut ctx = EmitterContext::new(false);
+        let result = emit_form(&form, &mut ctx, &registry);
+        assert_eq!(result.len(), 1);
+        // Should produce (function* gen () (yield 1))
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function*"));
+            assert_eq!(values[1].as_atom(), Some("gen"));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_genfunc_with_yields_instrumentation() {
+        let form = SurfaceForm::Genfunc {
+            name: "gen".into(),
+            name_span: s(),
+            clauses: vec![GenfuncClause {
+                args: vec![ParamShape::Simple(tp("number", "n"))],
+                yields: Some(ta("number")),
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("yield"), atom("n")])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let registry = TypeRegistry::default();
+        let mut ctx = EmitterContext::new(false);
+        let result = emit_form(&form, &mut ctx, &registry);
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function*"));
+            assert_eq!(values[1].as_atom(), Some("gen"));
+            // The body should contain an instrumented yield (yield with IIFE)
+            // Find the yield form — it should be wrapped
+            let body_exprs = &values[3..]; // skip function*, name, params, type-check
+            let has_instrumented_yield = body_exprs.iter().any(|expr| {
+                if let SExpr::List { values, .. } = expr {
+                    if values.first().and_then(|v| v.as_atom()) == Some("yield") {
+                        // The second element should be an IIFE (a list containing
+                        // an arrow function), not just a plain atom
+                        if let Some(SExpr::List { values: iife, .. }) = values.get(1) {
+                            // IIFE is ((=> () ...))
+                            if let Some(SExpr::List { values: arrow, .. }) = iife.first() {
+                                return arrow.first().and_then(|v| v.as_atom()) == Some("=>");
+                            }
+                        }
+                    }
+                }
+                false
+            });
+            assert!(
+                has_instrumented_yield,
+                "expected instrumented yield in body, got: {values:?}"
+            );
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_genfunc_yields_any_no_instrumentation() {
+        let form = SurfaceForm::Genfunc {
+            name: "gen".into(),
+            name_span: s(),
+            clauses: vec![GenfuncClause {
+                args: vec![],
+                yields: Some(ta("any")),
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("yield"), num(1.0)])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let registry = TypeRegistry::default();
+        let mut ctx = EmitterContext::new(false);
+        let result = emit_form(&form, &mut ctx, &registry);
+        // With :yields :any, yield should not be instrumented
+        if let SExpr::List { values, .. } = &result[0] {
+            // Body starts after function*, name, params
+            let body = &values[3..];
+            assert_eq!(body.len(), 1);
+            if let SExpr::List {
+                values: yield_vals, ..
+            } = &body[0]
+            {
+                assert_eq!(yield_vals[0].as_atom(), Some("yield"));
+                // Should be plain number, not an IIFE
+                assert!(matches!(yield_vals[1], SExpr::Number { .. }));
+            } else {
+                panic!("expected yield list");
+            }
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_genfunc_strip_assertions() {
+        let form = SurfaceForm::Genfunc {
+            name: "gen".into(),
+            name_span: s(),
+            clauses: vec![GenfuncClause {
+                args: vec![ParamShape::Simple(tp("number", "n"))],
+                yields: Some(ta("number")),
+                returns: None,
+                pre: None,
+                post: None,
+                body: vec![list(vec![atom("yield"), atom("n")])],
+                span: s(),
+            }],
+            span: s(),
+        };
+        let registry = TypeRegistry::default();
+        let mut ctx = EmitterContext::new(true);
+        let result = emit_form(&form, &mut ctx, &registry);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function*"));
+            // With strip_assertions, no type checks or yield instrumentation
+            // Just: function*, name, params, body...
+            assert_eq!(values[1].as_atom(), Some("gen"));
+            // Body should have un-instrumented yield
+            let body = &values[3..];
+            assert_eq!(body.len(), 1);
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Genfn emission
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_emit_genfn_simple() {
+        let form = SurfaceForm::Genfn {
+            params: vec![],
+            yields: None,
+            body: vec![list(vec![atom("yield"), num(42.0)])],
+            span: s(),
+        };
+        let registry = TypeRegistry::default();
+        let mut ctx = EmitterContext::new(false);
+        let result = emit_form(&form, &mut ctx, &registry);
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function*"));
+            // Anonymous: no name, just params
+            assert!(values[1].is_list()); // params list
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_genfn_with_yields() {
+        let form = SurfaceForm::Genfn {
+            params: vec![ParamShape::Simple(tp("any", "x"))],
+            yields: Some(ta("string")),
+            body: vec![list(vec![atom("yield"), atom("x")])],
+            span: s(),
+        };
+        let registry = TypeRegistry::default();
+        let mut ctx = EmitterContext::new(false);
+        let result = emit_form(&form, &mut ctx, &registry);
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("function*"));
+            // Should contain instrumented yield
+            let has_yield = values.iter().any(|v| {
+                if let SExpr::List { values, .. } = v {
+                    values.first().and_then(|v| v.as_atom()) == Some("yield")
+                } else {
+                    false
+                }
+            });
+            assert!(has_yield, "expected yield in body");
+        } else {
+            panic!("expected list");
         }
     }
 }

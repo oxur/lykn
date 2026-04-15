@@ -160,6 +160,17 @@ pub struct FuncClause {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct GenfuncClause {
+    pub args: Vec<ParamShape>,
+    pub yields: Option<TypeAnnotation>,
+    pub returns: Option<TypeAnnotation>,
+    pub pre: Option<SExpr>,
+    pub post: Option<SExpr>,
+    pub body: Vec<SExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Constructor {
     pub name: String,
     pub name_span: Span,
@@ -284,6 +295,18 @@ pub enum SurfaceForm {
     WhenLet {
         pattern: Pattern,
         expr: SExpr,
+        body: Vec<SExpr>,
+        span: Span,
+    },
+    Genfunc {
+        name: String,
+        name_span: Span,
+        clauses: Vec<GenfuncClause>,
+        span: Span,
+    },
+    Genfn {
+        params: Vec<ParamShape>,
+        yields: Option<TypeAnnotation>,
         body: Vec<SExpr>,
         span: Span,
     },

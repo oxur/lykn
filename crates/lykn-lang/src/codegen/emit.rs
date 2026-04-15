@@ -15,9 +15,30 @@ use super::precedence::precedence;
 /// Forms that are emitted as statements (no trailing semicolon added by the
 /// caller — the form handler takes care of its own formatting).
 const STATEMENT_FORMS: &[&str] = &[
-    "if", "while", "do-while", "for", "for-of", "for-in", "try", "switch", "block", "function",
-    "class", "import", "export", "const", "let", "var", "return", "throw", "break", "continue",
-    "label", "debugger",
+    "if",
+    "while",
+    "do-while",
+    "for",
+    "for-of",
+    "for-in",
+    "for-await-of",
+    "try",
+    "switch",
+    "block",
+    "function",
+    "function*",
+    "class",
+    "import",
+    "export",
+    "const",
+    "let",
+    "var",
+    "return",
+    "throw",
+    "break",
+    "continue",
+    "label",
+    "debugger",
 ];
 
 fn is_statement_form(name: &str) -> bool {
@@ -142,8 +163,11 @@ fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
         "=>" => emit_arrow(w, args, false),
         "lambda" => emit_lambda(w, args),
         "function" => emit_function(w, args),
+        "function*" => emit_function_star(w, args),
         "async" => emit_async(w, args),
         "await" => emit_await(w, args),
+        "yield" => emit_yield(w, args),
+        "yield*" => emit_yield_star(w, args),
         "return" => emit_return(w, args),
 
         // ── Control flow ───────────────────────────────────────────
@@ -154,6 +178,7 @@ fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
         "for" => emit_for(w, args),
         "for-of" => emit_for_of(w, args),
         "for-in" => emit_for_in(w, args),
+        "for-await-of" => emit_for_await_of(w, args),
         "switch" => emit_switch(w, args),
         "break" => emit_break(w, args),
         "continue" => emit_continue(w, args),
@@ -418,6 +443,29 @@ fn emit_function(w: &mut JsWriter, args: &[SExpr]) {
     w.newline();
 }
 
+fn emit_function_star(w: &mut JsWriter, args: &[SExpr]) {
+    // (function* name (params...) body...)
+    if args.is_empty() {
+        w.write("function*() {}");
+        w.newline();
+        return;
+    }
+    w.write("function* ");
+    emit_expr(w, &args[0], 0);
+    if args.len() >= 2 {
+        emit_params(w, &args[1]);
+    } else {
+        w.write("()");
+    }
+    w.write(" ");
+    if args.len() >= 3 {
+        emit_block_body(w, &args[2..]);
+    } else {
+        w.write("{}");
+    }
+    w.newline();
+}
+
 fn emit_async(w: &mut JsWriter, args: &[SExpr]) {
     // (async (=> (params) body)) — unwrap child function, prepend async
     if args.is_empty() {
@@ -437,6 +485,11 @@ fn emit_async(w: &mut JsWriter, args: &[SExpr]) {
                 emit_function(w, &values[1..]);
                 return;
             }
+            "function*" => {
+                w.write("async ");
+                emit_function_star(w, &values[1..]);
+                return;
+            }
             "lambda" => {
                 w.write("async ");
                 emit_lambda(w, &values[1..]);
@@ -451,6 +504,21 @@ fn emit_async(w: &mut JsWriter, args: &[SExpr]) {
 
 fn emit_await(w: &mut JsWriter, args: &[SExpr]) {
     w.write("await ");
+    if let Some(expr) = args.first() {
+        emit_expr(w, expr, 0);
+    }
+}
+
+fn emit_yield(w: &mut JsWriter, args: &[SExpr]) {
+    w.write("yield");
+    if let Some(expr) = args.first() {
+        w.write(" ");
+        emit_expr(w, expr, 0);
+    }
+}
+
+fn emit_yield_star(w: &mut JsWriter, args: &[SExpr]) {
+    w.write("yield* ");
     if let Some(expr) = args.first() {
         emit_expr(w, expr, 0);
     }
@@ -613,6 +681,20 @@ fn emit_for_in(w: &mut JsWriter, args: &[SExpr]) {
     w.write("for (const ");
     emit_pattern(w, &args[0]);
     w.write(" in ");
+    emit_expr(w, &args[1], 0);
+    w.write(") ");
+    emit_block_body(w, &args[2..]);
+    w.newline();
+}
+
+fn emit_for_await_of(w: &mut JsWriter, args: &[SExpr]) {
+    // (for-await-of binding iterable body...)
+    if args.len() < 2 {
+        return;
+    }
+    w.write("for await (const ");
+    emit_pattern(w, &args[0]);
+    w.write(" of ");
     emit_expr(w, &args[1], 0);
     w.write(") ");
     emit_block_body(w, &args[2..]);
@@ -2276,5 +2358,68 @@ mod tests {
         let pattern = list(vec![atom("object"), alias]);
         let expr = list(vec![atom("const"), pattern, atom("obj")]);
         assert_eq!(stmt_to_string(&expr), "const {data: items = 0} = obj;\n");
+    }
+
+    // ── Generator forms ───────────────────────────────────────────────
+
+    #[test]
+    fn test_function_star() {
+        let expr = list(vec![
+            atom("function*"),
+            atom("gen"),
+            list(vec![]),
+            list(vec![atom("yield"), num(1.0)]),
+        ]);
+        assert_eq!(stmt_to_string(&expr), "function* gen() {\n  yield 1;\n}\n");
+    }
+
+    #[test]
+    fn test_function_star_no_args() {
+        let expr = list(vec![atom("function*")]);
+        assert_eq!(stmt_to_string(&expr), "function*() {}\n");
+    }
+
+    #[test]
+    fn test_yield() {
+        let expr = list(vec![atom("yield"), num(42.0)]);
+        assert_eq!(emit_to_string(&expr), "yield 42");
+    }
+
+    #[test]
+    fn test_yield_no_arg() {
+        let expr = list(vec![atom("yield")]);
+        assert_eq!(emit_to_string(&expr), "yield");
+    }
+
+    #[test]
+    fn test_yield_star() {
+        let expr = list(vec![atom("yield*"), atom("other")]);
+        assert_eq!(emit_to_string(&expr), "yield* other");
+    }
+
+    #[test]
+    fn test_for_await_of() {
+        let body = list(vec![atom("console:log"), atom("item")]);
+        let expr = list(vec![
+            atom("for-await-of"),
+            atom("item"),
+            atom("stream"),
+            body,
+        ]);
+        let result = stmt_to_string(&expr);
+        assert!(result.contains("for await (const item of stream)"));
+    }
+
+    #[test]
+    fn test_async_generator() {
+        let inner = list(vec![
+            atom("function*"),
+            atom("gen"),
+            list(vec![]),
+            list(vec![atom("yield"), num(1.0)]),
+        ]);
+        let expr = list(vec![atom("async"), inner]);
+        let result = stmt_to_string(&expr);
+        assert!(result.contains("async function* gen()"));
     }
 }

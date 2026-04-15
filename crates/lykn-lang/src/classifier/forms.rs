@@ -126,6 +126,8 @@ fn classify_surface_form(
         "some->>" => classify_threading(args, span, true, true),
         "type" => classify_type(args, span),
         "func" => classify_func(args, span),
+        "genfunc" => classify_genfunc(args, span),
+        "genfn" => classify_genfn(args, span),
         "match" => classify_match(args, span),
         "if-let" => classify_if_let(args, span),
         "when-let" => classify_when_let(args, span),
@@ -441,7 +443,10 @@ fn classify_func(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> 
 }
 
 fn is_func_clause_key(name: &str) -> bool {
-    matches!(name, "args" | "returns" | "pre" | "post" | "body")
+    matches!(
+        name,
+        "args" | "yields" | "returns" | "pre" | "post" | "body"
+    )
 }
 
 fn parse_func_clause(expr: &SExpr, outer_span: Span) -> Result<FuncClause, Diagnostic> {
@@ -517,6 +522,181 @@ fn parse_keyword_clauses(args: &[SExpr]) -> HashMap<String, Vec<SExpr>> {
         map.insert(key, current_values);
     }
     map
+}
+
+// ---------------------------------------------------------------------------
+// Genfunc / Genfn classification
+// ---------------------------------------------------------------------------
+
+fn classify_genfunc(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.is_empty() {
+        return Err(err("genfunc requires at least a name", span));
+    }
+    let name = match &args[0] {
+        SExpr::Atom { value, span: nspan } => (value.clone(), *nspan),
+        _ => return Err(err("genfunc: first argument must be a function name", span)),
+    };
+
+    let rest = &args[1..];
+    if rest.is_empty() {
+        return Err(err("genfunc requires a body", span));
+    }
+
+    // Detect mode: multi-clause, single-clause keyword, or zero-arg
+    let first = &rest[0];
+
+    // Multi-clause: first arg is a list starting with a keyword
+    if let SExpr::List { values, .. } = first
+        && !values.is_empty()
+        && let SExpr::Keyword { value, .. } = &values[0]
+        && is_func_clause_key(value)
+    {
+        let mut clauses = Vec::new();
+        for clause_expr in rest {
+            clauses.push(parse_genfunc_clause(clause_expr, span)?);
+        }
+        return Ok(SurfaceForm::Genfunc {
+            name: name.0,
+            name_span: name.1,
+            clauses,
+            span,
+        });
+    }
+
+    // Single-clause keyword mode
+    if let SExpr::Keyword { value, .. } = first
+        && is_func_clause_key(value)
+    {
+        let clause = parse_genfunc_clause_from_args(rest, span)?;
+        return Ok(SurfaceForm::Genfunc {
+            name: name.0,
+            name_span: name.1,
+            clauses: vec![clause],
+            span,
+        });
+    }
+
+    // Zero-arg shorthand: (genfunc name body...)
+    let clause = GenfuncClause {
+        args: Vec::new(),
+        yields: None,
+        returns: None,
+        pre: None,
+        post: None,
+        body: rest.to_vec(),
+        span,
+    };
+    Ok(SurfaceForm::Genfunc {
+        name: name.0,
+        name_span: name.1,
+        clauses: vec![clause],
+        span,
+    })
+}
+
+fn parse_genfunc_clause(expr: &SExpr, outer_span: Span) -> Result<GenfuncClause, Diagnostic> {
+    match expr {
+        SExpr::List { values, span } => parse_genfunc_clause_from_args(values, *span),
+        _ => Err(err("genfunc clause must be a list", outer_span)),
+    }
+}
+
+fn parse_genfunc_clause_from_args(args: &[SExpr], span: Span) -> Result<GenfuncClause, Diagnostic> {
+    let kw_map = parse_keyword_clauses(args);
+    let typed_args = if let Some(args_val) = kw_map.get("args") {
+        if let Some(SExpr::List {
+            values,
+            span: pspan,
+        }) = args_val.first()
+        {
+            parse_typed_params(values, *pspan)?
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let yields = kw_map.get("yields").and_then(|v| v.first()).and_then(|e| {
+        if let SExpr::Keyword { value, span } = e {
+            Some(TypeAnnotation {
+                name: value.clone(),
+                span: *span,
+            })
+        } else {
+            None
+        }
+    });
+
+    let returns = kw_map.get("returns").and_then(|v| v.first()).and_then(|e| {
+        if let SExpr::Keyword { value, span } = e {
+            Some(TypeAnnotation {
+                name: value.clone(),
+                span: *span,
+            })
+        } else {
+            None
+        }
+    });
+
+    let pre = kw_map.get("pre").and_then(|v| v.first().cloned());
+    let post = kw_map.get("post").and_then(|v| v.first().cloned());
+    let body = kw_map.get("body").cloned().unwrap_or_default();
+
+    if body.is_empty() {
+        return Err(err("genfunc clause requires :body", span));
+    }
+
+    Ok(GenfuncClause {
+        args: typed_args,
+        yields,
+        returns,
+        pre,
+        post,
+        body,
+        span,
+    })
+}
+
+fn classify_genfn(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() < 2 {
+        return Err(err("genfn requires params and body", span));
+    }
+    let params = match &args[0] {
+        SExpr::List {
+            values,
+            span: pspan,
+        } => parse_typed_params(values, *pspan)?,
+        _ => {
+            return Err(err("genfn: first argument must be a parameter list", span));
+        }
+    };
+
+    // Check for :yields keyword after param list
+    let mut yields = None;
+    let mut body_start = 1;
+    if args.len() >= 3
+        && let SExpr::Keyword { value, .. } = &args[1]
+        && value == "yields"
+    {
+        if args.len() < 4 {
+            return Err(err("genfn: :yields requires a type keyword and body", span));
+        }
+        if let SExpr::Keyword { value, span: yspan } = &args[2] {
+            yields = Some(TypeAnnotation {
+                name: value.clone(),
+                span: *yspan,
+            });
+        }
+        body_start = 3;
+    }
+
+    Ok(SurfaceForm::Genfn {
+        params,
+        yields,
+        body: args[body_start..].to_vec(),
+        span,
+    })
 }
 
 fn classify_match(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
@@ -3409,6 +3589,136 @@ mod tests {
             }
             other => panic!("expected Func, got {other:?}"),
         }
+    }
+
+    // ---------------------------------------------------------------
+    // classify_genfunc
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_genfunc_with_yields() {
+        let result = classify_surface_form(
+            "genfunc",
+            &[
+                atom("gen"),
+                kw("args"),
+                list(vec![kw("number"), atom("n")]),
+                kw("yields"),
+                kw("number"),
+                kw("body"),
+                list(vec![atom("yield"), atom("n")]),
+            ],
+            Span::default(),
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Genfunc { name, clauses, .. } => {
+                assert_eq!(name, "gen");
+                assert_eq!(clauses.len(), 1);
+                assert_eq!(clauses[0].args.len(), 1);
+                assert!(clauses[0].yields.is_some());
+                assert_eq!(clauses[0].yields.as_ref().unwrap().name, "number");
+            }
+            other => panic!("expected Genfunc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_genfunc_zero_arg_shorthand() {
+        let result = classify_surface_form(
+            "genfunc",
+            &[atom("gen"), list(vec![atom("yield"), num(1.0)])],
+            Span::default(),
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Genfunc { name, clauses, .. } => {
+                assert_eq!(name, "gen");
+                assert_eq!(clauses.len(), 1);
+                assert!(clauses[0].args.is_empty());
+                assert!(clauses[0].yields.is_none());
+            }
+            other => panic!("expected Genfunc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_genfunc_no_name_error() {
+        let result = classify_surface_form("genfunc", &[], Span::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_classify_genfunc_no_body_error() {
+        let result = classify_surface_form("genfunc", &[atom("gen")], Span::default());
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // classify_genfn
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_genfn_with_yields() {
+        let result = classify_surface_form(
+            "genfn",
+            &[
+                list(vec![kw("number"), atom("n")]),
+                kw("yields"),
+                kw("string"),
+                list(vec![atom("yield"), atom("n")]),
+            ],
+            Span::default(),
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Genfn {
+                params,
+                yields,
+                body,
+                ..
+            } => {
+                assert_eq!(params.len(), 1);
+                assert!(yields.is_some());
+                assert_eq!(yields.as_ref().unwrap().name, "string");
+                assert_eq!(body.len(), 1);
+            }
+            other => panic!("expected Genfn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_genfn_without_yields() {
+        let result = classify_surface_form(
+            "genfn",
+            &[list(vec![]), list(vec![atom("yield"), num(1.0)])],
+            Span::default(),
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::Genfn { yields, body, .. } => {
+                assert!(yields.is_none());
+                assert_eq!(body.len(), 1);
+            }
+            other => panic!("expected Genfn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_genfn_too_few_args_error() {
+        let result = classify_surface_form("genfn", &[list(vec![])], Span::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_classify_genfn_yields_missing_body_error() {
+        // (genfn () :yields :number) — has :yields and type but no body
+        let result = classify_surface_form(
+            "genfn",
+            &[list(vec![]), kw("yields"), kw("number")],
+            Span::default(),
+        );
+        assert!(result.is_err());
     }
 
     // ---------------------------------------------------------------

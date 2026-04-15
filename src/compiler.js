@@ -317,7 +317,51 @@ const macros = {
     };
   },
 
-  // Async wrapper: (async (function/lambda/=> ...))
+  // Generator function: (function* name (params) body...) or (function* (params) body...)
+  'function*'(args) {
+    if (args.length < 2) {
+      throw new Error('function* requires params and body');
+    }
+    // Named: (function* name (params) body...)
+    if (args[0].type === 'atom' && args[0].value !== '') {
+      if (args.length < 3 || args[1].type !== 'list') {
+        throw new Error('function* requires a name, params list, and body: (function* name (params) body...)');
+      }
+      const params = args[1].values.map(compilePattern);
+      const bodyExprs = args.slice(2);
+      return {
+        type: 'FunctionDeclaration',
+        id: { type: 'Identifier', name: toCamelCase(args[0].value) },
+        params,
+        body: {
+          type: 'BlockStatement',
+          body: bodyExprs.map(e => toStatement(compileExpr(e))),
+        },
+        async: false,
+        generator: true,
+      };
+    }
+    // Anonymous: (function* (params) body...) or (function* "" (params) body...)
+    const paramIdx = args[0].type === 'list' ? 0 : 1;
+    if (args[paramIdx].type !== 'list') {
+      throw new Error('function* params must be a list');
+    }
+    const params = args[paramIdx].values.map(compilePattern);
+    const bodyExprs = args.slice(paramIdx + 1);
+    return {
+      type: 'FunctionExpression',
+      id: null,
+      params,
+      body: {
+        type: 'BlockStatement',
+        body: bodyExprs.map(e => toStatement(compileExpr(e))),
+      },
+      async: false,
+      generator: true,
+    };
+  },
+
+  // Async wrapper: (async (function/function*/lambda/=> ...))
   'async'(args) {
     if (args.length !== 1) {
       throw new Error('async takes exactly one argument: (async (function/lambda/=> ...))');
@@ -327,9 +371,9 @@ const macros = {
       throw new Error('async argument must be a function form: (async (function/lambda/=> ...))');
     }
     const head = child.values[0];
-    if (head.type !== 'atom' || !['function', 'lambda', '=>'].includes(head.value)) {
+    if (head.type !== 'atom' || !['function', 'function*', 'lambda', '=>'].includes(head.value)) {
       throw new Error(
-        'async can only wrap function, lambda, or =>: got ' +
+        'async can only wrap function, function*, lambda, or =>: got ' +
         (head.type === 'atom' ? head.value : head.type)
       );
     }
@@ -346,6 +390,27 @@ const macros = {
     return {
       type: 'AwaitExpression',
       argument: compileExpr(args[0]),
+    };
+  },
+
+  // Yield: (yield expr) or (yield)
+  'yield'(args) {
+    return {
+      type: 'YieldExpression',
+      argument: args.length > 0 ? compileExpr(args[0]) : null,
+      delegate: false,
+    };
+  },
+
+  // Yield delegate: (yield* expr)
+  'yield*'(args) {
+    if (args.length !== 1) {
+      throw new Error('yield* takes exactly one argument');
+    }
+    return {
+      type: 'YieldExpression',
+      argument: compileExpr(args[0]),
+      delegate: true,
     };
   },
 
@@ -618,6 +683,32 @@ const macros = {
         body: args.slice(2).map(e => toStatement(compileExpr(e))),
       },
       await: false,
+    };
+  },
+
+  // For-await-of: (for-await-of binding iterable body...)
+  'for-await-of'(args) {
+    if (args.length < 3) {
+      throw new Error('for-await-of requires binding, iterable, and body');
+    }
+    const binding = compilePattern(args[0]);
+    return {
+      type: 'ForOfStatement',
+      left: {
+        type: 'VariableDeclaration',
+        kind: 'const',
+        declarations: [{
+          type: 'VariableDeclarator',
+          id: binding,
+          init: null,
+        }],
+      },
+      right: compileExpr(args[1]),
+      body: {
+        type: 'BlockStatement',
+        body: args.slice(2).map(e => toStatement(compileExpr(e))),
+      },
+      await: true,
     };
   },
 

@@ -181,7 +181,7 @@ function buildTypeCheck(paramNode, typeKw, funcName, label) {
 }
 
 /** Valid clause keys for func/fn keyword parsing. */
-const FUNC_CLAUSE_KEYS = new Set(["args", "returns", "pre", "post", "body"]);
+const FUNC_CLAUSE_KEYS = new Set(["args", "returns", "yields", "pre", "post", "body"]);
 
 /**
  * Parse keyword-value pairs from an args list.
@@ -1299,6 +1299,177 @@ export function registerSurfaceMacros(macroEnv) {
 
 	macroEnv.set("fn", fnMacro);
 	macroEnv.set("lambda", fnMacro);
+
+	// --- genfunc / genfn (generator functions) ---
+
+	/**
+	 * Recursively walk an AST node and instrument (yield expr) forms
+	 * with a type check on the yielded value. Leaves (yield*) unchanged.
+	 */
+	function instrumentYields(node, yieldsType, funcName) {
+		if (!node || node.type !== "list") return node;
+		const vals = node.values;
+		if (vals.length === 0) return node;
+
+		// (yield expr) → wrap in IIFE: (yield ((=> () (const __v expr) check (return __v))))
+		if (vals[0].type === "atom" && vals[0].value === "yield" && vals.length >= 2) {
+			const yieldedExpr = instrumentYields(vals[1], yieldsType, funcName);
+			const vVar = gensym("yv");
+			const check = buildTypeCheck(vVar, yieldsType, funcName, "yield");
+			if (check) {
+				// IIFE that checks and returns the value
+				const iife = array(
+					array(sym("=>"), array(),
+						array(sym("const"), vVar, yieldedExpr),
+						check,
+						array(sym("return"), vVar),
+					),
+				);
+				return array(sym("yield"), iife);
+			}
+			return array(sym("yield"), yieldedExpr);
+		}
+
+		// (yield* ...) — leave as-is, delegate responsibility
+		if (vals[0].type === "atom" && vals[0].value === "yield*") {
+			return node;
+		}
+
+		// Recurse into all sub-expressions
+		return {
+			...node,
+			values: vals.map((v) => instrumentYields(v, yieldsType, funcName)),
+		};
+	}
+
+	// (genfunc name :args (...) :yields :type :body ...)
+	macroEnv.set("genfunc", (...args) => {
+		if (args.length < 2) {
+			throw new Error("genfunc requires at least a name and :yields/:body");
+		}
+		const funcNameNode = args[0];
+		if (funcNameNode.type !== "atom") {
+			throw new Error("genfunc: first argument must be a function name");
+		}
+		const funcName = funcNameNode.value;
+		const clauseArgs = args.slice(1);
+		const clauses = parseKeywordClauses(clauseArgs);
+		const argsClause = clauses.get("args");
+		const yieldsClause = clauses.get("yields");
+		const returnsClause = clauses.get("returns");
+		const preClause = clauses.get("pre");
+		const postClause = clauses.get("post");
+		const bodyClause = clauses.get("body");
+
+		if (!bodyClause || bodyClause.length === 0) {
+			throw new Error(`genfunc ${funcName}: :body is required`);
+		}
+
+		// Parse params
+		let params = [];
+		if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
+			params = parseTypedParams(argsClause[0]);
+		}
+		const pNames = params.flatMap((p) => paramNameNodes(p));
+
+		// Build generator body
+		const bodyStmts = [];
+
+		// Type checks for params
+		for (const p of params) {
+			bodyStmts.push(...paramTypeChecks(p, funcName));
+		}
+
+		// Pre-condition
+		if (preClause && preClause.length > 0) {
+			const preExpr = preClause[0];
+			const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
+			bodyStmts.push(
+				array(
+					sym("if"),
+					array(sym("!"), preExpr),
+					array(
+						sym("throw"),
+						array(sym("new"), sym("Error"), { type: "string", value: preMsg }),
+					),
+				),
+			);
+		}
+
+		// Instrument yields if :yields type is specified and not :any
+		let instrumentedBody = bodyClause;
+		if (yieldsClause && yieldsClause.length > 0) {
+			const yieldsType = yieldsClause[0];
+			if (isKeyword(yieldsType) && yieldsType.value !== "any") {
+				instrumentedBody = bodyClause.map((expr) =>
+					instrumentYields(expr, yieldsType, funcName),
+				);
+			}
+		}
+
+		bodyStmts.push(...instrumentedBody);
+
+		return array(
+			sym("function*"),
+			funcNameNode,
+			array(...pNames),
+			...bodyStmts,
+		);
+	});
+
+	// (genfn (params) :yields :type body...)
+	// or (genfn (params) body...) — no yield check
+	const genfnMacro = (...args) => {
+		if (args.length < 2) {
+			throw new Error("genfn requires at least a parameter list and body");
+		}
+		const paramList = args[0];
+		if (!isArray(paramList)) {
+			throw new Error("genfn: first argument must be a parameter list");
+		}
+
+		// Check for :yields keyword after param list
+		let yieldsType = null;
+		let bodyStart = 1;
+		if (args.length >= 3 && isKeyword(args[1]) && args[1].value === "yields") {
+			if (args.length < 4) {
+				throw new Error("genfn: :yields requires a type keyword and body");
+			}
+			yieldsType = args[2];
+			bodyStart = 3;
+		}
+
+		const bodyForms = args.slice(bodyStart);
+		const params = parseTypedParams(paramList);
+		const pNames = params.flatMap((p) => paramNameNodes(p));
+
+		// Type checks
+		const typeChecks = [];
+		for (const p of params) {
+			typeChecks.push(...paramTypeChecks(p, "anonymous"));
+		}
+
+		// Instrument yields
+		let instrumentedBody = bodyForms;
+		if (yieldsType && isKeyword(yieldsType) && yieldsType.value !== "any") {
+			instrumentedBody = bodyForms.map((expr) =>
+				instrumentYields(expr, yieldsType, "anonymous"),
+			);
+		}
+
+		// Build generator body — similar to fn but with function*
+		// function* generators always need block body
+		const allBody = [...typeChecks, ...instrumentedBody];
+
+		// Anonymous function* expression — pass param list directly (no name)
+		return array(
+			sym("function*"),
+			array(...pNames),
+			...allBody,
+		);
+	};
+
+	macroEnv.set("genfn", genfnMacro);
 
 	// --- type ---
 	// (type Option (Some :any value) None)

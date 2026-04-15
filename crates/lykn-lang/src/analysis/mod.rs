@@ -165,6 +165,44 @@ impl Analyze for SurfaceForm {
                     scope.exit_scope();
                 }
             }
+            SurfaceForm::Genfunc {
+                name,
+                name_span,
+                clauses,
+                ..
+            } => {
+                scope.introduce(name, *name_span, false, false);
+                for clause in clauses {
+                    scope.enter_scope();
+                    for param in &clause.args {
+                        for tp in param.typed_params() {
+                            scope.introduce(&tp.name, tp.name_span, false, false);
+                        }
+                    }
+                    for expr in &clause.body {
+                        track_references_in_expr(expr, scope);
+                    }
+                    if let Some(pre) = &clause.pre {
+                        track_references_in_expr(pre, scope);
+                    }
+                    if let Some(post) = &clause.post {
+                        track_references_in_expr(post, scope);
+                    }
+                    scope.exit_scope();
+                }
+            }
+            SurfaceForm::Genfn { params, body, .. } => {
+                scope.enter_scope();
+                for param in params {
+                    for tp in param.typed_params() {
+                        scope.introduce(&tp.name, tp.name_span, false, false);
+                    }
+                }
+                for expr in body {
+                    track_references_in_expr(expr, scope);
+                }
+                scope.exit_scope();
+            }
             SurfaceForm::Fn { params, body, .. } | SurfaceForm::Lambda { params, body, .. } => {
                 scope.enter_scope();
                 for param in params {

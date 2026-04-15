@@ -2,6 +2,8 @@ pub fn is_surface_form(name: &str) -> bool {
     matches!(
         name,
         "func"
+            | "genfunc"
+            | "genfn"
             | "bind"
             | "match"
             | "type"
@@ -39,6 +41,7 @@ pub fn is_kernel_form(name: &str) -> bool {
             | "let"
             | "var"
             | "function"
+            | "function*"
             | "=>"
             | "if"
             | "block"
@@ -50,6 +53,7 @@ pub fn is_kernel_form(name: &str) -> bool {
             | "for"
             | "for-of"
             | "for-in"
+            | "for-await-of"
             | "switch"
             | "break"
             | "continue"
@@ -60,6 +64,7 @@ pub fn is_kernel_form(name: &str) -> bool {
             | "in"
             | "void"
             | "yield"
+            | "yield*"
             | "label"
             | "seq"
             | "debugger"

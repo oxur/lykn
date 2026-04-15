@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0036 | DD-26: Generator Functions and Async Iteration | Active | 2026-04-15 |
 | 0035 | DD-25.1: Nested Destructuring and Defaults in `func`/`fn` Parameters | Active | 2026-04-14 |
 | 0034 | DD-25: Destructured Parameters in Surface `func` and `fn` | Active | 2026-04-14 |
 | 0033 | DD-24: `bind` Type Enforcement | Final | 2026-04-14 |
@@ -50,6 +51,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
+- [0036 - DD-26: Generator Functions and Async Iteration](05-active/0036-dd-26-generator-functions-and-async-iteration.md)
 - [0035 - DD-25.1: Nested Destructuring and Defaults in `func`/`fn` Parameters](05-active/0035-dd-25.1-nested-destructuring-and-defaults-in-funcfn-parameters.md)
 - [0034 - DD-25: Destructured Parameters in Surface `func` and `fn`](05-active/0034-dd-25-destructured-parameters-in-surface-func-and-fn.md)
 - [0030 - Pure Rust Kernel→JS Codegen](05-active/0030-pure-rust-kerneljs-codegen.md)
