@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use std::process;
+use std::process::{self, Command};
 
 mod compile;
 
@@ -40,6 +40,26 @@ enum Commands {
         #[arg(long)]
         kernel_json: bool,
     },
+    /// Run a .lykn or .js file
+    Run {
+        /// File to run
+        file: PathBuf,
+        /// Arguments to pass to the script
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Run tests via Deno
+    Test {
+        /// Test file patterns (default: test/)
+        #[arg(default_value = "test/")]
+        patterns: Vec<String>,
+    },
+    /// Lint compiled JS via Deno
+    Lint {
+        /// Paths to lint (default: packages/)
+        #[arg(default_value = "packages/")]
+        paths: Vec<String>,
+    },
 }
 
 fn main() {
@@ -54,6 +74,9 @@ fn main() {
             strip_assertions,
             kernel_json,
         } => cmd_compile(&file, output.as_deref(), strip_assertions, kernel_json),
+        Commands::Run { file, args } => cmd_run(&file, &args),
+        Commands::Test { patterns } => cmd_test(&patterns),
+        Commands::Lint { paths } => cmd_lint(&paths),
     }
 }
 
@@ -140,4 +163,90 @@ fn cmd_compile(
             process::exit(1);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Deno wrapper subcommands
+// ---------------------------------------------------------------------------
+
+/// Find the project config path by walking up from the current directory.
+fn find_config() -> String {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut dir = cwd.as_path();
+    loop {
+        if dir.join("project.json").exists() {
+            return dir.join("project.json").to_string_lossy().into_owned();
+        }
+        if dir.join("deno.json").exists() {
+            return dir.join("deno.json").to_string_lossy().into_owned();
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => {
+                // Fallback — use project.json in current dir even if it doesn't exist
+                return "project.json".to_string();
+            }
+        }
+    }
+}
+
+/// Execute a deno command, exiting with its status code.
+fn exec_deno(args: &[&str]) {
+    let status = Command::new("deno")
+        .args(args)
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("failed to run deno: {e}");
+            eprintln!("is deno installed? try: brew install deno");
+            process::exit(1);
+        });
+    process::exit(status.code().unwrap_or(1));
+}
+
+fn cmd_run(file: &std::path::Path, args: &[String]) {
+    let config = find_config();
+
+    if file.extension().is_some_and(|e| e == "lykn") {
+        // Compile .lykn to temp .js, then run
+        let temp = std::env::temp_dir().join("lykn_run.js");
+        match compile::compile_file(file, false, false) {
+            Ok(js) => {
+                if let Err(e) = std::fs::write(&temp, &js) {
+                    eprintln!("error writing temp file: {e}");
+                    process::exit(1);
+                }
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                process::exit(1);
+            }
+        }
+        let temp_str = temp.to_string_lossy();
+        let mut deno_args = vec!["run", "--config", &config, "-A", &temp_str];
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        deno_args.extend(arg_refs);
+        exec_deno(&deno_args);
+    } else {
+        let file_str = file.to_string_lossy();
+        let mut deno_args = vec!["run", "--config", &config, "-A", &*file_str];
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        deno_args.extend(arg_refs);
+        exec_deno(&deno_args);
+    }
+}
+
+fn cmd_test(patterns: &[String]) {
+    let config = find_config();
+    let mut deno_args = vec!["test", "--config", &config, "--no-check", "-A"];
+    let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    deno_args.extend(refs);
+    exec_deno(&deno_args);
+}
+
+fn cmd_lint(paths: &[String]) {
+    let config = find_config();
+    let mut deno_args = vec!["lint", "--config", &config];
+    let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+    deno_args.extend(refs);
+    exec_deno(&deno_args);
 }
