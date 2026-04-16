@@ -92,6 +92,8 @@ console.log(JSON.stringify(json, null, 2));
 
     let output = Command::new("deno")
         .arg("eval")
+        .arg("--config")
+        .arg("project.json")
         .arg("--ext=js")
         .arg(&script)
         .current_dir(env!("CARGO_MANIFEST_DIR").to_string() + "/../..")

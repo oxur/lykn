@@ -66,8 +66,8 @@ fn rust_compile(source: &str) -> String {
 fn js_compile(source: &str) -> String {
     let script = format!(
         r#"
-import {{ read }} from "./src/reader.js";
-import {{ expand, resetMacros, resetGensym }} from "./src/expander.js";
+import {{ read }} from "./packages/lykn/reader.js";
+import {{ expand, resetMacros, resetGensym }} from "./packages/lykn/expander.js";
 resetMacros();
 resetGensym();
 const source = `{source}`;
@@ -91,6 +91,8 @@ console.log(JSON.stringify(json, null, 2));
 
     let output = Command::new("deno")
         .arg("eval")
+        .arg("--config")
+        .arg("project.json")
         .arg("--ext=js")
         .arg(&script)
         .current_dir(env!("CARGO_MANIFEST_DIR").to_string() + "/../..")

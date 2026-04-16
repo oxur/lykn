@@ -243,7 +243,7 @@ function parseDestructuredParam(listNode) {
 	return parseArrayDestructure(inner, listNode);
 }
 
-function parseObjectDestructure(values, parentNode) {
+function parseObjectDestructure(values, _parentNode) {
 	const fields = [];
 	let i = 0;
 	while (i < values.length) {
@@ -339,7 +339,7 @@ function parseObjectDestructure(values, parentNode) {
 	return { destructured: true, kind: "object", fields };
 }
 
-function parseArrayDestructure(values, parentNode) {
+function parseArrayDestructure(values, _parentNode) {
 	const fields = [];
 	let rest = null;
 	let i = 0;
@@ -1356,9 +1356,9 @@ export function registerSurfaceMacros(macroEnv) {
 		const clauses = parseKeywordClauses(clauseArgs);
 		const argsClause = clauses.get("args");
 		const yieldsClause = clauses.get("yields");
-		const returnsClause = clauses.get("returns");
+		const _returnsClause = clauses.get("returns");
 		const preClause = clauses.get("pre");
-		const postClause = clauses.get("post");
+		const _postClause = clauses.get("post");
 		const bodyClause = clauses.get("body");
 
 		if (!bodyClause || bodyClause.length === 0) {
