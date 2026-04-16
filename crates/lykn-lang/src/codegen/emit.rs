@@ -188,7 +188,7 @@ fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
 
         // ── Expressions ────────────────────────────────────────────
         "?" => emit_ternary(w, args, parent_prec),
-        "=" | "assign" => emit_assignment(w, args),
+        "=" => emit_assignment(w, args),
         "new" => emit_new(w, args),
         "get" => emit_computed_member(w, args),
         "." => emit_method_call(w, args),

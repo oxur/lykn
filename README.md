@@ -374,7 +374,7 @@ Surface forms work inside class bodies — `bind`, `=` (equality), `set!`, threa
 | lykn | JS |
 |---|---|
 | `(class Dog (Animal) ...)` | `class Dog extends Animal { ... }` |
-| `(assign this:name name)` | `this.name = name` |
+| `(assign this:name name)` | `this.name = name` (class body only) |
 | `(field -count 0)` | `#_count = 0;` |
 | `(get area () (return x))` | `get area() { return x; }` |
 | `(static (field count 0))` | `static count = 0;` |

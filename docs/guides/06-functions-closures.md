@@ -399,7 +399,7 @@ class Dog extends Animal {
 ```
 
 **Key forms inside class bodies**:
-- `assign` — explicit assignment (`this.prop = value`)
+- `assign` — `this`-property assignment, class body only (compile error elsewhere)
 - `bind` → `const` — immutable binding
 - `=` → `===` — equality (not assignment)
 - `set!` → property mutation (`obj.prop = value`)

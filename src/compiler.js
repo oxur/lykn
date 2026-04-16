@@ -274,10 +274,15 @@ const macros = {
     };
   },
 
-  // Explicit assignment: (assign target value) — always assignment, never equality
+  // Explicit assignment: (assign this:prop value) — class body only
   'assign'(args) {
     if (args.length !== 2) {
       throw new Error('assign requires exactly 2 arguments');
+    }
+    if (args[0].type !== 'atom' || !args[0].value.includes(':')) {
+      throw new Error(
+        'assign can only be used for property assignment (e.g., this:name) inside class bodies — use set! for mutation elsewhere'
+      );
     }
     return {
       type: 'AssignmentExpression',

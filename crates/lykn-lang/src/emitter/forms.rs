@@ -255,16 +255,26 @@ pub fn emit_form(
             ..
         } => vec![emit_class_form(None, superclass, members, ctx, registry)],
         SurfaceForm::KernelPassthrough { raw, .. } => vec![raw.clone()],
-        SurfaceForm::FunctionCall {
-            head,
-            args,
-            span: _,
-        } => {
+        SurfaceForm::FunctionCall { head, args, span } => {
             // Check for js: namespace interop
-            if let Some(name) = head.as_atom()
-                && name.starts_with("js:")
-            {
-                return vec![emit_js_interop(name, args, ctx, registry)];
+            if let Some(name) = head.as_atom() {
+                if name.starts_with("js:") {
+                    return vec![emit_js_interop(name, args, ctx, registry)];
+                }
+                // assign outside class body — compile-time error
+                if name == "assign" {
+                    return vec![list(vec![
+                        atom("throw"),
+                        list(vec![
+                            atom("new"),
+                            atom("Error"),
+                            SExpr::String {
+                                value: "assign can only be used inside class bodies — use set! for property mutation".into(),
+                                span: *span,
+                            },
+                        ]),
+                    ])];
+                }
             }
             vec![emit_function_call(head, args, ctx, registry)]
         }
@@ -298,6 +308,27 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
                 // js: namespace interop (DD-15) — handle before surface form check
                 if head_name.starts_with("js:") {
                     return emit_js_interop(head_name, &values[1..], ctx, registry);
+                }
+                // assign — only valid inside class bodies (DD-27)
+                if head_name == "assign" {
+                    if ctx.in_class_body && values.len() == 3 {
+                        // Emit as kernel = (assignment)
+                        let target = emit_expr(&values[1], ctx, registry);
+                        let value = emit_expr(&values[2], ctx, registry);
+                        return list(vec![atom("="), target, value]);
+                    }
+                    // Outside class body — emit error marker
+                    return list(vec![
+                        atom("throw"),
+                        list(vec![
+                            atom("new"),
+                            atom("Error"),
+                            SExpr::String {
+                                value: "assign can only be used inside class bodies — use set! for property mutation".into(),
+                                span: *span,
+                            },
+                        ]),
+                    ]);
                 }
                 if crate::classifier::dispatch::is_surface_form(head_name)
                     || head_name == "class"
@@ -2285,9 +2316,12 @@ fn emit_class_member_form(
             let mut member_items: Vec<SExpr> =
                 prefix.iter().map(|e| emit_expr(e, ctx, registry)).collect();
 
+            let saved = ctx.in_class_body;
+            ctx.in_class_body = true;
             for expr in body {
                 member_items.push(emit_expr(expr, ctx, registry));
             }
+            ctx.in_class_body = saved;
 
             let mut result = list(member_items);
 

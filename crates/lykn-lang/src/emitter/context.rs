@@ -20,6 +20,8 @@ pub struct EmitterContext {
     pub strip_assertions: bool,
     /// Deterministic name generator for intermediate bindings.
     pub gensym: EmitterGensym,
+    /// Whether we're currently inside a class body (enables `assign`).
+    pub in_class_body: bool,
 }
 
 impl EmitterContext {
@@ -28,6 +30,7 @@ impl EmitterContext {
             expr_context: ExprContext::Statement,
             gensym: EmitterGensym::new(),
             strip_assertions,
+            in_class_body: false,
         }
     }
 }

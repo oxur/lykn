@@ -1379,7 +1379,7 @@ to the kernel compiler unchanged.
 | `(yield* other)` | `yield* other` | Delegate to iterable |
 | `(for-await-of item stream (process item))` | `for await (const item of stream) { process(item); }` | Async iteration |
 | `(async (function* gen () ...))` | `async function* gen() { ... }` | Async generator |
-| `(assign this:x value)` | `this.x = value` | Explicit assignment (DD-27) |
+| `(assign this:x value)` | `this.x = value` | Class body only (DD-27) |
 
 **Class bodies** (DD-27): Surface forms expand inside `class`
 method and constructor bodies. `=` is equality, `bind` produces

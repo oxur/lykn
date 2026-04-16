@@ -422,7 +422,7 @@ const updated = {...user, age: 31};
 Classes are available but de-emphasized in surface lykn. Prefer `type` + `func` for new designs. Use `class` for JS interop, framework requirements, or when `instanceof` checking is needed.
 
 - **Surface forms expand in class bodies** (DD-27): `bind`, `=` (equality), `set!`, threading macros, `obj`, and all other surface forms work inside methods and constructors. **MUST** understand this.
-- **`assign` for this-property assignment**: `(assign this:x value)` → `this.x = value`. Use in constructors. **MUST** (not `=`, which is equality).
+- **`assign` for this-property assignment** (class body only): `(assign this:x value)` → `this.x = value`. Use in constructors. Compile error outside class bodies — use `set!` for mutation elsewhere. **MUST** (not `=`, which is equality).
 - **Private fields via `-` prefix**: `-count` compiles to `#_count`. **MUST** for encapsulation.
 - **`this` available inside class bodies**: surface forms eliminate `this` elsewhere, but inside `class` bodies it's available for property access.
 

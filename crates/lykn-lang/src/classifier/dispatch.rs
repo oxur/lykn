@@ -75,7 +75,6 @@ pub fn is_kernel_form(name: &str) -> bool {
             | "await"
             | "get"
             | "="
-            | "assign"
             | "array"
             | "object"
             | "spread"
