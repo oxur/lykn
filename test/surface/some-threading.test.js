@@ -1,7 +1,7 @@
 import { assertEquals } from "https://deno.land/std/assert/mod.ts";
-import { read } from "../../src/reader.js";
-import { expand, resetGensym, resetMacros } from "../../src/expander.js";
-import { compile } from "../../src/compiler.js";
+import { read } from "lykn/reader.js";
+import { expand, resetGensym, resetMacros } from "lykn/expander.js";
+import { compile } from "lykn/compiler.js";
 
 function lykn(source) {
   resetMacros();

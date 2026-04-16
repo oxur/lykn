@@ -51,7 +51,7 @@ pub fn kernel_json_to_js(kernel_json: &str, source_path: &Path) -> Result<String
 fn build_deno_script(tmp_file: &Path) -> String {
     format!(
         r#"
-import {{ compile }} from "./src/compiler.js";
+import {{ compile }} from "./packages/lykn/compiler.js";
 const kernelJson = Deno.readTextFileSync("{tmp_path}");
 const kernel = JSON.parse(kernelJson);
 
@@ -88,7 +88,10 @@ pub(crate) fn find_project_root(start: &Path) -> Option<PathBuf> {
 
     let mut current = start.canonicalize().ok()?;
     loop {
-        if current.join("deno.json").exists() || current.join("src/compiler.js").exists() {
+        if current.join("project.json").exists()
+            || current.join("deno.json").exists()
+            || current.join("packages/lykn/compiler.js").exists()
+        {
             return Some(current);
         }
         if !current.pop() {

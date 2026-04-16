@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "https://deno.land/std/assert/mod.ts";
-import { read } from "../../src/reader.js";
-import { expandExpr, expand } from "../../src/expander.js";
+import { read } from "lykn/reader.js";
+import { expandExpr, expand } from "lykn/expander.js";
 
 function ex(source) {
   return expandExpr(read(source)[0]);

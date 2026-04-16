@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "https://deno.land/std/assert/mod.ts";
-import { read } from "../../src/reader.js";
+import { read } from "lykn/reader.js";
 
 Deno.test("#2r binary", () => {
   assertEquals(read("#2r11111111")[0], { type: 'number', value: 255, base: 2 });

@@ -25,7 +25,7 @@ const nodePathShimPlugin = {
 };
 
 const shared = {
-  entryPoints: ["src/lykn-browser.js"],
+  entryPoints: ["packages/lykn/browser.js"],
   bundle: true,
   format: "iife",
   globalName: "lykn",

@@ -58,16 +58,9 @@ cargo publish --dry-run      # verify crates.io packaging
 ### JavaScript (Deno)
 
 ```sh
-deno lint src/               # lint JS
-deno test                    # test JS
-deno publish --allow-slow-types  # publish to jsr.io (browser auth)
-```
-
-### Biome (JS formatting)
-
-```sh
-biome format src/            # check
-biome format --write src/    # fix in place
+deno lint packages/          # lint JS
+deno test --config project.json -A test/  # test JS
+deno publish                 # publish to jsr.io
 ```
 
 ### Makefile
@@ -76,13 +69,13 @@ biome format --write src/    # fix in place
 
 ## Architecture
 
-### JS compiler pipeline (`src/`)
+### JS compiler pipeline (`packages/lykn/`)
 
 `reader.js` → parse source into S-expression AST (`{type: 'atom'|'string'|'number'|'list', value}`) → `compiler.js` → transform to ESTree nodes via built-in macros → `astring.generate()` → JS output.
 
-`index.js` re-exports `read`, `compile`, `compileExpr` and provides a convenience `lykn(source)` function.
+`mod.js` re-exports `read`, `compile`, `compileExpr` and provides a convenience `lykn(source)` function.
 
-The `astring` dependency is mapped via import map in `deno.json` (`"astring"` → `"npm:astring@^1.9.0"`) so the source uses bare imports while Deno resolves through npm without node_modules.
+The `astring` dependency is mapped via import map in `project.json` (`"astring"` → `"npm:astring@^1.9.0"`) so the source uses bare imports while Deno resolves through npm without node_modules.
 
 ### Rust workspace (`crates/`)
 

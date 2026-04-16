@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std/assert/mod.ts";
-import { read } from "../../src/reader.js";
+import { read } from "lykn/reader.js";
 
 Deno.test("backtick: wraps atom in quasiquote", () => {
   assertEquals(read("`foo"), [

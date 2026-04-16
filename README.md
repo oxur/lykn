@@ -113,32 +113,31 @@ lykn has two compiler implementations sharing the same syntax and semantics:
 - **Codegen** (`lykn-lang/codegen`) — kernel S-expressions → JavaScript text
   (pure Rust, no external dependencies)
 
-### JS pipeline (`src/`)
+### JS pipeline (`packages/lykn/`)
 
-- **Reader** (`src/reader.js`) — parses s-expressions, handles `#` dispatch
+- **Reader** (`packages/lykn/reader.js`) — parses s-expressions, handles `#` dispatch
   (`` ` ``, `,`, `,@`, `#a(...)`, `#o(...)`, `#NNr`, `#;`, `#|...|#`),
   dotted pairs
-- **Surface macros** (`src/surface.js`) — transforms high-level surface forms
+- **Surface macros** (`packages/lykn/surface.js`) — transforms high-level surface forms
   to kernel forms
-- **Expander** (`src/expander.js`) — three-pass macro expansion pipeline
+- **Expander** (`packages/lykn/expander.js`) — three-pass macro expansion pipeline
   (Bawden's quasiquote algorithm)
-- **Compiler** (`src/compiler.js`) — kernel forms → ESTree AST → JS via
+- **Compiler** (`packages/lykn/compiler.js`) — kernel forms → ESTree AST → JS via
   [astring](https://github.com/davidbonnet/astring)
-- **Browser shim** (`src/lykn-browser.js`) — 73KB bundle with `<script
+- **Browser shim** (`packages/lykn/browser.js`) — 73KB bundle with `<script
   type="text/lykn">` support and `window.lykn` API
 
 ## Toolchain
 
 ```sh
-brew install biome deno
+brew install deno
 ```
 
 ### Lint
 
 ```sh
-# JS (src/)
-deno lint src/
-biome lint src/
+# JS
+deno lint packages/
 
 # Rust
 cargo clippy
@@ -147,9 +146,8 @@ cargo clippy
 ### Format
 
 ```sh
-# JS (src/)
-biome format src/
-biome format --write src/    # fix in place
+# JS
+deno fmt packages/
 
 # Rust
 cargo fmt

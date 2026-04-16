@@ -1,0 +1,8 @@
+{
+    "name": "@lykn/lykn",
+    "version": "0.5.0",
+    "exports": "./mod.js",
+    "imports": {
+        "astring": "npm:astring@^1.9.0"
+    }
+}

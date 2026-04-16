@@ -68,8 +68,8 @@ fn rust_pipeline(source: &str) -> String {
 fn js_pipeline(source: &str) -> String {
     let script = format!(
         r#"
-import {{ read }} from "./src/reader.js";
-import {{ expand, resetMacros, resetGensym }} from "./src/expander.js";
+import {{ read }} from "./packages/lykn/reader.js";
+import {{ expand, resetMacros, resetGensym }} from "./packages/lykn/expander.js";
 resetMacros();
 resetGensym();
 const source = `{source}`;

@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "https://deno.land/std/assert/mod.ts";
-import { read } from "../../src/reader.js";
+import { read } from "lykn/reader.js";
 
 Deno.test("#|...|# discards content", () => {
   assertEquals(read("#| comment |# foo"), [{ type: 'atom', value: 'foo' }]);

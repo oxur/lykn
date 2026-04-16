@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { compile } from "../../src/compiler.js";
+import { compile } from "lykn/compiler.js";
 
 // Helper: build AST nodes directly (the . form is kernel-only, not readable from source)
 const atom = (v) => ({ type: "atom", value: v });
