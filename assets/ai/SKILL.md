@@ -63,7 +63,8 @@ Note: document paths are relative to the lykn project root.
 
 ### Writing New lykn Code
 
-1. **Load anti-patterns first**: Read `docs/guides/09-anti-patterns.md` — know what to avoid
+1. **Create project** (if starting fresh): `lykn new my-project`
+2. **Load anti-patterns first**: Read `docs/guides/09-anti-patterns.md` — know what to avoid
 2. **Load core idioms**: Read `docs/guides/01-core-idioms.md` for `bind`, naming, control flow
 3. **Load topic-specific docs**: Based on what you're building (API design, async, etc.)
 4. **Structure the module**: Named exports, `bind` for all values, `func` for named functions
@@ -511,6 +512,9 @@ These are the most common mistakes in lykn code, especially when converting from
 The `lykn` binary is the primary tool. Single binary wraps compilation, Deno test/lint/run, and publishing.
 
 ```sh
+# Create a new project
+lykn new my-app
+
 # Compile to JS
 lykn compile main.lykn -o main.js
 

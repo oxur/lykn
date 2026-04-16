@@ -6,6 +6,46 @@ dependencies.
 
 ---
 
+## ID-00: `lykn new` — Create a New Project
+
+**Strength**: SHOULD
+
+**Summary**: Create a new lykn project with the workspace convention.
+
+```sh
+lykn new my-app
+cd my-app
+lykn run packages/my-app/mod.lykn
+```
+
+**Generated structure**:
+
+```
+my-app/
+├── project.json              ← workspace root
+├── packages/
+│   └── my-app/
+│       ├── deno.json          ← package config
+│       └── mod.lykn           ← entry point
+├── test/
+│   └── mod.test.js            ← starter test
+└── .gitignore
+```
+
+**Options**:
+
+| Flag | Description |
+|------|-------------|
+| `--path DIR` | Create in a specific parent directory |
+
+**Name rules**: kebab-case only — lowercase letters, digits, hyphens.
+Must start with a letter.
+
+The generated project is immediately runnable (`lykn run`) and
+testable (`lykn test`). Git is initialized automatically.
+
+---
+
 ## ID-01: Install — Build from Source
 
 **Strength**: MUST
@@ -314,6 +354,7 @@ that the JS codegen consumes.
 
 | Command | Description |
 |---------|-------------|
+| `lykn new NAME` | Create new project |
 | `lykn compile FILE` | Compile to JS (stdout) |
 | `lykn compile FILE -o OUT` | Compile to file |
 | `lykn compile FILE --strip-assertions` | Production build |

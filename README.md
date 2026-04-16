@@ -27,6 +27,24 @@ short-circuit logical operators, not function calls. All mutation goes through
 named forms (`bind`, `reset!`, `swap!`). See DD-22. Self-contained Rust
 compiler (no runtime dependencies). 73KB browser bundle.
 
+## Quick Start
+
+```sh
+# Install
+brew install deno
+cargo install lykn  # or: cargo build --release && cp target/release/lykn bin/
+
+# Create a project
+lykn new my-app
+cd my-app
+
+# Run it
+lykn run packages/my-app/mod.lykn
+
+# Run tests
+lykn test
+```
+
 ## Quick taste
 
 ```lisp

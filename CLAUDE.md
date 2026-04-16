@@ -45,6 +45,12 @@ git clone https://github.com/oxur/ai-rust assets/ai/ai-rust
 
 ## Build commands
 
+### Project setup
+
+```sh
+lykn new my-project            # create new project
+```
+
 ### Rust (Cargo workspace at project root)
 
 ```sh

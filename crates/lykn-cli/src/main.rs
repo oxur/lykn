@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
 mod compile;
@@ -60,6 +61,14 @@ enum Commands {
         #[arg(default_value = "packages/")]
         paths: Vec<String>,
     },
+    /// Create a new lykn project
+    New {
+        /// Project name (kebab-case)
+        name: String,
+        /// Parent directory (default: current directory)
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     /// Publish package(s)
     Publish {
         /// Publish to JSR (JavaScript Registry)
@@ -89,11 +98,8 @@ fn main() {
         Commands::Run { file, args } => cmd_run(&file, &args),
         Commands::Test { patterns } => cmd_test(&patterns),
         Commands::Lint { paths } => cmd_lint(&paths),
-        Commands::Publish {
-            jsr,
-            npm,
-            dry_run,
-        } => cmd_publish(jsr, npm, dry_run),
+        Commands::New { name, path } => cmd_new(&name, path.as_deref()),
+        Commands::Publish { jsr, npm, dry_run } => cmd_publish(jsr, npm, dry_run),
     }
 }
 
@@ -339,4 +345,159 @@ fn cmd_publish(jsr: bool, npm: bool, dry_run: bool) {
     }
 
     eprintln!("Done.");
+}
+
+// ---------------------------------------------------------------------------
+// lykn new — project creation
+// ---------------------------------------------------------------------------
+
+fn validate_project_name(name: &str) {
+    if name.is_empty() {
+        eprintln!("error: project name cannot be empty");
+        process::exit(1);
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        eprintln!("error: project name must be kebab-case (lowercase letters, digits, hyphens)");
+        process::exit(1);
+    }
+    if name.starts_with('-') || name.starts_with(|c: char| c.is_ascii_digit()) {
+        eprintln!("error: project name must start with a letter");
+        process::exit(1);
+    }
+}
+
+fn write_file(path: &Path, content: &str) {
+    if let Err(e) = fs::write(path, content) {
+        eprintln!("error writing {}: {e}", path.display());
+        process::exit(1);
+    }
+}
+
+fn project_json_template(name: &str) -> String {
+    format!(
+        r#"{{
+    "workspace": ["./packages/{name}"],
+    "imports": {{
+        "{name}/": "./packages/{name}/"
+    }},
+    "lint": {{
+        "rules": {{
+            "exclude": ["no-slow-types"]
+        }}
+    }},
+    "tasks": {{
+        "test": "deno test -A test/"
+    }}
+}}
+"#
+    )
+}
+
+fn deno_json_template(name: &str) -> String {
+    format!(
+        r#"{{
+    "name": "@{name}/{name}",
+    "version": "0.1.0",
+    "exports": "./mod.lykn"
+}}
+"#
+    )
+}
+
+fn mod_lykn_template(name: &str) -> String {
+    format!(
+        r#";; {name} — created with lykn new
+
+(bind greeting "Hello from {name}!")
+(console:log greeting)
+"#
+    )
+}
+
+fn test_template(name: &str) -> String {
+    format!(
+        r#"import {{ assertEquals }} from "https://deno.land/std/assert/mod.ts";
+
+Deno.test("{name}: placeholder test", () => {{
+  assertEquals(1 + 1, 2);
+}});
+"#
+    )
+}
+
+const GITIGNORE_TEMPLATE: &str = ".DS_Store
+node_modules/
+target/
+dist/
+bin/
+*.js.map
+";
+
+fn cmd_new(name: &str, path: Option<&Path>) {
+    validate_project_name(name);
+
+    let base = path.unwrap_or(Path::new("."));
+    let project_dir = base.join(name);
+
+    if project_dir.exists() {
+        eprintln!(
+            "error: directory '{}' already exists",
+            project_dir.display()
+        );
+        process::exit(1);
+    }
+
+    // Create directories
+    if let Err(e) = fs::create_dir_all(project_dir.join("packages").join(name)) {
+        eprintln!("error creating directories: {e}");
+        process::exit(1);
+    }
+    if let Err(e) = fs::create_dir_all(project_dir.join("test")) {
+        eprintln!("error creating directories: {e}");
+        process::exit(1);
+    }
+
+    // Write template files
+    write_file(
+        &project_dir.join("project.json"),
+        &project_json_template(name),
+    );
+    write_file(
+        &project_dir
+            .join("packages")
+            .join(name)
+            .join("deno.json"),
+        &deno_json_template(name),
+    );
+    write_file(
+        &project_dir.join("packages").join(name).join("mod.lykn"),
+        &mod_lykn_template(name),
+    );
+    write_file(
+        &project_dir.join("test").join("mod.test.js"),
+        &test_template(name),
+    );
+    write_file(&project_dir.join(".gitignore"), GITIGNORE_TEMPLATE);
+
+    // Git init (silent failure if git not installed)
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(&project_dir)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .status();
+
+    eprintln!(
+        "Created lykn project '{}' in {}",
+        name,
+        project_dir.display()
+    );
+    eprintln!();
+    eprintln!("  cd {name}");
+    eprintln!("  lykn run packages/{name}/mod.lykn");
+    eprintln!();
+    eprintln!("Happy hacking!");
 }
