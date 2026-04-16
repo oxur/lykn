@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "https://deno.land/std/assert/mod.ts";
-import { read } from "lykn/reader.js";
-import { compile } from "lykn/compiler.js";
+import { read } from "lang/reader.js";
+import { compile } from "lang/compiler.js";
 
 function lykn(source) {
   return compile(read(source)).trim();

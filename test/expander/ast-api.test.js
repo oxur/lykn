@@ -3,7 +3,7 @@ import {
   sym, gensym, resetGensym, array, append,
   isArray, isSymbol, isNumber, isString,
   first, rest, concat, length, nth,
-} from "lykn/expander.js";
+} from "lang/expander.js";
 
 Deno.test("sym: creates atom node", () => {
   assertEquals(sym("foo"), { type: "atom", value: "foo" });

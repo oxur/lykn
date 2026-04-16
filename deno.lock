@@ -361,7 +361,7 @@
       "npm:astring@^1.9.0"
     ],
     "members": {
-      "packages/lykn": {
+      "packages/lang": {
         "dependencies": [
           "npm:astring@^1.9.0"
         ]

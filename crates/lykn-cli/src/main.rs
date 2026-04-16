@@ -553,14 +553,14 @@ const nodePathShimPlugin = {
 const lyknImportPlugin = {
   name: "lykn-import-map",
   setup(build) {
-    build.onResolve({ filter: /^lykn\// }, (args) => {
-      const rel = args.path.replace(/^lykn\//, "packages/lykn/");
+    build.onResolve({ filter: /^lang\// }, (args) => {
+      const rel = args.path.replace(/^lang\//, "packages/lang/");
       return { path: Deno.cwd() + "/" + rel };
     });
   },
 };
 const shared = {
-  entryPoints: ["packages/lykn-browser/mod.js"],
+  entryPoints: ["packages/browser/mod.js"],
   bundle: true, format: "iife", globalName: "lykn",
   alias: { "astring": astringPkg },
   plugins: [nodePathShimPlugin, lyknImportPlugin],
@@ -679,7 +679,7 @@ fn extract_npm_deps(json: &str, version: &str) -> Vec<(String, String)> {
                         deps.push((npm_name.to_string(), npm_ver.to_string()));
                     }
                 } else if key.ends_with('/') && val.starts_with("./packages/") {
-                    // Workspace import: "lykn/": "./packages/lykn/"
+                    // Workspace import: "lykn/": "./packages/lang/"
                     // → depends on @lykn/<name>
                     let pkg_name = key.trim_end_matches('/');
                     deps.push((format!("@lykn/{pkg_name}"), format!("^{version}")));
@@ -729,9 +729,9 @@ fn build_npm_for_package(pkg_dir: &str) {
                     eprintln!("error reading {}: {e}", path.display());
                     process::exit(1);
                 });
-                // Rewrite import map paths: from 'lykn/...' → from '@lykn/lykn/...'
-                let content = content.replace("from 'lykn/", "from '@lykn/lykn/");
-                let content = content.replace("from \"lykn/", "from \"@lykn/lykn/");
+                // Rewrite import map paths: from 'lang/...' → from '@lykn/lang/...'
+                let content = content.replace("from 'lang/", "from '@lykn/lang/");
+                let content = content.replace("from \"lang/", "from \"@lykn/lang/");
                 write_file(&dist.join(filename), &content);
             }
         }

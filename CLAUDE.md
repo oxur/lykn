@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 lykn is a lightweight Lisp that compiles S-expressions to clean, readable JavaScript. It has two implementations sharing a common syntax:
 
-- **JS compiler** (`packages/lykn/`) — reads `.lykn` source, emits ESTree AST, generates JS via astring
+- **JS compiler** (`packages/lang/`) — reads `.lykn` source, emits ESTree AST, generates JS via astring
 - **Rust CLI tools** (`crates/`) — compiler, formatter, syntax checker, and Deno wrapper — single binary
 
 Zero runtime dependencies in compiled output.
@@ -75,7 +75,7 @@ deno publish                 # publish to jsr.io
 
 ## Architecture
 
-### JS compiler pipeline (`packages/lykn/`)
+### JS compiler pipeline (`packages/lang/`)
 
 `reader.js` → parse source into S-expression AST (`{type: 'atom'|'string'|'number'|'list', value}`) → `compiler.js` → transform to ESTree nodes via built-in macros → `astring.generate()` → JS output.
 
@@ -98,7 +98,7 @@ The JS reader and Rust reader are parallel implementations of the same S-express
 
 - **crates.io**: `make publish` (publishes in dependency order with rate-limit delays) or `make publish-one CRATE=lykn-cli`
 - **jsr.io**: `deno publish --allow-slow-types` (config in `deno.json`)
-- **npm**: `npm publish --access public` (scoped as `@lykn/lykn` in `package.json`)
+- **npm**: `npm publish --access public` (scoped as `@lykn/lang` in `package.json`)
 
 ## Git remotes
 

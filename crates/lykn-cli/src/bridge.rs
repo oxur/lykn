@@ -18,7 +18,7 @@ pub fn kernel_json_to_js(kernel_json: &str, source_path: &Path) -> Result<String
     std::fs::write(&tmp_file, kernel_json).map_err(|e| format!("error writing temp file: {e}"))?;
 
     let project_root = find_project_root(source_path)
-        .ok_or_else(|| "cannot find lykn project root (need packages/lykn/compiler.js or project.json)".to_string())?;
+        .ok_or_else(|| "cannot find lykn project root (need packages/lang/compiler.js or project.json)".to_string())?;
 
     let script = build_deno_script(&tmp_file);
 
@@ -51,7 +51,7 @@ pub fn kernel_json_to_js(kernel_json: &str, source_path: &Path) -> Result<String
 fn build_deno_script(tmp_file: &Path) -> String {
     format!(
         r#"
-import {{ compile }} from "./packages/lykn/compiler.js";
+import {{ compile }} from "./packages/lang/compiler.js";
 const kernelJson = Deno.readTextFileSync("{tmp_path}");
 const kernel = JSON.parse(kernelJson);
 
@@ -90,7 +90,7 @@ pub(crate) fn find_project_root(start: &Path) -> Option<PathBuf> {
     loop {
         if current.join("project.json").exists()
             || current.join("deno.json").exists()
-            || current.join("packages/lykn/compiler.js").exists()
+            || current.join("packages/lang/compiler.js").exists()
         {
             return Some(current);
         }

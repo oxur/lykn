@@ -1,6 +1,6 @@
-import { read } from 'lykn/reader.js';
-import { expand } from 'lykn/expander.js';
-import { compile } from 'lykn/compiler.js';
+import { read } from 'lang/reader.js';
+import { expand } from 'lang/expander.js';
+import { compile } from 'lang/compiler.js';
 
 /**
  * Compile lykn source to JavaScript string.

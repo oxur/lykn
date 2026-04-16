@@ -1,6 +1,6 @@
 import { assertThrows } from "https://deno.land/std/assert/mod.ts";
-import { read } from "lykn/reader.js";
-import { expand, resetGensym, resetMacros, resetModuleCache } from "lykn/expander.js";
+import { read } from "lang/reader.js";
+import { expand, resetGensym, resetMacros, resetModuleCache } from "lang/expander.js";
 import { resolve, dirname } from "node:path";
 import { fromFileUrl } from "https://deno.land/std/path/mod.ts";
 

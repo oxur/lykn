@@ -1,12 +1,12 @@
 {
-    "workspace": ["./packages/lykn", "./packages/lykn-browser"],
+    "workspace": ["./packages/lang", "./packages/browser"],
     "lint": {
         "rules": {
             "exclude": ["no-slow-types"]
         }
     },
     "imports": {
-        "lykn/": "./packages/lykn/",
+        "lang/": "./packages/lang/",
         "astring": "npm:astring@^1.9.0"
     },
     "tasks": {

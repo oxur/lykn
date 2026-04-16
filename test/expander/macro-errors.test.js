@@ -1,6 +1,6 @@
 import { assertThrows } from "https://deno.land/std/assert/mod.ts";
-import { read } from "lykn/reader.js";
-import { expand, resetGensym, resetMacros } from "lykn/expander.js";
+import { read } from "lang/reader.js";
+import { expand, resetGensym, resetMacros } from "lang/expander.js";
 
 function ex(source) {
   resetMacros();
