@@ -33,16 +33,16 @@ or Node.js required for compilation.
 
 ```sh
 # Output to stdout
-lykn compile src/main.lykn
+lykn compile packages/myapp/main.lykn
 
 # Output to file
-lykn compile src/main.lykn -o dist/main.js
+lykn compile packages/myapp/main.lykn -o dist/main.js
 
 # Strip type checks and contracts (production)
-lykn compile src/main.lykn --strip-assertions -o dist/main.js
+lykn compile packages/myapp/main.lykn --strip-assertions -o dist/main.js
 
 # Output kernel JSON (debugging)
-lykn compile src/main.lykn --kernel-json
+lykn compile packages/myapp/main.lykn --kernel-json
 ```
 
 **Options**:
@@ -58,8 +58,8 @@ projects, use a Makefile or shell loop:
 
 ```sh
 # Compile all .lykn files
-for f in src/**/*.lykn; do
-  out="dist/${f#src/}"
+for f in packages/myapp/**/*.lykn; do
+  out="dist/${f#packages/myapp/}"
   out="${out%.lykn}.js"
   mkdir -p "$(dirname "$out")"
   lykn compile "$f" -o "$out"
@@ -74,13 +74,13 @@ done
 
 ```sh
 # Preview formatted output (stdout)
-lykn fmt src/main.lykn
+lykn fmt packages/myapp/main.lykn
 
 # Format in place
-lykn fmt -w src/main.lykn
+lykn fmt -w packages/myapp/main.lykn
 
 # Format multiple files
-lykn fmt -w src/auth/*.lykn
+lykn fmt -w packages/myapp/auth/*.lykn
 ```
 
 The formatter handles S-expression indentation with 80-character line
@@ -97,10 +97,10 @@ output, use `biome format`.
 
 ```sh
 # Check a single file
-lykn check src/main.lykn
+lykn check packages/myapp/main.lykn
 
 # Check multiple files
-lykn check src/**/*.lykn
+lykn check packages/myapp/**/*.lykn
 ```
 
 `lykn check` parses and analyzes the source without producing output.
@@ -111,6 +111,92 @@ It reports:
 - Unknown surface forms
 
 Use it in CI to catch issues before compilation.
+
+---
+
+## ID-04a: `lykn run` — Run `.lykn` or `.js` Files
+
+**Strength**: SHOULD
+
+**Summary**: Run a file directly via Deno. `.lykn` files are
+compiled to a temp `.js` file first, then executed.
+
+```sh
+# Run a .lykn file (compile + execute)
+lykn run packages/myapp/main.lykn
+
+# Run a .js file directly
+lykn run dist/main.js
+
+# Pass arguments
+lykn run packages/myapp/main.lykn -- --port 3000
+```
+
+The CLI auto-discovers `project.json` by walking up from the
+current directory and passes `--config project.json` to Deno.
+
+---
+
+## ID-04b: `lykn test` — Run Tests
+
+**Strength**: SHOULD
+
+**Summary**: Run tests via Deno's test runner.
+
+```sh
+# Run all tests
+lykn test
+
+# Run specific test directory
+lykn test test/forms/
+
+# Run a single test file
+lykn test test/surface/func.test.js
+```
+
+Wraps `deno test --config project.json --no-check -A`.
+
+---
+
+## ID-04c: `lykn lint` — Lint Compiled JS
+
+**Strength**: SHOULD
+
+**Summary**: Lint JavaScript files via Deno's built-in linter.
+
+```sh
+# Lint all packages
+lykn lint
+
+# Lint specific directory
+lykn lint packages/myapp/
+```
+
+Wraps `deno lint --config project.json`.
+
+---
+
+## ID-04d: `lykn publish` — Publish Packages
+
+**Strength**: SHOULD
+
+**Summary**: Publish to JSR, npm, or both.
+
+```sh
+# Publish to JSR (default)
+lykn publish --jsr
+
+# Build and publish to npm
+lykn publish --npm
+
+# Dry run (check without publishing)
+lykn publish --npm --dry-run
+lykn publish --jsr --dry-run
+```
+
+`--npm` builds the npm package in `dist/npm/` via `build_npm.ts`,
+then publishes. No `package.json` tracked in git — generated at
+publish time.
 
 ---
 
@@ -163,13 +249,13 @@ function add(a, b) {
 
 ```sh
 # 1. Format lykn source
-lykn fmt -w src/main.lykn
+lykn fmt -w packages/myapp/main.lykn
 
 # 2. Check syntax
-lykn check src/main.lykn
+lykn check packages/myapp/main.lykn
 
 # 3. Compile to JS
-lykn compile src/main.lykn -o dist/main.js
+lykn compile packages/myapp/main.lykn -o dist/main.js
 
 # 4. Format compiled JS
 biome format --write dist/
@@ -190,7 +276,7 @@ A typical `Makefile`:
 .PHONY: build test check fmt
 
 build:
-	lykn compile src/main.lykn -o dist/main.js
+	lykn compile packages/myapp/main.lykn -o dist/main.js
 	biome format --write dist/
 
 test: build
@@ -201,7 +287,7 @@ check: build
 	deno test --allow-all
 
 fmt:
-	lykn fmt -w src/*.lykn
+	lykn fmt -w packages/myapp/*.lykn
 	biome format --write dist/
 ```
 
@@ -213,7 +299,7 @@ fmt:
 
 ```sh
 # See the kernel S-expressions as JSON (before JS codegen)
-lykn compile src/main.lykn --kernel-json
+lykn compile packages/myapp/main.lykn --kernel-json
 ```
 
 Useful for debugging macro expansions and surface-to-kernel
@@ -235,6 +321,12 @@ that the JS codegen consumes.
 | `lykn fmt FILE` | Preview formatted source |
 | `lykn fmt -w FILE` | Format in place |
 | `lykn check FILE` | Syntax check |
+| `lykn run FILE` | Run .lykn or .js file |
+| `lykn test [PATTERNS]` | Run tests via Deno |
+| `lykn lint [PATHS]` | Lint JS via Deno |
+| `lykn publish --jsr` | Publish to JSR |
+| `lykn publish --npm` | Build + publish to npm |
+| `lykn publish --dry-run` | Check without publishing |
 | `lykn --version` | Show version |
 
 ---
@@ -245,7 +337,7 @@ that the JS codegen consumes.
   compilation pipeline
 - **Type Discipline**: See `05-type-discipline.md` ID-30 for
   `--strip-assertions`
-- **Biome Formatting**: See `13-biome/13-03-formatting.md` for JS
-  output formatting
+- **Deno Runtime**: See `12-deno/12-01-runtime-basics.md` for
+  `deno lint` and `deno fmt` on compiled output
 - **Surface Forms Reference**: See `00-lykn-surface-forms.md` for the
   complete surface form catalog

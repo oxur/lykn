@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 lykn is a lightweight Lisp that compiles S-expressions to clean, readable JavaScript. It has two implementations sharing a common syntax:
 
-- **JS compiler** (`src/`) — reads `.lykn` source, emits ESTree AST, generates JS via astring
-- **Rust CLI tools** (`crates/`) — formatter and syntax checker, single binary
+- **JS compiler** (`packages/lykn/`) — reads `.lykn` source, emits ESTree AST, generates JS via astring
+- **Rust CLI tools** (`crates/`) — compiler, formatter, syntax checker, and Deno wrapper — single binary
 
 Zero runtime dependencies in compiled output.
 

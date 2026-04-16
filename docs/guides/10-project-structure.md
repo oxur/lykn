@@ -86,25 +86,26 @@ compilation output, co-located tests, and centralized configuration.
 
 ```
 my-project/
-├── deno.json                ;; imports, tasks, compilerOptions
+├── project.json             ;; workspace root (lykn CLI reads this)
 ├── deno.lock
-├── biome.json               ;; Biome lint/format config
-├── Makefile                 ;; lykn compile + deno tasks
+├── Makefile                 ;; lykn commands + make tasks
 ├── bin/
-│   └── lykn                 ;; lykn compiler binary
-├── src/                     ;; lykn source (alternative to root-level)
-│   ├── mod.lykn             ;; library entry point
-│   ├── auth/
-│   │   ├── mod.lykn
-│   │   ├── login.lykn
-│   │   └── session.lykn
-│   ├── users/
-│   │   ├── mod.lykn
-│   │   ├── repository.lykn
-│   │   └── validation.lykn
-│   └── shared/
-│       ├── http.lykn
-│       └── constants.lykn
+│   └── lykn                 ;; lykn CLI binary
+├── packages/
+│   └── my-project/          ;; lykn source (workspace member)
+│       ├── deno.json        ;; package config (name, version, exports)
+│       ├── mod.lykn         ;; library entry point
+│       ├── auth/
+│       │   ├── mod.lykn
+│       │   ├── login.lykn
+│       │   └── session.lykn
+│       ├── users/
+│       │   ├── mod.lykn
+│       │   ├── repository.lykn
+│       │   └── validation.lykn
+│       └── shared/
+│           ├── http.lykn
+│           └── constants.lykn
 ├── dist/                    ;; compiled JS output
 │   ├── mod.js
 │   ├── auth/
@@ -122,10 +123,13 @@ my-project/
 ```
 
 **Conventions**:
-- `.lykn` source in `src/` (or feature directories at root)
-- Compiled `.js` output in `dist/` (or alongside source)
+- `project.json` at workspace root — import maps, tasks, workspace members
+- `.lykn` source in `packages/<name>/` (workspace member)
+- Each package has its own `deno.json` (name, version, exports)
+- Compiled `.js` output in `dist/`
 - Tests in `.js` (they import compiled output)
-- `bin/lykn` for the compiler binary
+- `bin/lykn` for the CLI binary
+- `lykn test`, `lykn lint`, `lykn run` wrap Deno with `--config project.json`
 
 ---
 

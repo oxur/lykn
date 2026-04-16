@@ -9,7 +9,7 @@ description: |
   (compile, check, fmt), configuring the lykn toolchain, or answering lykn
   design questions. lykn compiles to clean, readable JS with no runtime
   dependencies. All code uses lykn/surface syntax targeting Deno with
-  ESM-only modules and Biome for linting/formatting on compiled output.
+  ESM-only modules and Deno's built-in linter/formatter on compiled output.
 ---
 
 # lykn Skill — Language Reference
@@ -18,7 +18,7 @@ lykn is a Lisp-flavoured JavaScript — s-expression syntax compiling to clean, 
 
 **Design principles**: thin skin over JS (no runtime, no invented semantics), JS-aligned naming over Lisp conventions, lisp-case→camelCase auto-conversion, functional by default (immutable bindings, controlled mutation), required type annotations on all boundaries, clean compiled output.
 
-**Toolchain**: Deno (not Node.js), Biome (Rust binary) on compiled JS output, ESM-only modules, strictly no npm in development workflows.
+**Toolchain**: Deno (not Node.js), `deno lint` + `deno fmt` on compiled JS output, ESM-only modules, strictly no npm in development workflows.
 
 **Strength indicators** used throughout:
 
@@ -53,7 +53,7 @@ Note: document paths are relative to the lykn project root.
 | **Performance review** | `docs/guides/08-performance.md`, `docs/guides/07-async-concurrency.md` |
 | **Documentation** | `docs/guides/11-documentation.md`, `docs/guides/05-type-discipline.md` |
 | **Deno runtime** | `docs/guides/12-deno/12-01-runtime-basics.md` |
-| **Biome lint/format** | `docs/guides/13-biome/13-01-setup.md`, `docs/guides/13-biome/13-02-lint-rules.md` |
+| **Lint/format (Deno built-in)** | `docs/guides/12-deno/12-01-runtime-basics.md` |
 | **No-Node boundary** | `docs/guides/14-no-node-boundary.md`, `docs/guides/12-deno/12-01-runtime-basics.md` |
 | **lykn CLI (compile, fmt, check)** | `docs/guides/15-lykn-cli.md` |
 
@@ -508,29 +508,34 @@ These are the most common mistakes in lykn code, especially when converting from
 
 ## lykn CLI
 
-The `lykn` binary is the primary tool for compilation, syntax checking, and formatting.
+The `lykn` binary is the primary tool. Single binary wraps compilation, Deno test/lint/run, and publishing.
 
 ```sh
-# Compile to JS (stdout)
-lykn compile main.lykn
-
-# Compile to file
+# Compile to JS
 lykn compile main.lykn -o main.js
 
-# Strip type checks and contracts (production)
+# Strip type checks (production)
 lykn compile main.lykn --strip-assertions -o main.js
 
-# Output kernel JSON (debug)
-lykn compile main.lykn --kernel-json
+# Run a .lykn file directly
+lykn run packages/myapp/main.lykn
+
+# Run tests
+lykn test
+
+# Lint compiled JS
+lykn lint
 
 # Syntax check
 lykn check main.lykn
 
-# Format (stdout)
-lykn fmt main.lykn
-
-# Format (in-place)
+# Format
 lykn fmt -w main.lykn
+
+# Publish to JSR / npm
+lykn publish --jsr
+lykn publish --npm
+lykn publish --npm --dry-run
 ```
 
 ### Build from source
@@ -540,11 +545,9 @@ mkdir -p ./bin
 cargo build --release && cp ./target/release/lykn ./bin
 ```
 
-### Compile and run
+### Project config
 
-```sh
-lykn compile examples/surface/main.lykn -o /tmp/main.js && deno run /tmp/main.js
-```
+The CLI auto-discovers `project.json` by walking up from the current directory. This is the workspace root config that maps imports and defines tasks.
 
 ---
 
@@ -559,14 +562,13 @@ lykn targets Deno exclusively. The compiled JS output runs in Deno with ESM-only
 
 ---
 
-## Biome (Linting & Formatting on Compiled Output)
+## Linting & Formatting (Deno Built-in)
 
-Biome operates on the compiled JS output, not on `.lykn` source files. The lykn formatter (`lykn fmt`) handles `.lykn` formatting.
+Deno's built-in `deno lint` and `deno fmt` operate on compiled JS output. The lykn formatter (`lykn fmt`) handles `.lykn` source formatting.
 
-- **Pipeline**: `.lykn` → `lykn compile` → `.js` → `biome check` → lint/format results. **MUST**
-- **Install standalone**: `brew install biome` (not via npm). **MUST**
-- **`biome.json`**: single config file for lint + format. **MUST**
-- **Key rules**: `noVar` (MUST — but lykn never emits `var`), `useConst` (SHOULD), `noDoubleEquals` (MUST — lykn only emits `===`).
+- **Pipeline**: `.lykn` → `lykn compile` → `.js` → `deno lint` + `deno fmt` → results. **MUST**
+- **No external tools needed**: `deno lint` and `deno fmt` are built into the Deno binary. **MUST**
+- **Configure via `deno.json`**: lint rule exclusions and format options go in `deno.json`. **SHOULD**
 
 ---
 
@@ -578,13 +580,13 @@ lykn targets Deno exclusively. The same no-Node boundary from the JS guides appl
 |----------------|-------------|
 | `require()` | ESM `import` (lykn: `(import ...)`) |
 | `module.exports` | ESM `export` (lykn: `(export ...)`) |
-| `package.json` | `deno.json` |
+| `package.json` | `project.json` (workspace root) + `deno.json` (per package) |
 | `node_modules` | Global cache via `jsr:`/`npm:` specifiers |
 | `process.env` | `Deno:env:get` in lykn |
 | `__dirname` | `import:meta:dirname` in lykn |
 | `Buffer` | `Uint8Array` + `TextEncoder`/`TextDecoder` |
 | Jest / Mocha | `Deno.test()` + `@std/assert` |
-| ESLint + Prettier | Biome on compiled output, `lykn fmt` on source |
+| ESLint + Prettier | `deno lint` + `deno fmt` on compiled output, `lykn fmt` on source |
 
 ---
 
@@ -642,12 +644,11 @@ When mixing, surface forms can contain kernel forms freely. The compiler handles
    - Only use `cell` when the value genuinely needs to change over time
    - Thread pipelines replace intermediate mutable variables: `(-> data (transform-a) (transform-b) (transform-c))`
 
-### Task: "Set up Biome linting on lykn compiled output"
+### Task: "Set up linting on lykn compiled output"
 
-1. **Load**: `docs/guides/13-biome/13-01-setup.md`
+1. **Load**: `docs/guides/12-deno/12-01-runtime-basics.md`
 2. **Apply**:
-   - Install Biome standalone (`brew install biome`)
-   - `biome.json` at project root
-   - Compile lykn → JS, then run `biome check` on the JS output
+   - `deno lint dist/` on compiled JS output — no extra tools needed
+   - `deno fmt dist/` for consistent formatting
    - Many JS anti-patterns (like `var`, `==`) are structurally impossible in lykn's output
-   - Biome catches issues in hand-written JS helpers or edge cases in compiled output
+   - `deno lint` catches issues in hand-written JS helpers or edge cases in compiled output
