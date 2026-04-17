@@ -39,6 +39,7 @@ pub enum DistError {
 
 /// Information about a successfully built package.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BuiltPackage {
     /// The full package name (e.g. `"@lykn/lang"`).
     pub name: String,

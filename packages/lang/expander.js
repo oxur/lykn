@@ -983,19 +983,19 @@ function findMacroEntry(pkgDir) {
     const config = JSON.parse(content);
     if (config.lykn?.macroEntry) {
       const entryPath = _resolve(pkgDir, config.lykn.macroEntry);
-      try { Deno.statSync(entryPath); return entryPath; } catch {}
+      try { Deno.statSync(entryPath); return entryPath; } catch { /* file not found */ }
     }
     // Fallback chain
     for (const candidate of ['mod.lykn', 'macros.lykn', 'index.lykn']) {
       const p = _resolve(pkgDir, candidate);
-      try { Deno.statSync(p); return p; } catch {}
+      try { Deno.statSync(p); return p; } catch { /* file not found */ }
     }
     // Check exports
     if (typeof config.exports === 'string' && config.exports.endsWith('.lykn')) {
       const p = _resolve(pkgDir, config.exports);
-      try { Deno.statSync(p); return p; } catch {}
+      try { Deno.statSync(p); return p; } catch { /* file not found */ }
     }
-  } catch {}
+  } catch { /* no deno.json */ }
 
   throw new Error(
     `import-macros: no macro entry found in ${pkgDir}\n` +
@@ -1081,7 +1081,7 @@ function resolveImportMacrosSpecifier(specifier, filePath) {
 
       // Workspace package fallback: try packages/<name>/mod.lykn
       const modPath = _resolve(projectRoot, 'packages', specifier, 'mod.lykn');
-      try { Deno.statSync(modPath); return modPath; } catch {}
+      try { Deno.statSync(modPath); return modPath; } catch { /* not found */ }
     }
   }
 

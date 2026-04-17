@@ -79,6 +79,7 @@ pub struct PackageConfig {
 
     /// The exports field (can be a string or object).
     #[serde(default)]
+    #[allow(dead_code)]
     pub exports: serde_json::Value,
 
     /// Import map entries.

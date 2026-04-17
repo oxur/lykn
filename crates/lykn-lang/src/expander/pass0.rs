@@ -152,6 +152,29 @@ fn resolve_specifier(
         }
     }
 
+    // Workspace package fallback: try packages/<name>/mod.lykn from project root
+    if !module_path.starts_with("./")
+        && !module_path.starts_with("../")
+        && !module_path.starts_with('/')
+    {
+        let start_dir = file_path
+            .and_then(|fp| fp.parent())
+            .map(|p| p.to_path_buf())
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let mut dir = start_dir.as_path();
+        loop {
+            let candidate = dir.join("packages").join(module_path).join("mod.lykn");
+            if dir.join("project.json").exists() && candidate.exists() {
+                return Ok(candidate);
+            }
+            match dir.parent() {
+                Some(parent) => dir = parent,
+                None => break,
+            }
+        }
+    }
+
     // Tier 3: Filesystem path (current behavior)
     if let Some(fp) = file_path {
         Ok(fp.parent().unwrap_or(Path::new(".")).join(module_path))
