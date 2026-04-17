@@ -1,0 +1,33 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+(test-compiles "bind: simple binding"
+  "(bind x 42)" "const x = 42;")
+
+(test-compiles "bind: string value"
+  "(bind name \"Duncan\")" "const name = \"Duncan\";")
+
+(test-compiles "bind: expression value"
+  "(bind result (+ 1 2))" "const result = 1 + 2;")
+
+(test-compiles "bind: with type annotation"
+  "(bind :number age 42)" "const age = 42;")
+
+(test "bind: with type annotation and expression — emits runtime check"
+  (bind result (compile "(bind :string name (get-name user))"))
+  (includes result "const name = getName(user);")
+  (includes result "typeof name !== \"string\"")
+  (includes result "TypeError"))
+
+(test-compiles "bind: type annotation on literal — no runtime check"
+  "(bind :string name \"hello\")" "const name = \"hello\";")
+
+(test-compiles "bind: :any annotation — no runtime check"
+  "(bind :any x (compute))" "const x = compute();")
+
+(test "bind: type mismatch on literal — compile error"
+  (is-thrown (compile "(bind :number x \"hello\")") Error))
+
+(test-compiles "bind: kebab-case name"
+  "(bind my-value 10)" "const myValue = 10;")

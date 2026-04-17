@@ -1,0 +1,37 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+;; --- -> (thread-first) ---
+
+(test-compiles "->: bare symbols"
+  "(-> x f g)" "g(f(x));")
+
+(test-compiles "->: list forms"
+  "(-> x (f a) (g b))" "g(f(x, a), b);")
+
+(test-compiles "->: mixed bare and list"
+  "(-> x f (g a))" "g(f(x), a);")
+
+(test-compiles "->: single step"
+  "(-> x f)" "f(x);")
+
+(test-compiles "->: three steps"
+  "(-> x f g h)" "h(g(f(x)));")
+
+;; --- ->> (thread-last) ---
+
+(test-compiles "->>: bare symbols"
+  "(->> x f g)" "g(f(x));")
+
+(test-compiles "->>: list forms"
+  "(->> x (f a) (g b))" "g(b, f(a, x));")
+
+(test-compiles "->>: mixed bare and list"
+  "(->> x f (g a))" "g(a, f(x));")
+
+(test-compiles "->>: single step"
+  "(->> x f)" "f(x);")
+
+(test-compiles "->>: three steps with args"
+  "(->> items (filter pred) (map f) (reduce g init))" "reduce(g, init, map(f, filter(pred, items)));")

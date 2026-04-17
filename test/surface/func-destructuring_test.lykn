@@ -1,0 +1,219 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+;; --- Object destructuring ---
+
+(test "func: object destructuring single clause"
+  (bind result (compile "(func process :args ((object :string name :number age) :string action) :returns :string :body (template name \" (\" age \") — \" action))"))
+  (includes result "function process({name, age}, action)")
+  (includes result "typeof name !== \"string\"")
+  (includes result "typeof age !== \"number\"")
+  (includes result "Number.isNaN(age)")
+  (includes result "typeof action !== \"string\"")
+  (includes result "return"))
+
+(test "func: object destructuring with :any field"
+  (bind result (compile "(func f :args ((object :any name :number age)) :body (console:log name age))"))
+  (includes result "{name, age}"))
+
+(test "func: array destructuring single clause"
+  (bind result (compile "(func f :args ((array :number first :number second)) :body (+ first second))"))
+  (includes result "[first, second]")
+  (includes result "typeof first !== \"number\"")
+  (includes result "typeof second !== \"number\""))
+
+(test "func: array destructuring with rest"
+  (bind result (compile "(func head-tail :args ((array :number first (rest :number remaining))) :body (console:log first remaining))"))
+  (includes result "[first, ...remaining]")
+  (includes result "typeof first !== \"number\""))
+
+(test "func: array destructuring with skip"
+  (bind result (compile "(func f :args ((array :number first _ :number third)) :body (+ first third))"))
+  (includes result "[first, , third]"))
+
+;; --- Mixed params ---
+
+(test "func: mixed destructured + simple params"
+  (bind result (compile "(func handler :args ((object :string method :string url) :any body) :body (console:log method url body))"))
+  (includes result "function handler({method, url}, body)")
+  (includes result "typeof method !== \"string\"")
+  (includes result "typeof url !== \"string\""))
+
+;; --- fn/lambda ---
+
+(test "fn: object destructuring"
+  (bind result (compile "(bind f (fn ((object :string name :number age)) (console:log name age)))"))
+  (includes result "({name, age})")
+  (includes result "typeof name !== \"string\"")
+  (includes result "typeof age !== \"number\""))
+
+(test "fn: all :any destructured fields — concise arrow"
+  (bind result (compile "(bind f (fn ((object :any x :any y)) (+ x y)))"))
+  (includes result "({x, y})"))
+
+;; --- Multi-clause dispatch ---
+
+(test "func: multi-clause object destructured vs string dispatch"
+  (bind result (compile "(func process (:args ((object :string name) :string action) :body (template name \": \" action)) (:args (:string raw :string action) :body (template raw \" — \" action)))"))
+  (includes result "=== \"object\"")
+  (includes result "=== \"string\"")
+  (includes result "const {name}")
+  (includes result "const raw"))
+
+(test "func: multi-clause object vs array destructuring"
+  (bind result (compile "(func transform (:args ((object :string name)) :body name) (:args ((array :number first)) :body first))"))
+  (includes result "=== \"object\"")
+  (includes result "Array.isArray(")
+  (includes result "const {name}")
+  (includes result "const [first]"))
+
+;; --- Error cases ---
+
+(test "func: error on empty object pattern"
+  (is-thrown (compile "(func f :args ((object)) :body 1)") Error "empty destructuring pattern"))
+
+(test "func: error on empty array pattern"
+  (is-thrown (compile "(func f :args ((array)) :body 1)") Error "empty destructuring pattern"))
+
+(test "func: error on bare name without type in object"
+  (is-thrown (compile "(func f :args ((object name)) :body 1)") Error "missing type annotation"))
+
+;; --- Nested destructuring ---
+
+(test "func: nested object with alias"
+  (bind result (compile "(func f :args ((object :string id (alias :any c (object :string name :string email)))) :body (console:log id name email))"))
+  (includes result "{id, c: {name, email}}")
+  (includes result "typeof id !== \"string\"")
+  (includes result "typeof name !== \"string\"")
+  (includes result "typeof email !== \"string\""))
+
+(test "func: nested object in array (positional)"
+  (bind result (compile "(func f :args ((array (object :string name) :number score)) :body (console:log name score))"))
+  (includes result "[{name}, score]")
+  (includes result "typeof name !== \"string\"")
+  (includes result "typeof score !== \"number\""))
+
+(test "func: two levels deep nesting"
+  (bind result (compile "(func f :args ((object (alias :any a (object :string city (alias :any g (object :number lat :number lng)))))) :body (console:log city lat lng))"))
+  (includes result "{a: {city, g: {lat, lng}}}")
+  (includes result "typeof city !== \"string\"")
+  (includes result "typeof lat !== \"number\""))
+
+(test "func: nested + default combined"
+  (bind result (compile "(func f :args ((object (default :string name \"anon\") (alias :any addr (object :string city)))) :body (console:log name city))"))
+  (includes result "{name = \"anon\", addr: {city}}"))
+
+(test "fn: nested destructuring"
+  (bind result (compile "(bind f (fn ((object (alias :any c (object :string name)))) (console:log name)))"))
+  (includes result "{c: {name}}")
+  (includes result "typeof name !== \"string\""))
+
+(test "func: error on nested without alias in object"
+  (is-thrown (compile "(func f :args ((object (object :string name))) :body 1)") Error "must use alias"))
+
+(test "func: error on alias missing inner pattern"
+  (is-thrown (compile "(func f :args ((object (alias :any name))) :body 1)") Error "requires"))
+
+;; --- Default values in destructured params ---
+
+(test "func: object destructuring with default"
+  (bind result (compile "(func f :args ((object :string name (default :number age 0))) :body (console:log name age))"))
+  (includes result "{name, age = 0}")
+  (includes result "typeof name !== \"string\"")
+  (includes result "typeof age !== \"number\""))
+
+(test "func: object destructuring with multiple defaults"
+  (bind result (compile "(func f :args ((object (default :string name \"anon\") (default :number age 0))) :body (console:log name age))"))
+  (includes result "{name = \"anon\", age = 0}"))
+
+(test "func: mixed default + non-default fields"
+  (bind result (compile "(func f :args ((object :string name (default :number age 0) :string email)) :body 1)"))
+  (includes result "{name, age = 0, email}"))
+
+(test "func: default with :any — no type check"
+  (bind result (compile "(func f :args ((object (default :any name \"anon\") :number age)) :body (console:log name age))"))
+  (includes result "{name = \"anon\", age}"))
+
+(test "func: array destructuring with default"
+  (bind result (compile "(func f :args ((array :number first (default :number second 0))) :body (+ first second))"))
+  (includes result "[first, second = 0]"))
+
+(test "func: default value is expression"
+  (bind result (compile "(func f :args ((object (default :number x (+ 1 2)))) :body x)"))
+  (includes result "x = 1 + 2"))
+
+(test "fn: with default in destructured"
+  (bind result (compile "(bind f (fn ((object :string name (default :number age 0))) (console:log name age)))"))
+  (includes result "{name, age = 0}")
+  (includes result "typeof name !== \"string\""))
+
+(test "func: default + rest in array"
+  (bind result (compile "(func f :args ((array (default :number first 0) (rest :number others))) :body (console:log first others))"))
+  (includes result "[first = 0, ...others]"))
+
+(test "func: error on default missing value"
+  (is-thrown (compile "(func f :args ((object (default :number age))) :body 1)") Error "requires 3 arguments"))
+
+(test "func: error on default missing type"
+  (is-thrown (compile "(func f :args ((object (default age 0 1))) :body 1)") Error "must be a type keyword"))
+
+(test "func: error on rest not last in array"
+  (is-thrown (compile "(func f :args ((array (rest :number r) :number x)) :body 1)") Error "rest element must be last"))
+
+;; --- Top-level default and rest in :args ---
+
+(test "func: top-level default param"
+  (bind result (compile "(func greet :args (:string name (default :string greeting \"Hello\")) :returns :string :body (template greeting \", \" name \"!\"))"))
+  (includes result "greeting = \"Hello\"")
+  (includes result "typeof name !== \"string\"")
+  (includes result "typeof greeting !== \"string\""))
+
+(test "func: multiple top-level defaults"
+  (bind result (compile "(func f :args ((default :number x 0) (default :number y 0)) :body (+ x y))"))
+  (includes result "x = 0")
+  (includes result "y = 0"))
+
+(test "func: top-level rest param :any — no per-element check"
+  (bind result (compile "(func log-all :args (:string level (rest :any messages)) :body (console:log level messages))"))
+  (includes result "...messages")
+  (includes result "typeof level !== \"string\""))
+
+(test "func: top-level rest param :number — per-element check"
+  (bind result (compile "(func sum :args ((rest :number nums)) :returns :number :body (nums:reduce (fn (:number acc :number n) (+ acc n)) 0))"))
+  (includes result "...nums")
+  (includes result "for (const")
+  (includes result "of nums"))
+
+(test "fn: top-level default"
+  (bind result (compile "(bind f (fn ((default :string name \"anon\")) (console:log name)))"))
+  (includes result "name = \"anon\"")
+  (includes result "typeof name !== \"string\""))
+
+(test "fn: top-level rest :any"
+  (bind result (compile "(bind f (fn ((rest :any args)) (console:log args)))"))
+  (includes result "...args"))
+
+(test "fn: top-level rest :string — per-element check"
+  (bind result (compile "(bind f (fn ((rest :string items)) (console:log items)))"))
+  (includes result "...items")
+  (includes result "for (const"))
+
+(test "func: mixed destructured + default + rest"
+  (bind result (compile "(func handle :args ((object :string method :string url) (default :number timeout 5000) (rest :any middleware)) :body (console:log method url timeout middleware))"))
+  (includes result "{method, url}")
+  (includes result "timeout = 5000")
+  (includes result "...middleware"))
+
+(test "func: default with :any — no type check (top-level)"
+  (bind result (compile "(func f :args ((default :any name \"anon\")) :body (console:log name))"))
+  (includes result "name = \"anon\""))
+
+(test "func: error on rest not last in :args"
+  (is-thrown (compile "(func f :args ((rest :any r) :string x) :body 1)") Error "rest parameter must be the last parameter"))
+
+(test "func: error on multiple rest in :args"
+  (is-thrown (compile "(func f :args ((rest :any a) (rest :any b)) :body 1)") Error "only one rest parameter allowed"))
+
+(test "func: error on default missing value (top-level)"
+  (is-thrown (compile "(func f :args ((default :number x)) :body 1)") Error "requires exactly 3 elements"))

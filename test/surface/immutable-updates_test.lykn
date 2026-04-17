@@ -1,0 +1,43 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+;; --- assoc ---
+
+(test-compiles "assoc: single key-value"
+  "(assoc obj :age 43)" "({\n  ...obj,\n  age: 43\n});")
+
+(test-compiles "assoc: multiple key-values"
+  "(assoc obj :a 1 :b 2)" "({\n  ...obj,\n  a: 1,\n  b: 2\n});")
+
+(test-compiles "assoc: kebab-case key"
+  "(assoc obj :first-name \"Duncan\")" "({\n  ...obj,\n  firstName: \"Duncan\"\n});")
+
+(test-compiles "assoc: expression value"
+  "(assoc obj :score (+ base bonus))" "({\n  ...obj,\n  score: base + bonus\n});")
+
+;; skipped: assoc: expansion produces object with spread (uses ex())
+
+;; --- dissoc ---
+
+(test "dissoc: single key"
+  (bind result (compile "(dissoc obj :key)"))
+  (includes result "...")
+  (includes result "obj"))
+
+(test "dissoc: multiple keys"
+  (bind result (compile "(dissoc obj :a :b)"))
+  (includes result "...")
+  (includes result "obj"))
+
+;; skipped: dissoc: expansion produces IIFE (uses ex())
+
+;; --- conj ---
+
+(test-compiles "conj: append to array"
+  "(conj arr 42)" "[...arr, 42];")
+
+(test-compiles "conj: append expression"
+  "(conj items (+ 1 2))" "[...items, 1 + 2];")
+
+;; skipped: conj: expansion produces array with spread (uses ex())

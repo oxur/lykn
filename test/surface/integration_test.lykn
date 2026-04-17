@@ -1,0 +1,31 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+(test-compiles "integration: bind + obj"
+  "(bind user (obj :name \"Duncan\" :age 42))" "const user = {\n  name: \"Duncan\",\n  age: 42\n};")
+
+(test "integration: bind + obj + assoc"
+  (bind result (compile "(bind user (obj :name \"Duncan\" :age 42))\n    (bind updated (assoc user :age 43))"))
+  (includes result "name: \"Duncan\"")
+  (includes result "...user")
+  (includes result "age: 43"))
+
+(test "integration: bind + cell + swap! + express"
+  (bind result (compile "(bind counter (cell 0))\n    (swap! counter inc)\n    (console:log (express counter))"))
+  (includes result "value: 0")
+  (includes result "counter.value = inc(counter.value);")
+  (includes result "console.log(counter.value);"))
+
+(test "integration: bind + conj"
+  (bind result (compile "(bind items (array 1 2 3))\n    (bind more (conj items 4))"))
+  (includes result "const items = [1, 2, 3];")
+  (includes result "const more = [...items, 4];"))
+
+(test-compiles "integration: thread-first with surface forms"
+  "(-> x f g h)" "h(g(f(x)));")
+
+(test "integration: bind + cell + reset!"
+  (bind result (compile "(bind state (cell (obj :count 0)))\n    (reset! state (obj :count 1))"))
+  (includes result "const state")
+  (includes result "state.value ="))

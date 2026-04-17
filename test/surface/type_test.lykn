@@ -1,0 +1,44 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+(test "type: single constructor with field"
+  (bind result (compile "(type Wrapper (Wrap :any value))"))
+  (includes result "function Wrap(value)")
+  (includes result "tag: \"Wrap\"")
+  (includes result "return"))
+
+(test "type: zero-field constructor"
+  (bind result (compile "(type Unit Empty)"))
+  (includes result "const Empty = {\n  tag: \"Empty\"\n}"))
+
+(test "type: Option with Some and None"
+  (bind result (compile "(type Option (Some :any value) None)"))
+  (includes result "function Some(value)")
+  (includes result "tag: \"Some\"")
+  (includes result "tag: \"None\"")
+  (includes result "const None"))
+
+(test "type: typed fields emit type checks"
+  (bind result (compile "(type Point (Pt :number x :number y))"))
+  (includes result "typeof x !== \"number\"")
+  (includes result "typeof y !== \"number\""))
+
+;; type: :any fields skip type checks — negative typeof assertion skipped (no excludes macro)
+(test "type: :any fields skip type checks"
+  (bind result (compile "(type Box (Box :any value))"))
+  (includes result "function Box(value)")
+  (includes result "tag: \"Box\""))
+
+(test "type: multi-field constructor"
+  (bind result (compile "(type Pair (Pair :any first :any second))"))
+  (includes result "function Pair(first, second)")
+  (includes result "first: first")
+  (includes result "second: second"))
+
+(test "type: Result with Ok and Err"
+  (bind result (compile "(type Result (Ok :any value) (Err :any error))"))
+  (includes result "function Ok(value)")
+  (includes result "function Err(error)")
+  (includes result "tag: \"Ok\"")
+  (includes result "tag: \"Err\""))

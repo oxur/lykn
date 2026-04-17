@@ -1,0 +1,94 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+;; --- Literal patterns ---
+
+(test "match: number literals"
+  (bind result (compile "(match status (200 \"ok\") (404 \"not found\") (_ \"unknown\"))"))
+  (includes result "=== 200")
+  (includes result "=== 404")
+  (includes result "\"ok\"")
+  (includes result "\"not found\"")
+  (includes result "\"unknown\""))
+
+(test "match: string literals"
+  (bind result (compile "(match cmd (\"start\" 1) (\"stop\" 0) (_ -1))"))
+  (includes result "=== \"start\"")
+  (includes result "=== \"stop\""))
+
+(test "match: boolean literals"
+  (bind result (compile "(match flag (true \"yes\") (false \"no\"))"))
+  (includes result "=== true")
+  (includes result "=== false"))
+
+;; --- Wildcard ---
+
+;; negative "no matching pattern" assertion skipped (no excludes macro)
+(test "match: wildcard default"
+  (bind result (compile "(match x (1 \"one\") (_ \"other\"))"))
+  (includes result "=== 1")
+  (includes result "\"other\""))
+
+;; --- ADT patterns ---
+
+(test "match: ADT constructor with field"
+  (bind result (compile "
+    (type Option (Some :any value) None)
+    (match opt
+      ((Some v) v)
+      (None 0))"))
+  (includes result ".tag === \"Some\"")
+  (includes result ".tag === \"None\"")
+  (includes result ".value"))
+
+(test "match: zero-field ADT constructor"
+  (bind result (compile "
+    (type Option (Some :any value) None)
+    (match opt
+      ((Some v) (use v))
+      (None (default-val)))"))
+  (includes result ".tag === \"None\""))
+
+;; --- Structural obj patterns ---
+
+(test "match: structural obj pattern"
+  (bind result (compile "(match response
+    ((obj :ok true :data d) (process d))
+    (_ (handle-error)))"))
+  (includes result "typeof")
+  (includes result "\"ok\" in")
+  (includes result "\"data\" in")
+  (includes result ".ok === true"))
+
+;; --- Guards ---
+
+(test "match: guarded pattern"
+  (bind result (compile "
+    (type Option (Some :any value) None)
+    (match opt
+      ((Some v) :when (> v 0) (use-positive v))
+      ((Some v) (use-other v))
+      (None 0))"))
+  (includes result ".tag === \"Some\"")
+  (includes result "> 0"))
+
+;; --- IIFE wrapper ---
+
+(test "match: always produces IIFE"
+  (bind result (compile "(match x (1 \"one\") (_ \"other\"))"))
+  (includes result "(() =>")
+  (includes result "return"))
+
+;; --- No matching pattern throw ---
+
+(test "match: throws on no match without wildcard"
+  (bind result (compile "(match x (1 \"one\") (2 \"two\"))"))
+  (includes result "no matching pattern"))
+
+;; --- Simple binding ---
+
+(test "match: simple symbol binding"
+  (bind result (compile "(match x (y (+ y 1)))"))
+  (includes result "const y =")
+  (includes result "y + 1"))

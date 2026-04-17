@@ -1,0 +1,62 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+;; --- js:call ---
+
+(test-compiles "js:call: method dispatch"
+  "(js:call console:log \"hello\")" "console.log(\"hello\");")
+
+(test-compiles "js:call: with multiple args"
+  "(js:call Math:max 1 2 3)" "Math.max(1, 2, 3);")
+
+(test-compiles "js:call: strips js:call head"
+  "(js:call arr:push 42)" "arr.push(42);")
+
+;; --- js:bind ---
+
+(test-compiles "js:bind: method binding"
+  "(js:bind obj:method obj)" "obj.method.bind(obj);")
+
+(test-compiles "js:bind: nested method"
+  "(js:bind el:addEventListener el)" "el.addEventListener.bind(el);")
+
+;; --- js:eval ---
+
+(test-compiles "js:eval: simple eval"
+  "(js:eval \"1 + 2\")" "eval(\"1 + 2\");")
+
+(test-compiles "js:eval: with variable"
+  "(js:eval code)" "eval(code);")
+
+;; --- js:eq ---
+
+(test-compiles "js:eq: loose equality"
+  "(js:eq a b)" "a == b;")
+
+(test-compiles "js:eq: with null"
+  "(js:eq x null)" "x == null;")
+
+;; --- js:typeof ---
+
+(test-compiles "js:typeof: typeof operator"
+  "(js:typeof x)" "typeof x;")
+
+;; --- Nested in bind ---
+
+(test-compiles "js:eq: nested in bind"
+  "(bind is-nil (js:eq x null))" "const isNil = x == null;")
+
+(test-compiles "js:typeof: nested in bind"
+  "(bind t (js:typeof x))" "const t = typeof x;")
+
+;; --- Error cases ---
+
+(test "js:call: no args throws"
+  (is-thrown (compile "(js:call)") Error "at least a method"))
+
+(test "js:bind: wrong arg count throws"
+  (is-thrown (compile "(js:bind obj:method)") Error "2 arguments"))
+
+(test "js:eq: wrong arg count throws"
+  (is-thrown (compile "(js:eq a)") Error "2 arguments"))

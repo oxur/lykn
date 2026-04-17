@@ -1,0 +1,21 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" ((alias lykn compile)))
+
+(test-compiles "obj: simple object"
+  "(obj :name \"Duncan\" :age 42)" "({\n  name: \"Duncan\",\n  age: 42\n});")
+
+(test-compiles "obj: single property"
+  "(obj :active true)" "({\n  active: true\n});")
+
+(test-compiles "obj: kebab-case key"
+  "(obj :first-name \"Duncan\")" "({\n  firstName: \"Duncan\"\n});")
+
+(test-compiles "obj: computed value"
+  "(obj :score (* base multiplier))" "({\n  score: base * multiplier\n});")
+
+(test-compiles "obj: empty object"
+  "(obj)" "({});")
+
+(test-compiles "obj: variable value"
+  "(obj :name user-name)" "({\n  name: userName\n});")

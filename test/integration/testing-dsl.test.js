@@ -222,11 +222,13 @@ Deno.test("testing: suite with setup/teardown", () => {
 
 // --- test-compiles ---
 
-Deno.test("testing: test-compiles expands to compile + assertEquals", () => {
+Deno.test("testing: test-compiles expands to compile + assertEquals with trim", () => {
   const result = lykn(`${importAll}
     (test-compiles "bind" "(bind x 1)" "const x = 1;")`);
   assertEquals(result.includes('Deno.test("bind"'), true);
-  assertEquals(result.includes('assertEquals(compile("(bind x 1)"), "const x = 1;")'), true);
+  assertEquals(result.includes('compile("(bind x 1)")'), true);
+  assertEquals(result.includes('.trim()'), true);
+  assertEquals(result.includes('"const x = 1;"'), true);
 });
 
 // --- edge cases ---

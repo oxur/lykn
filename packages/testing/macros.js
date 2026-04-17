@@ -192,9 +192,11 @@ macroEnv.set('step', (name, ...body) => {
 // --- convenience macros ---
 
 // (test-compiles "name" input expected)
-// Expands to: (test "name" (is-equal (compile input) expected))
-macroEnv.set('test-compiles', (name, input, expected) =>
-  array(sym('test'), name,
-    array(sym('is-equal'),
-      array(sym('compile'), input),
-      expected)));
+// Expands to: (test "name" (bind r#gen (compile input)) (is-equal (r#gen:trim) expected))
+macroEnv.set('test-compiles', (name, input, expected) => {
+  const tmp = gensym('r');
+  const trimCall = sym(tmp.value + ':trim');
+  return array(sym('test'), name,
+    array(sym('bind'), tmp, array(sym('compile'), input)),
+    array(sym('is-equal'), array(trimCall), expected));
+});
