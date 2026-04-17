@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
 mod compile;
+mod doctest;
 
 #[derive(Parser)]
 #[command(name = "lykn", version, about = "lykn language toolchain")]
@@ -51,9 +52,21 @@ enum Commands {
     },
     /// Run tests via Deno
     Test {
-        /// Test file patterns (default: test/)
+        /// Test file/directory patterns (default: test/)
         #[arg(default_value = "test/")]
         patterns: Vec<String>,
+        /// Test lykn code blocks in Markdown files
+        #[arg(long)]
+        docs: Option<String>,
+        /// Write compiled JS to a separate directory
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+        /// Compile .lykn files but don't run tests
+        #[arg(long)]
+        compile_only: bool,
+        /// Extra args passed through to Deno's test runner
+        #[arg(last = true)]
+        deno_args: Vec<String>,
     },
     /// Lint compiled JS via Deno
     Lint {
@@ -105,7 +118,13 @@ fn main() {
             kernel_json,
         } => cmd_compile(&file, output.as_deref(), strip_assertions, kernel_json),
         Commands::Run { file, args } => cmd_run(&file, &args),
-        Commands::Test { patterns } => cmd_test(&patterns),
+        Commands::Test {
+            patterns,
+            docs,
+            out_dir,
+            compile_only,
+            deno_args,
+        } => cmd_test(&patterns, docs.as_deref(), out_dir.as_deref(), compile_only, &deno_args),
         Commands::Lint { paths } => cmd_lint(&paths),
         Commands::New { name, path } => cmd_new(&name, path.as_deref()),
         Commands::Build { browser, npm } => cmd_build(browser, npm),
@@ -268,12 +287,212 @@ fn cmd_run(file: &std::path::Path, args: &[String]) {
     }
 }
 
-fn cmd_test(patterns: &[String]) {
+fn cmd_test(
+    patterns: &[String],
+    docs: Option<&str>,
+    out_dir: Option<&Path>,
+    compile_only: bool,
+    extra_deno_args: &[String],
+) {
     let config = find_config();
-    let mut deno_args = vec!["test", "--config", &config, "--no-check", "-A"];
-    let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
-    deno_args.extend(refs);
-    exec_deno(&deno_args);
+
+    // Handle --docs mode: extract and test Markdown code blocks
+    if let Some(docs_path) = docs {
+        // If there are also .lykn patterns, compile them first
+        let lykn_files = discover_lykn_test_files(patterns);
+        if !lykn_files.is_empty() {
+            let compiled = compile_lykn_test_files(&lykn_files, out_dir);
+            if compile_only {
+                eprintln!("Compiled {} .lykn test file(s).", compiled.len());
+                // Still run doc tests below (compile_only only affects .lykn files)
+            } else {
+                // Run .lykn tests first, then doc tests
+                let test_paths: Vec<String> =
+                    compiled.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                run_deno_test(&config, &test_paths, extra_deno_args);
+            }
+        }
+        // run_doc_tests exits the process
+        doctest::run_doc_tests(docs_path, &config, extra_deno_args);
+    }
+
+    // Discover .lykn test files in the given patterns
+    let lykn_files = discover_lykn_test_files(patterns);
+
+    if lykn_files.is_empty() {
+        // No .lykn test files found — delegate directly to Deno
+        if compile_only {
+            eprintln!("No .lykn test files found to compile.");
+            return;
+        }
+        let mut deno_args = vec!["test", "--config", &config, "--no-check", "-A"];
+        let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+        deno_args.extend(refs);
+        let extra_refs: Vec<&str> = extra_deno_args.iter().map(|s| s.as_str()).collect();
+        deno_args.extend(extra_refs);
+        exec_deno(&deno_args);
+    } else {
+        // Compile .lykn files, then optionally run them
+        let compiled = compile_lykn_test_files(&lykn_files, out_dir);
+        eprintln!("Compiled {} .lykn test file(s).", compiled.len());
+
+        if compile_only {
+            return;
+        }
+
+        // Build the list of paths to pass to deno test
+        let test_paths = if let Some(od) = out_dir {
+            // With --out-dir, test the output directory
+            vec![od.to_string_lossy().into_owned()]
+        } else {
+            // Test the directories/files that contain the compiled output.
+            // If patterns were directories, pass those. If individual files,
+            // pass the compiled .js paths.
+            let mut paths: Vec<String> = Vec::new();
+            for pattern in patterns {
+                let p = Path::new(pattern);
+                if p.is_dir() {
+                    paths.push(pattern.clone());
+                }
+            }
+            if paths.is_empty() {
+                // Individual files — pass compiled JS paths
+                paths = compiled
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+            }
+            paths
+        };
+
+        let path_refs: Vec<&str> = test_paths.iter().map(|s| s.as_str()).collect();
+        let mut deno_args = vec!["test", "--config", &config, "--no-check", "-A"];
+        deno_args.extend(path_refs);
+        let extra_refs: Vec<&str> = extra_deno_args.iter().map(|s| s.as_str()).collect();
+        deno_args.extend(extra_refs);
+        exec_deno(&deno_args);
+    }
+}
+
+/// Discover `.lykn` test files matching `*_test.lykn` or `*.test.lykn` in the
+/// given patterns. Patterns may be files or directories (searched recursively).
+fn discover_lykn_test_files(patterns: &[String]) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    for pattern in patterns {
+        let path = Path::new(pattern);
+        if path.is_file() {
+            if is_lykn_test_file(path) {
+                results.push(path.to_path_buf());
+            }
+        } else if path.is_dir() {
+            collect_lykn_test_files(path, &mut results);
+        }
+    }
+    results.sort();
+    results
+}
+
+/// Check whether a path matches lykn test file naming conventions.
+///
+/// Matches: `*_test.lykn`, `*.test.lykn`, and any `.lykn` file inside a
+/// `__tests__` directory.
+fn is_lykn_test_file(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if name.ends_with("_test.lykn") || name.ends_with(".test.lykn") {
+        return true;
+    }
+    // Also match any .lykn file inside a __tests__ directory
+    if name.ends_with(".lykn")
+        && let Some(parent) = path.parent()
+    {
+        return parent
+            .components()
+            .any(|c| c.as_os_str() == "__tests__");
+    }
+    false
+}
+
+/// Recursively collect lykn test files from a directory.
+fn collect_lykn_test_files(dir: &Path, results: &mut Vec<PathBuf>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lykn_test_files(&path, results);
+        } else if is_lykn_test_file(&path) {
+            results.push(path);
+        }
+    }
+}
+
+/// Compile a list of `.lykn` test files to JavaScript.
+///
+/// Returns the list of compiled `.js` file paths.
+fn compile_lykn_test_files(files: &[PathBuf], out_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut compiled = Vec::new();
+
+    for lykn_path in files {
+        let js_path = if let Some(od) = out_dir {
+            // Mirror directory structure under out_dir
+            let relative = lykn_path
+                .strip_prefix(".")
+                .unwrap_or(lykn_path);
+            let dest = od.join(relative).with_extension("js");
+            if let Some(parent) = dest.parent()
+                && let Err(e) = fs::create_dir_all(parent)
+            {
+                eprintln!("error creating directory {}: {e}", parent.display());
+                process::exit(1);
+            }
+            dest
+        } else {
+            // Write next to the source file
+            lykn_path.with_extension("js")
+        };
+
+        match compile::compile_file(lykn_path, false, false) {
+            Ok(js) => {
+                if let Err(e) = fs::write(&js_path, &js) {
+                    eprintln!("error writing {}: {e}", js_path.display());
+                    process::exit(1);
+                }
+                eprintln!("  {} -> {}", lykn_path.display(), js_path.display());
+                compiled.push(js_path);
+            }
+            Err(e) => {
+                eprintln!("error compiling {}: {e}", lykn_path.display());
+                process::exit(1);
+            }
+        }
+    }
+
+    compiled
+}
+
+/// Run `deno test` and return (do not exit the process).
+fn run_deno_test(config: &str, paths: &[String], extra_args: &[String]) {
+    let mut args: Vec<&str> = vec!["test", "--config", config, "--no-check", "-A"];
+    let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+    args.extend(path_refs);
+    let extra_refs: Vec<&str> = extra_args.iter().map(|s| s.as_str()).collect();
+    args.extend(extra_refs);
+
+    let status = Command::new("deno")
+        .args(&args)
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("failed to run deno: {e}");
+            eprintln!("is deno installed? try: brew install deno");
+            process::exit(1);
+        });
+
+    if !status.success() {
+        process::exit(status.code().unwrap_or(1));
+    }
 }
 
 fn cmd_lint(paths: &[String]) {
