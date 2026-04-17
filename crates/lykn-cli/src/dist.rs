@@ -238,6 +238,11 @@ fn write_build_stamp(dist_dir: &Path) -> Result<(), DistError> {
 }
 
 /// Generate a `deno.json` config for a dist package.
+///
+/// For runtime and tooling packages, the source `exports` field is passed
+/// through (it may be a string or an object with subpath exports). For
+/// macro modules, exports is always `"./mod.js"` because JSR cannot parse
+/// `.lykn` files — the generated `mod.js` stub serves as the JS entry point.
 fn write_deno_json(
     dist_dir: &Path,
     pkg_config: &config::PackageConfig,
@@ -252,10 +257,15 @@ fn write_deno_json(
         "version".to_string(),
         serde_json::Value::String(pkg_config.version.clone()),
     );
-    map.insert(
-        "exports".to_string(),
-        serde_json::Value::String("./mod.js".to_string()),
-    );
+
+    let is_macro_module =
+        lykn_meta.is_some_and(|m| matches!(m.kind, config::PackageKind::MacroModule));
+    let exports = if is_macro_module {
+        serde_json::Value::String("./mod.js".to_string())
+    } else {
+        pkg_config.exports.clone()
+    };
+    map.insert("exports".to_string(), exports);
 
     if let Some(meta) = lykn_meta {
         map.insert(
@@ -484,21 +494,20 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Create a minimal project layout in a temp directory for testing.
-    fn setup_test_project() -> PathBuf {
-        let tmp = std::env::temp_dir().join(format!(
-            "lykn_dist_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(tmp.join("packages/lang")).unwrap();
-        fs::create_dir_all(tmp.join("packages/browser")).unwrap();
+    ///
+    /// Returns a `tempfile::TempDir` whose `path()` is the project root.
+    /// The directory (and all contents) is automatically removed when the
+    /// returned value is dropped.
+    fn setup_test_project() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let root = tmp.path();
+
+        fs::create_dir_all(root.join("packages/lang")).unwrap();
+        fs::create_dir_all(root.join("packages/browser")).unwrap();
 
         // project.json
         fs::write(
-            tmp.join("project.json"),
+            root.join("project.json"),
             r#"{
                 "workspace": ["./packages/lang", "./packages/browser"],
                 "imports": {
@@ -511,7 +520,7 @@ mod tests {
 
         // packages/lang/deno.json
         fs::write(
-            tmp.join("packages/lang/deno.json"),
+            root.join("packages/lang/deno.json"),
             r#"{
                 "name": "@lykn/lang",
                 "version": "0.5.0",
@@ -525,14 +534,14 @@ mod tests {
 
         // packages/lang/mod.js
         fs::write(
-            tmp.join("packages/lang/mod.js"),
+            root.join("packages/lang/mod.js"),
             "export function lykn() { return 42; }\n",
         )
         .unwrap();
 
         // packages/browser/deno.json
         fs::write(
-            tmp.join("packages/browser/deno.json"),
+            root.join("packages/browser/deno.json"),
             r#"{
                 "name": "@lykn/browser",
                 "version": "0.5.0",
@@ -546,202 +555,35 @@ mod tests {
 
         // packages/browser/mod.js — uses workspace import
         fs::write(
-            tmp.join("packages/browser/mod.js"),
+            root.join("packages/browser/mod.js"),
             "import { lykn } from 'lang/mod.js';\nexport { lykn };\n",
         )
         .unwrap();
 
         // Root files
-        fs::write(tmp.join("README.md"), "# Test Project\n").unwrap();
-        fs::write(tmp.join("LICENSE"), "Apache-2.0\n").unwrap();
+        fs::write(root.join("README.md"), "# Test Project\n").unwrap();
+        fs::write(root.join("LICENSE"), "Apache-2.0\n").unwrap();
 
         tmp
     }
 
-    fn cleanup_test_project(path: &Path) {
-        let _ = fs::remove_dir_all(path);
-    }
+    /// Create a minimal project with a single macro-module package for testing.
+    ///
+    /// Returns a `tempfile::TempDir` whose `path()` is the project root.
+    fn setup_macro_module_project() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let root = tmp.path();
 
-    #[test]
-    fn test_build_dist_creates_packages() {
-        let tmp = setup_test_project();
-        let result = build_dist(&tmp);
-        assert!(result.is_ok());
-        let built = result.unwrap();
-        assert_eq!(built.len(), 2);
-
-        // Check that dist directories exist
-        assert!(tmp.join("dist/lang").is_dir());
-        assert!(tmp.join("dist/browser").is_dir());
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_generates_project_json() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        let project_json_path = tmp.join("dist/project.json");
-        assert!(project_json_path.exists());
-
-        let content = fs::read_to_string(&project_json_path).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        let workspace = parsed["workspace"].as_array().unwrap();
-        assert_eq!(workspace.len(), 2);
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_copies_js_files() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        assert!(tmp.join("dist/lang/mod.js").exists());
-        assert!(tmp.join("dist/browser/mod.js").exists());
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_rewrites_imports_in_js() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        let content = fs::read_to_string(tmp.join("dist/browser/mod.js")).unwrap();
-        assert!(
-            content.contains("from '@lykn/lang/mod.js'"),
-            "expected rewritten import, got: {content}"
-        );
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_generates_deno_json() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        let deno_json = fs::read_to_string(tmp.join("dist/lang/deno.json")).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&deno_json).unwrap();
-        assert_eq!(parsed["name"], "@lykn/lang");
-        assert_eq!(parsed["version"], "0.5.0");
-        assert_eq!(parsed["exports"], "./mod.js");
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_generates_package_json() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        let pkg_json = fs::read_to_string(tmp.join("dist/lang/package.json")).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&pkg_json).unwrap();
-        assert_eq!(parsed["name"], "@lykn/lang");
-        assert_eq!(parsed["version"], "0.5.0");
-        assert_eq!(parsed["type"], "module");
-        assert_eq!(parsed["main"], "./mod.js");
-        assert_eq!(parsed["license"], "Apache-2.0");
-
-        // Check npm deps
-        let deps = parsed["dependencies"].as_object().unwrap();
-        assert_eq!(deps.get("astring").unwrap(), "^1.9.0");
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_copies_readme_and_license() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        assert!(tmp.join("dist/lang/README.md").exists());
-        assert!(tmp.join("dist/lang/LICENSE").exists());
-        assert!(tmp.join("dist/browser/README.md").exists());
-        assert!(tmp.join("dist/browser/LICENSE").exists());
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_creates_build_stamp() {
-        let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
-
-        assert!(tmp.join("dist/lang/.build-stamp").exists());
-        assert!(tmp.join("dist/browser/.build-stamp").exists());
-
-        // Verify it is a numeric timestamp
-        let stamp = fs::read_to_string(tmp.join("dist/lang/.build-stamp")).unwrap();
-        assert!(stamp.parse::<u64>().is_ok());
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_empty_workspace_errors() {
-        let tmp = std::env::temp_dir().join(format!(
-            "lykn_dist_empty_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-        fs::write(tmp.join("project.json"), r#"{ "workspace": [] }"#).unwrap();
-
-        let result = build_dist(&tmp);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("no workspace members"),
-            "expected empty workspace error, got: {err}"
-        );
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_missing_project_json_errors() {
-        let tmp = std::env::temp_dir().join(format!(
-            "lykn_dist_missing_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-
-        let result = build_dist(&tmp);
-        assert!(result.is_err());
-
-        cleanup_test_project(&tmp);
-    }
-
-    #[test]
-    fn test_build_dist_macro_module() {
-        let tmp = std::env::temp_dir().join(format!(
-            "lykn_dist_macro_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(tmp.join("packages/testing")).unwrap();
+        fs::create_dir_all(root.join("packages/testing")).unwrap();
 
         fs::write(
-            tmp.join("project.json"),
+            root.join("project.json"),
             r#"{ "workspace": ["./packages/testing"], "imports": {} }"#,
         )
         .unwrap();
 
         fs::write(
-            tmp.join("packages/testing/deno.json"),
+            root.join("packages/testing/deno.json"),
             r#"{
                 "name": "@lykn/testing",
                 "version": "0.5.0",
@@ -755,42 +597,183 @@ mod tests {
         .unwrap();
 
         fs::write(
-            tmp.join("packages/testing/mod.lykn"),
+            root.join("packages/testing/mod.lykn"),
             "(defmacro assert-eq (a b) `(if (!= ,a ,b) (throw \"assertion failed\")))\n",
         )
         .unwrap();
 
-        fs::write(tmp.join("README.md"), "# Test\n").unwrap();
-        fs::write(tmp.join("LICENSE"), "Apache-2.0\n").unwrap();
+        fs::write(root.join("README.md"), "# Test\n").unwrap();
+        fs::write(root.join("LICENSE"), "Apache-2.0\n").unwrap();
 
-        let result = build_dist(&tmp).unwrap();
+        tmp
+    }
+
+    #[test]
+    fn test_build_dist_creates_packages() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        let result = build_dist(root);
+        assert!(result.is_ok());
+        let built = result.unwrap();
+        assert_eq!(built.len(), 2);
+
+        // Check that dist directories exist
+        assert!(root.join("dist/lang").is_dir());
+        assert!(root.join("dist/browser").is_dir());
+    }
+
+    #[test]
+    fn test_build_dist_generates_project_json() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let project_json_path = root.join("dist/project.json");
+        assert!(project_json_path.exists());
+
+        let content = fs::read_to_string(&project_json_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let workspace = parsed["workspace"].as_array().unwrap();
+        assert_eq!(workspace.len(), 2);
+    }
+
+    #[test]
+    fn test_build_dist_copies_js_files() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        assert!(root.join("dist/lang/mod.js").exists());
+        assert!(root.join("dist/browser/mod.js").exists());
+    }
+
+    #[test]
+    fn test_build_dist_rewrites_imports_in_js() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/browser/mod.js")).unwrap();
+        assert!(
+            content.contains("from '@lykn/lang/mod.js'"),
+            "expected rewritten import, got: {content}"
+        );
+    }
+
+    #[test]
+    fn test_build_dist_generates_deno_json() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let deno_json = fs::read_to_string(root.join("dist/lang/deno.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&deno_json).unwrap();
+        assert_eq!(parsed["name"], "@lykn/lang");
+        assert_eq!(parsed["version"], "0.5.0");
+        assert_eq!(parsed["exports"], "./mod.js");
+    }
+
+    #[test]
+    fn test_build_dist_generates_package_json() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let pkg_json = fs::read_to_string(root.join("dist/lang/package.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&pkg_json).unwrap();
+        assert_eq!(parsed["name"], "@lykn/lang");
+        assert_eq!(parsed["version"], "0.5.0");
+        assert_eq!(parsed["type"], "module");
+        assert_eq!(parsed["main"], "./mod.js");
+        assert_eq!(parsed["license"], "Apache-2.0");
+
+        // Check npm deps
+        let deps = parsed["dependencies"].as_object().unwrap();
+        assert_eq!(deps.get("astring").unwrap(), "^1.9.0");
+    }
+
+    #[test]
+    fn test_build_dist_copies_readme_and_license() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        assert!(root.join("dist/lang/README.md").exists());
+        assert!(root.join("dist/lang/LICENSE").exists());
+        assert!(root.join("dist/browser/README.md").exists());
+        assert!(root.join("dist/browser/LICENSE").exists());
+    }
+
+    #[test]
+    fn test_build_dist_creates_build_stamp() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        assert!(root.join("dist/lang/.build-stamp").exists());
+        assert!(root.join("dist/browser/.build-stamp").exists());
+
+        // Verify it is a numeric timestamp
+        let stamp = fs::read_to_string(root.join("dist/lang/.build-stamp")).unwrap();
+        assert!(stamp.parse::<u64>().is_ok());
+    }
+
+    #[test]
+    fn test_build_dist_empty_workspace_errors() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let root = tmp.path();
+        fs::write(root.join("project.json"), r#"{ "workspace": [] }"#).unwrap();
+
+        let result = build_dist(root);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("no workspace members"),
+            "expected empty workspace error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_build_dist_missing_project_json_errors() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let root = tmp.path();
+
+        let result = build_dist(root);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_dist_macro_module() {
+        let tmp = setup_macro_module_project();
+        let root = tmp.path();
+
+        let result = build_dist(root).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].kind, PackageKind::MacroModule);
         assert_eq!(result[0].short_name, "testing");
 
         // Check that .lykn file was copied
-        assert!(tmp.join("dist/testing/mod.lykn").exists());
+        assert!(root.join("dist/testing/mod.lykn").exists());
 
         // Check that mod.js stub was generated
-        let stub = fs::read_to_string(tmp.join("dist/testing/mod.js")).unwrap();
+        let stub = fs::read_to_string(root.join("dist/testing/mod.js")).unwrap();
         assert!(stub.contains("export const VERSION = \"0.5.0\""));
 
         // Check deno.json preserves lykn metadata
-        let deno_json = fs::read_to_string(tmp.join("dist/testing/deno.json")).unwrap();
+        let deno_json = fs::read_to_string(root.join("dist/testing/deno.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&deno_json).unwrap();
         assert!(parsed.get("lykn").is_some());
 
         // Check package.json includes .lykn in files
-        let pkg_json = fs::read_to_string(tmp.join("dist/testing/package.json")).unwrap();
+        let pkg_json = fs::read_to_string(root.join("dist/testing/package.json")).unwrap();
         assert!(pkg_json.contains("*.lykn"));
-
-        cleanup_test_project(&tmp);
     }
 
     #[test]
     fn test_build_dist_built_package_fields() {
         let tmp = setup_test_project();
-        let built = build_dist(&tmp).unwrap();
+        let root = tmp.path();
+        let built = build_dist(root).unwrap();
 
         let lang = built.iter().find(|p| p.short_name == "lang").unwrap();
         assert_eq!(lang.name, "@lykn/lang");
@@ -800,35 +783,114 @@ mod tests {
         let browser = built.iter().find(|p| p.short_name == "browser").unwrap();
         assert_eq!(browser.name, "@lykn/browser");
         assert_eq!(browser.version, "0.5.0");
-
-        cleanup_test_project(&tmp);
     }
 
     #[test]
     fn test_build_dist_browser_deps_include_workspace() {
         let tmp = setup_test_project();
-        build_dist(&tmp).unwrap();
+        let root = tmp.path();
+        build_dist(root).unwrap();
 
-        let pkg_json = fs::read_to_string(tmp.join("dist/browser/package.json")).unwrap();
+        let pkg_json = fs::read_to_string(root.join("dist/browser/package.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&pkg_json).unwrap();
         let deps = parsed["dependencies"].as_object().unwrap();
         assert!(
             deps.contains_key("@lykn/lang"),
             "browser should depend on @lykn/lang"
         );
-
-        cleanup_test_project(&tmp);
     }
 
     #[test]
     fn test_build_dist_idempotent() {
         let tmp = setup_test_project();
+        let root = tmp.path();
 
         // Build twice — should not error
-        build_dist(&tmp).unwrap();
-        let result = build_dist(&tmp);
+        build_dist(root).unwrap();
+        let result = build_dist(root);
         assert!(result.is_ok());
+    }
 
-        cleanup_test_project(&tmp);
+    // -----------------------------------------------------------------------
+    // Snapshot tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn snapshot_runtime_pkg_deno_json() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/lang/deno.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        insta::assert_json_snapshot!("runtime_pkg_deno_json", value);
+    }
+
+    #[test]
+    fn snapshot_runtime_pkg_package_json() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/lang/package.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        insta::assert_json_snapshot!("runtime_pkg_package_json", value);
+    }
+
+    #[test]
+    fn snapshot_macro_module_deno_json() {
+        let tmp = setup_macro_module_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/testing/deno.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        insta::assert_json_snapshot!("macro_module_deno_json", value);
+    }
+
+    #[test]
+    fn snapshot_macro_module_package_json() {
+        let tmp = setup_macro_module_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/testing/package.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        insta::assert_json_snapshot!("macro_module_package_json", value);
+    }
+
+    #[test]
+    fn snapshot_macro_module_mod_js_stub() {
+        let tmp = setup_macro_module_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/testing/mod.js")).unwrap();
+        insta::assert_snapshot!("macro_module_mod_js_stub", content);
+    }
+
+    #[test]
+    fn snapshot_workspace_project_json() {
+        let tmp = setup_test_project();
+        let root = tmp.path();
+        build_dist(root).unwrap();
+
+        let content = fs::read_to_string(root.join("dist/project.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        insta::assert_json_snapshot!("workspace_project_json", value);
+    }
+
+    #[test]
+    fn snapshot_import_rewriter_output() {
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test/fixtures/publishing/import-rewriter-input.js");
+        let source = fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|e| panic!("failed to read fixture {}: {e}", fixture_path.display()));
+
+        let mut imports = IndexMap::new();
+        imports.insert("lang/".to_string(), "./packages/lang/".to_string());
+
+        let result = rewrite_imports(&source, &imports);
+        insta::assert_snapshot!("import_rewriter_output", result);
     }
 }

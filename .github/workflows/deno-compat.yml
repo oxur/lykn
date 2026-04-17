@@ -1,0 +1,35 @@
+name: "Layer 5: Deno compatibility"
+
+on:
+  pull_request:
+    paths:
+      - "crates/lykn-lang/src/expander/**"
+      - "crates/lykn-cli/src/**"
+  schedule:
+    - cron: "0 6 * * 3"  # weekly, Wednesday 6am UTC
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compat:
+    name: "Deno ${{ matrix.deno-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deno-version: ["1.40.0", "2.x", "canary"]
+    continue-on-error: ${{ matrix.deno-version == 'canary' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ matrix.deno-version }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Show Deno version
+        run: deno --version
+
+      - name: Run resolver and Deno-dependent tests
+        run: cargo test --workspace --all-features -- --include-ignored resolver deno

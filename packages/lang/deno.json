@@ -1,7 +1,13 @@
 {
     "name": "@lykn/lang",
     "version": "0.5.0",
-    "exports": "./mod.js",
+    "exports": {
+        ".": "./mod.js",
+        "./reader.js": "./reader.js",
+        "./compiler.js": "./compiler.js",
+        "./expander.js": "./expander.js",
+        "./surface.js": "./surface.js"
+    },
     "imports": {
         "astring": "npm:astring@^1.9.0"
     },

@@ -1,0 +1,11 @@
+{
+    "name": "@lykn/fixture-runtime-imports",
+    "version": "0.0.1",
+    "exports": "./mod.js",
+    "imports": {
+        "lang/": "./packages/lang/"
+    },
+    "lykn": {
+        "kind": "runtime"
+    }
+}

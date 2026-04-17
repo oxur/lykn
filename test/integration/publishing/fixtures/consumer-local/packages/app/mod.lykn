@@ -1,0 +1,2 @@
+(bind greeting "Hello from consumer test!")
+(console:log greeting)

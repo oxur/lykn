@@ -1,0 +1,31 @@
+---
+source: crates/lykn-cli/src/dist.rs
+expression: value
+---
+{
+  "author": "Duncan McGreggor",
+  "dependencies": {},
+  "exports": {
+    ".": "./mod.js"
+  },
+  "files": [
+    "*.js",
+    "*.lykn",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "lisp",
+    "s-expression",
+    "lykn"
+  ],
+  "license": "Apache-2.0",
+  "main": "./mod.js",
+  "name": "@lykn/testing",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxur/lykn"
+  },
+  "type": "module",
+  "version": "0.5.0"
+}

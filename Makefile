@@ -51,11 +51,12 @@ help:
 	@echo "  $(YELLOW)make test-rust$(RESET)        - Run Rust tests only"
 	@echo "  $(YELLOW)make test-js$(RESET)          - Run JS tests only"
 	@echo "  $(YELLOW)make test-lykn$(RESET)        - Run lykn tests only"
+	@echo "  $(YELLOW)make test-publishing$(RESET)  - Run publishing pipeline tests"
 	@echo "  $(YELLOW)make lint$(RESET)             - Run clippy, format check, and JS lint"
 	@echo "  $(YELLOW)make format$(RESET)           - Format all code with rustfmt"
 	@echo "  $(YELLOW)make coverage$(RESET)         - Generate test coverage report"
 	@echo "  $(YELLOW)make check$(RESET)            - Build + lint + test"
-	@echo "  $(YELLOW)make check-all$(RESET)        - Build + lint + coverage"
+	@echo "  $(YELLOW)make check-all$(RESET)        - Build + lint + coverage + publishing"
 	@echo ""
 	@echo "$(GREEN)Cleaning:$(RESET)"
 	@echo "  $(YELLOW)make clean$(RESET)            - Clean bin directory"
@@ -211,6 +212,15 @@ test-lykn:
 	@$(BIN_DIR)/$(CODE_NAME) test test/surface/
 	@echo "$(GREEN)✓ lykn tests passed$(RESET)"
 
+.PHONY: test-publishing
+test-publishing:
+	@echo "$(BLUE)Running publishing pipeline tests (Layers 1-3)...$(RESET)"
+	@cargo test -p lykn-cli --lib -- dist::tests
+	@echo "$(GREEN)✓ Unit + snapshot tests passed$(RESET)"
+	@echo "$(CYAN)• Running integration tests...$(RESET)"
+	@cargo test -p lykn-cli --tests
+	@echo "$(GREEN)✓ Publishing pipeline tests passed$(RESET)"
+
 .PHONY: lint
 lint:
 	@echo "$(BLUE)Running linter checks...$(RESET)"
@@ -259,9 +269,9 @@ check: common-checks test
 	@echo ""
 
 .PHONY: check-all
-check-all: common-checks coverage test-js
+check-all: common-checks coverage test-js test-publishing
 	@echo ""
-	@echo "$(GREEN)✓ Full validation complete (build + lint + coverage)$(RESET)"
+	@echo "$(GREEN)✓ Full validation complete (build + lint + coverage + publishing)$(RESET)"
 	@echo ""
 
 # Ensure cargo-binstall is available for fast tool installation

@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
 mod compile;
-mod config;
-mod dist;
 mod doctest;
+
+use lykn_cli::config;
+use lykn_cli::dist;
 
 #[derive(Parser)]
 #[command(name = "lykn", version, about = "lykn language toolchain")]

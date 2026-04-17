@@ -20,6 +20,10 @@ thiserror = "2"
 name = "lykn_cli"
 path = "src/lib.rs"
 
+[dev-dependencies]
+insta = { version = "1", features = ["json", "redactions"] }
+tempfile = "3"
+
 [[bin]]
 name = "lykn"
 path = "src/main.rs"

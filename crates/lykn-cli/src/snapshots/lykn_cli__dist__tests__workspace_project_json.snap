@@ -1,0 +1,10 @@
+---
+source: crates/lykn-cli/src/dist.rs
+expression: value
+---
+{
+  "workspace": [
+    "./lang",
+    "./browser"
+  ]
+}

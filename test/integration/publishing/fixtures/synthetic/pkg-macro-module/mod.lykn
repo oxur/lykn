@@ -1,0 +1,2 @@
+(export (macro fixture-assert (a b)
+  `(if (!= ,a ,b) (throw (new Error "assertion failed")))))

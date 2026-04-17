@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0045 | DD-35: Testing Strategy for the Publishing Pipeline | Active | 2026-04-17 |
 | 0044 | DD-34: Cross-Package `import-macros` Resolution | Final | 2026-04-17 |
 | 0043 | DD-33: Package Publishing and the `dist/` Boundary | Final | 2026-04-17 |
 | 0042 | DD-32: Test Suite Migration — JS Tests to lykn | Active | 2026-04-17 |
@@ -59,6 +60,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
+- [0045 - DD-35: Testing Strategy for the Publishing Pipeline](05-active/0045-dd-35-testing-strategy-for-the-publishing-pipeline.md)
 - [0042 - DD-32: Test Suite Migration — JS Tests to lykn](05-active/0042-dd-32-test-suite-migration-js-tests-to-lykn.md)
 - [0041 - DD-31: Test Runner CLI and Markdown/Literate Testing](05-active/0041-dd-31-test-runner-cli-and-markdownliterate-testing.md)
 - [0040 - DD-30: Testing DSL — Forms, Assertions, and Macro Design](05-active/0040-dd-30-testing-dsl-forms-assertions-and-macro-design.md)

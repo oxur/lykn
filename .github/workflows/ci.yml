@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-tests:
+    name: "Layers 1+3: Rust unit + snapshot tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-features
+
+  rust-integration:
+    name: "Layer 2: Rust integration tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-features -- --include-ignored
+
+  publishing:
+    name: "Publishing pipeline tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p lykn-cli --lib -- dist::tests
+      - run: cargo test -p lykn-cli --tests
+
+  js-tests:
+    name: "JS + lykn tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
+      - run: cp target/debug/lykn bin/lykn
+      - run: bin/lykn test
+      - run: bin/lykn test test/surface/
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-features --workspace -- -D warnings
+      - run: cargo fmt --all -- --check

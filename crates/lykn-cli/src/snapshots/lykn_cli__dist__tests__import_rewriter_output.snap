@@ -1,0 +1,16 @@
+---
+source: crates/lykn-cli/src/dist.rs
+expression: result
+---
+import { a } from '@lykn/lang/reader.js';
+import { b } from "@lykn/lang/compiler.js";
+import * as c from '@lykn/lang/namespace.js';
+import { d as da, e as ea } from "@lykn/lang/aliased.js";
+import {
+  multi,
+  line,
+} from '@lykn/lang/multiline.js';
+/* import { ignored } from '@lykn/lang/in-comment.js'; */
+// import { also } from '@lykn/lang/line-comment.js';
+const template = `import { x } from '@lykn/lang/in-template.js';`;
+export { reexport } from '@lykn/lang/reexport.js';

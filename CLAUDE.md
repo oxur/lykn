@@ -76,6 +76,22 @@ deno test --config project.json -A test/  # test JS
 deno publish                 # publish to jsr.io
 ```
 
+### Snapshot testing (insta)
+
+Publishing pipeline tests use `insta` for golden-file snapshot testing.
+Snapshot files live under `crates/lykn-cli/src/snapshots/` and are
+committed. When generated output changes, tests fail with a diff.
+
+```sh
+cargo insta test                # run tests, show pending snapshots
+cargo insta review              # interactive review of snapshot changes
+cargo insta test --review       # run tests then review
+```
+
+Never auto-accept snapshots — review each change to verify it is
+intentional. See DD-35 (`workbench/dd-35-testing-strategy-publishing-pipeline.md`)
+for the full testing strategy.
+
 ### Makefile
 
 `make help` lists all targets. Key ones: `make build`, `make build-release`, `make test`, `make lint`, `make format`, `make check` (build+lint+test), `make push` (pushes to all remotes).

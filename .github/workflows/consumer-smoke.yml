@@ -1,0 +1,31 @@
+name: "Layer 4: Consumer smoke tests"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly, Monday 6am UTC
+
+jobs:
+  smoke:
+    name: Consumer smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: oxur/lykn-consumer-tests
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install lykn from source
+        run: |
+          git clone --depth 1 https://github.com/oxur/lykn.git /tmp/lykn-build
+          cd /tmp/lykn-build
+          cargo build --release
+          sudo cp target/release/lykn /usr/local/bin/lykn
+
+      - name: Run smoke tests
+        run: bash ci/run-smoke.sh

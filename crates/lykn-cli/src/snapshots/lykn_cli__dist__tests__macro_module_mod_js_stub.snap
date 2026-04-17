@@ -1,0 +1,5 @@
+---
+source: crates/lykn-cli/src/dist.rs
+expression: content
+---
+export const VERSION = "0.5.0";

@@ -1,0 +1,9 @@
+{
+    "name": "@lykn/fixture-macros",
+    "version": "0.0.1",
+    "exports": "./mod.lykn",
+    "lykn": {
+        "kind": "macro-module",
+        "macroEntry": "mod.lykn"
+    }
+}
