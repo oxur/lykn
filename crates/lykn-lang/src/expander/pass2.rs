@@ -478,7 +478,7 @@ mod tests {
         // the top-level `expand` which short-circuits when no macros are
         // present.
         let forms = vec![atom("x"), num(42.0)];
-        let result = crate::expander::expand(forms, None).unwrap();
+        let result = crate::expander::expand(forms, None, None).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].as_atom(), Some("x"));
     }
@@ -493,13 +493,13 @@ mod tests {
             list(vec![atom("define"), atom("x"), num(1.0)]),
             list(vec![atom("console:log"), atom("x")]),
         ];
-        let result = crate::expander::expand(forms.clone(), None).unwrap();
+        let result = crate::expander::expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 
     #[test]
     fn test_expand_empty_input() {
-        let result = crate::expander::expand(vec![], None).unwrap();
+        let result = crate::expander::expand(vec![], None, None).unwrap();
         assert!(result.is_empty());
     }
 
@@ -516,7 +516,7 @@ mod tests {
         ]);
         // No macro/import-macros at top level, so expand returns as-is.
         let forms = vec![quoted.clone()];
-        let result = crate::expander::expand(forms, None).unwrap();
+        let result = crate::expander::expand(forms, None, None).unwrap();
         assert_eq!(result, vec![quoted]);
     }
 
@@ -573,7 +573,7 @@ mod tests {
     #[test]
     fn test_expand_empty_list_passthrough() {
         let forms = vec![list(vec![])];
-        let result = crate::expander::expand(forms.clone(), None).unwrap();
+        let result = crate::expander::expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 
@@ -585,7 +585,7 @@ mod tests {
             span: s(),
         };
         let forms = vec![cons.clone()];
-        let result = crate::expander::expand(forms, None).unwrap();
+        let result = crate::expander::expand(forms, None, None).unwrap();
         assert_eq!(result.len(), 1);
         assert!(matches!(&result[0], SExpr::Cons { .. }));
     }
@@ -609,7 +609,7 @@ mod tests {
             num(42.0),
             atom("x"),
         ];
-        let result = crate::expander::expand(forms.clone(), None).unwrap();
+        let result = crate::expander::expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 

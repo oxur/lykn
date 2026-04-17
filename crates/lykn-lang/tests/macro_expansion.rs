@@ -51,13 +51,13 @@ fn expand_no_macros_returns_forms_unchanged() {
         list(vec![atom("define"), atom("x"), num(1.0)]),
         list(vec![atom("+"), atom("x"), num(2.0)]),
     ];
-    let result = expander::expand(forms.clone(), None).unwrap();
+    let result = expander::expand(forms.clone(), None, None).unwrap();
     assert_eq!(result, forms);
 }
 
 #[test]
 fn expand_empty_input() {
-    let result = expander::expand(vec![], None).unwrap();
+    let result = expander::expand(vec![], None, None).unwrap();
     assert!(result.is_empty());
 }
 
@@ -76,7 +76,7 @@ fn expand_leaf_forms_passthrough() {
         },
         SExpr::Null { span: s() },
     ];
-    let result = expander::expand(forms.clone(), None).unwrap();
+    let result = expander::expand(forms.clone(), None, None).unwrap();
     assert_eq!(result, forms);
 }
 
@@ -92,7 +92,7 @@ fn expand_deeply_nested_no_macros() {
         ]),
     ]);
     let forms = vec![deep.clone()];
-    let result = expander::expand(forms, None).unwrap();
+    let result = expander::expand(forms, None, None).unwrap();
     assert_eq!(result, vec![deep]);
 }
 
@@ -113,7 +113,7 @@ fn expand_simple_when_macro() {
         (when (> x 0) (console:log "positive"))
     "#;
     let forms = lykn_lang::reader::read(source).unwrap();
-    let result = expander::expand(forms, None);
+    let result = expander::expand(forms, None, None);
 
     // The macro should expand. Whether it succeeds depends on the JS-side
     // compiler being available at the CWD. If it fails due to module

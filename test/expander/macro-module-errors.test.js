@@ -53,10 +53,10 @@ Deno.test("import-macros error: missing binding list", () => {
   );
 });
 
-Deno.test("import-macros error: bare name not found as package", () => {
+Deno.test("import-macros error: bare name not found", () => {
   assertThrows(
     () => ex('(import-macros "basic-control.lykn" (when))', resolve(fixturesDir, "test.lykn")),
-    Error, "not found"
+    Error, "could not resolve"
   );
 });
 

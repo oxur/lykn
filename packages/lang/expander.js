@@ -947,13 +947,11 @@ function pass2ExpandAll(forms) {
 }
 
 /**
- * Resolve a bare package name to a macro module path by walking up to find
- * project.json and looking in packages/<name>/mod.lykn.
- * @param {string} packageName - Bare package name (e.g., "testing")
+ * Find the project.json import map by walking up from a starting directory.
  * @param {string | null} filePath - Path of the importing file
- * @returns {string} Resolved absolute path to mod.lykn
+ * @returns {{ projectRoot: string, imports: Object } | null}
  */
-function resolvePackageMacroModule(packageName, filePath) {
+function findProjectImports(filePath) {
   const startDir = filePath ? _dirname(filePath) : (typeof Deno !== 'undefined' ? Deno.cwd() : '.');
   let dir = startDir;
   const root = _resolve('/');
@@ -961,24 +959,146 @@ function resolvePackageMacroModule(packageName, filePath) {
   while (dir !== root) {
     const projectJson = _resolve(dir, 'project.json');
     try {
-      Deno.statSync(projectJson);
-      const modPath = _resolve(dir, 'packages', packageName, 'mod.lykn');
-      try {
-        Deno.statSync(modPath);
-        return modPath;
-      } catch {
-        throw new Error(
-          `import-macros: package "${packageName}" not found at packages/${packageName}/mod.lykn`
-        );
-      }
-    } catch (e) {
-      if (e.message?.startsWith('import-macros:')) throw e;
+      const content = Deno.readTextFileSync(projectJson);
+      const config = JSON.parse(content);
+      return { projectRoot: dir, imports: config.imports || {} };
+    } catch {
       dir = _dirname(dir);
     }
   }
+  return null;
+}
+
+/**
+ * Find the macro entry file in a package directory.
+ * Checks: lykn.macroEntry field, then mod.lykn, macros.lykn, index.lykn,
+ * then exports if it points to .lykn.
+ * @param {string} pkgDir - Absolute path to the package directory
+ * @returns {string} Absolute path to the macro entry file
+ */
+function findMacroEntry(pkgDir) {
+  const denoJsonPath = _resolve(pkgDir, 'deno.json');
+  try {
+    const content = Deno.readTextFileSync(denoJsonPath);
+    const config = JSON.parse(content);
+    if (config.lykn?.macroEntry) {
+      const entryPath = _resolve(pkgDir, config.lykn.macroEntry);
+      try { Deno.statSync(entryPath); return entryPath; } catch {}
+    }
+    // Fallback chain
+    for (const candidate of ['mod.lykn', 'macros.lykn', 'index.lykn']) {
+      const p = _resolve(pkgDir, candidate);
+      try { Deno.statSync(p); return p; } catch {}
+    }
+    // Check exports
+    if (typeof config.exports === 'string' && config.exports.endsWith('.lykn')) {
+      const p = _resolve(pkgDir, config.exports);
+      try { Deno.statSync(p); return p; } catch {}
+    }
+  } catch {}
 
   throw new Error(
-    `import-macros: could not resolve package "${packageName}" — no project.json found above ${startDir}`
+    `import-macros: no macro entry found in ${pkgDir}\n` +
+    `  checked: lykn.macroEntry, mod.lykn, macros.lykn, index.lykn\n` +
+    `  hint: add lykn.macroEntry to the package's deno.json`
+  );
+}
+
+/**
+ * Three-tier specifier resolution for import-macros.
+ * Tier 1: scheme-prefixed (jsr:, npm:, https:, file:) → Deno's resolver
+ * Tier 2: bare name → import-map lookup from project.json
+ * Tier 3: filesystem path (relative/absolute)
+ * @param {string} specifier
+ * @param {string | null} filePath
+ * @returns {string} Resolved absolute path
+ */
+function resolveImportMacrosSpecifier(specifier, filePath) {
+  // Tier 1: Scheme-prefixed — use Deno's resolver
+  if (/^(jsr|npm|https?):/.test(specifier)) {
+    try {
+      const resolved = import.meta.resolve(specifier);
+      if (resolved.startsWith('file://')) {
+        let fsPath = new URL(resolved).pathname;
+        // If it points to a file, get the directory
+        if (/\.[a-z]+$/i.test(fsPath)) {
+          fsPath = _dirname(fsPath);
+        }
+        return findMacroEntry(fsPath);
+      }
+      throw new Error(`import-macros: resolved ${specifier} to non-file URL: ${resolved}`);
+    } catch (e) {
+      if (e.message?.startsWith('import-macros:')) throw e;
+      throw new Error(`import-macros: could not resolve "${specifier}": ${e.message}`);
+    }
+  }
+
+  // file: scheme
+  if (specifier.startsWith('file://')) {
+    const fsPath = new URL(specifier).pathname;
+    return fsPath;
+  }
+
+  // Tier 2: Import-map lookup (bare name or prefix match)
+  if (!specifier.startsWith('./') && !specifier.startsWith('../') && !specifier.startsWith('/')) {
+    const project = findProjectImports(filePath);
+    if (project) {
+      const { projectRoot, imports } = project;
+
+      // Exact match
+      if (imports[specifier]) {
+        const target = imports[specifier];
+        if (/^(jsr|npm|https?):/.test(target)) {
+          return resolveImportMacrosSpecifier(target, filePath);
+        }
+        if (target.startsWith('./') || target.startsWith('../')) {
+          const resolved = _resolve(projectRoot, target);
+          try {
+            const stat = Deno.statSync(resolved);
+            if (stat.isDirectory) return findMacroEntry(resolved);
+            return resolved;
+          } catch {
+            throw new Error(`import-macros: import map target "${target}" for "${specifier}" not found`);
+          }
+        }
+      }
+
+      // Prefix match: find longest key ending in '/' that matches
+      let bestKey = null;
+      for (const key of Object.keys(imports)) {
+        if (key.endsWith('/') && specifier.startsWith(key)) {
+          if (!bestKey || key.length > bestKey.length) bestKey = key;
+        }
+      }
+      if (bestKey) {
+        const suffix = specifier.slice(bestKey.length);
+        const target = imports[bestKey];
+        if (target.startsWith('./') || target.startsWith('../')) {
+          return _resolve(projectRoot, target, suffix);
+        }
+        return resolveImportMacrosSpecifier(`${target}${suffix}`, filePath);
+      }
+
+      // Workspace package fallback: try packages/<name>/mod.lykn
+      const modPath = _resolve(projectRoot, 'packages', specifier, 'mod.lykn');
+      try { Deno.statSync(modPath); return modPath; } catch {}
+    }
+  }
+
+  // Tier 3: Filesystem path (current behavior)
+  if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    if (!specifier.endsWith('.lykn')) {
+      throw new Error(`import-macros path must end with .lykn: "${specifier}"`);
+    }
+    const baseDir = filePath ? _dirname(filePath) : (typeof Deno !== 'undefined' ? Deno.cwd() : '.');
+    return _resolve(baseDir, specifier);
+  }
+
+  throw new Error(
+    `import-macros: could not resolve "${specifier}"\n` +
+    `  tier 2 (project.json imports): no matching key\n` +
+    `  tier 3 (filesystem): not a relative path\n` +
+    `  hint: add an entry to project.json "imports" or use a scheme prefix (jsr:, npm:)`
   );
 }
 
@@ -1020,18 +1140,7 @@ function pass0ImportMacros(forms, filePath, compilationStack) {
       throw new Error('import-macros requires Deno/Node file system access — not available in browser');
     }
 
-    let resolvedPath;
-    if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
-      // Relative path — must end with .lykn
-      if (!modulePath.endsWith('.lykn')) {
-        throw new Error(`import-macros path must end with .lykn: "${modulePath}"`);
-      }
-      const baseDir = filePath ? _dirname(filePath) : (typeof Deno !== 'undefined' ? Deno.cwd() : '.');
-      resolvedPath = _resolve(baseDir, modulePath);
-    } else {
-      // Bare package name — resolve via workspace packages/<name>/mod.lykn
-      resolvedPath = resolvePackageMacroModule(modulePath, filePath);
-    }
+    const resolvedPath = resolveImportMacrosSpecifier(modulePath, filePath);
 
     // Duplicate check
     if (importedPaths.has(resolvedPath)) {

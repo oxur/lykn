@@ -6,6 +6,7 @@
 //! per line.
 
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 use crate::ast::sexpr::SExpr;
@@ -151,6 +152,18 @@ impl DenoSubprocess {
         let req = serde_json::json!({ "action": "ping" });
         self.request(req)?;
         Ok(())
+    }
+
+    /// Resolve a scheme-prefixed specifier (jsr:, npm:, file:, https:) to a
+    /// filesystem path via Deno's module resolution.
+    pub fn resolve_specifier(&mut self, specifier: &str) -> Result<PathBuf, LyknError> {
+        let req = serde_json::json!({ "action": "resolve", "specifier": specifier });
+        let result = self.request(req)?;
+        let path_str = result.as_str().ok_or_else(|| LyknError::Read {
+            message: format!("resolve returned non-string for {specifier}"),
+            location: SourceLoc::default(),
+        })?;
+        Ok(PathBuf::from(path_str))
     }
 }
 

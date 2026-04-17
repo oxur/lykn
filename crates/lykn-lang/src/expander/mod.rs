@@ -52,9 +52,18 @@ pub type MacroEnv = HashMap<String, CompiledMacro>;
 /// If `file_path` is provided, it is used to resolve relative imports and
 /// detect circular module dependencies.
 ///
+/// If `imports` is provided, it supplies an import map (e.g. from
+/// `project.json`) for three-tier specifier resolution in
+/// `import-macros` directives. Bare specifiers are looked up in this map
+/// before falling back to filesystem path resolution.
+///
 /// If no macros or import directives are present, the forms are returned
 /// unchanged without spawning a subprocess.
-pub fn expand(forms: Vec<SExpr>, file_path: Option<&Path>) -> Result<Vec<SExpr>, LyknError> {
+pub fn expand(
+    forms: Vec<SExpr>,
+    file_path: Option<&Path>,
+    imports: Option<&HashMap<String, String>>,
+) -> Result<Vec<SExpr>, LyknError> {
     // Quick scan: do any forms contain macro definitions or import directives?
     let has_macros = forms.iter().any(|f| {
         if let SExpr::List { values, .. } = f
@@ -91,6 +100,7 @@ pub fn expand(forms: Vec<SExpr>, file_path: Option<&Path>) -> Result<Vec<SExpr>,
         &mut cache,
         &compilation_stack,
         &mut env,
+        imports,
     )?;
 
     // Pass 1: Compile local macro definitions.
@@ -134,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_expand_empty() {
-        let result = expand(vec![], None).unwrap();
+        let result = expand(vec![], None, None).unwrap();
         assert!(result.is_empty());
     }
 
@@ -144,14 +154,14 @@ mod tests {
             list(vec![atom("define"), atom("x"), num(1.0)]),
             list(vec![atom("+"), atom("x"), num(2.0)]),
         ];
-        let result = expand(forms.clone(), None).unwrap();
+        let result = expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 
     #[test]
     fn test_expand_single_atom() {
         let forms = vec![atom("hello")];
-        let result = expand(forms.clone(), None).unwrap();
+        let result = expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 
@@ -162,7 +172,7 @@ mod tests {
             list(vec![atom(">"), atom("x"), num(0.0)]),
             list(vec![atom("console:log"), atom("x")]),
         ])];
-        let result = expand(forms.clone(), None).unwrap();
+        let result = expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 
@@ -184,7 +194,7 @@ mod tests {
             },
             num(42.0),
         ];
-        let result = expand(forms.clone(), None).unwrap();
+        let result = expand(forms.clone(), None, None).unwrap();
         assert_eq!(result, forms);
     }
 
@@ -202,7 +212,7 @@ mod tests {
         // This should detect macros and attempt to spawn deno.
         // If deno is not available, it returns an error — which is correct
         // behavior.
-        let result = expand(forms, None);
+        let result = expand(forms, None, None);
         // We just verify it doesn't panic. If deno is available, it might
         // succeed or fail on the JS side; if not, it returns an Io or Read
         // error.
@@ -219,7 +229,7 @@ mod tests {
             },
             list(vec![atom("when")]),
         ])];
-        let result = expand(forms, None);
+        let result = expand(forms, None, None);
         // Same as above — we verify no panic.
         let _ = result;
     }

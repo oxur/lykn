@@ -107,6 +107,25 @@ while (true) {
             );
             const result = boundFn(...request.args);
             writeLine(JSON.stringify({ ok: true, result }));
+        } else if (request.action === "resolve") {
+            try {
+                const resolved = import.meta.resolve(request.specifier);
+                let fsPath;
+                if (resolved.startsWith("file://")) {
+                    fsPath = new URL(resolved).pathname;
+                    // If it points to a file (e.g., mod.js), get the directory
+                    if (fsPath.match(/\.[a-z]+$/i)) {
+                        fsPath = fsPath.replace(/\/[^/]+$/, "");
+                    }
+                } else {
+                    // For jsr:/npm: specifiers, Deno resolves to a cached path
+                    // Try to get the package directory from the resolved URL
+                    fsPath = resolved;
+                }
+                writeLine(JSON.stringify({ ok: true, result: fsPath }));
+            } catch (e) {
+                writeLine(JSON.stringify({ ok: false, error: "resolve failed for " + request.specifier + ": " + e.message }));
+            }
         } else if (request.action === "ping") {
             writeLine(JSON.stringify({ ok: true, result: "pong" }));
         } else {
