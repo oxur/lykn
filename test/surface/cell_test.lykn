@@ -1,6 +1,8 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
 (import "../../packages/lang/mod.js" ((alias lykn compile)))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/reader.js" (read))
 
 ;; --- cell ---
 
@@ -36,3 +38,51 @@
 
 (test-compiles "reset!: expression value"
   "(reset! counter (+ a b))" "counter.value = a + b;")
+
+(test "cell: expansion produces object form"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(cell 0)")))
+  (bind expanded (get result 0))
+  (bind head (get expanded:values 0))
+  (bind pair (get expanded:values 1))
+  (bind pair-key (get pair:values 0))
+  (bind pair-val (get pair:values 1))
+  (is-equal head:value "object")
+  (is-equal pair-key:value "value")
+  (is-equal pair-val:value 0))
+
+(test "express: expansion produces colon syntax"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(express c)")))
+  (bind node (get result 0))
+  (is-equal node:type "atom")
+  (is-equal node:value "c:value"))
+
+(test "swap!: expansion produces assignment"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(swap! c f)")))
+  (bind expanded (get result 0))
+  (bind op (get expanded:values 0))
+  (bind target (get expanded:values 1))
+  (bind call (get expanded:values 2))
+  (bind call-fn (get call:values 0))
+  (bind call-arg (get call:values 1))
+  (is-equal op:value "=")
+  (is-equal target:value "c:value")
+  (is-equal call-fn:value "f")
+  (is-equal call-arg:value "c:value"))
+
+(test "reset!: expansion produces assignment"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(reset! c 42)")))
+  (bind expanded (get result 0))
+  (bind op (get expanded:values 0))
+  (bind target (get expanded:values 1))
+  (bind val (get expanded:values 2))
+  (is-equal op:value "=")
+  (is-equal target:value "c:value")
+  (is-equal val:value 42))

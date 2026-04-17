@@ -1,5 +1,7 @@
 import {assert, assertEquals, assertNotEquals, assertStrictEquals, assertExists, assertThrows, assertRejects, assertMatch, assertStringIncludes, assertArrayIncludes, assertObjectMatch} from "jsr:@std/assert";
 import {lykn as compile} from "../../packages/lang/mod.js";
+import {expand, resetGensym, resetMacros} from "../../packages/lang/expander.js";
+import {read} from "../../packages/lang/reader.js";
 Deno.test("cell: create cell with number", () => {
   const r__gensym0 = compile("(cell 0)");
   assertEquals(r__gensym0.trim(), "({\n  value: 0\n});");
@@ -35,4 +37,52 @@ Deno.test("reset!: simple value", () => {
 Deno.test("reset!: expression value", () => {
   const r__gensym8 = compile("(reset! counter (+ a b))");
   assertEquals(r__gensym8.trim(), "counter.value = a + b;");
+});
+Deno.test("cell: expansion produces object form", () => {
+  resetMacros();
+  resetGensym();
+  const result = expand(read("(cell 0)"));
+  const expanded = result[0];
+  const head = expanded.values[0];
+  const pair = expanded.values[1];
+  const pairKey = pair.values[0];
+  const pairVal = pair.values[1];
+  assertEquals(head.value, "object");
+  assertEquals(pairKey.value, "value");
+  assertEquals(pairVal.value, 0);
+});
+Deno.test("express: expansion produces colon syntax", () => {
+  resetMacros();
+  resetGensym();
+  const result = expand(read("(express c)"));
+  const node = result[0];
+  assertEquals(node.type, "atom");
+  assertEquals(node.value, "c:value");
+});
+Deno.test("swap!: expansion produces assignment", () => {
+  resetMacros();
+  resetGensym();
+  const result = expand(read("(swap! c f)"));
+  const expanded = result[0];
+  const op = expanded.values[0];
+  const target = expanded.values[1];
+  const call = expanded.values[2];
+  const callFn = call.values[0];
+  const callArg = call.values[1];
+  assertEquals(op.value, "=");
+  assertEquals(target.value, "c:value");
+  assertEquals(callFn.value, "f");
+  assertEquals(callArg.value, "c:value");
+});
+Deno.test("reset!: expansion produces assignment", () => {
+  resetMacros();
+  resetGensym();
+  const result = expand(read("(reset! c 42)"));
+  const expanded = result[0];
+  const op = expanded.values[0];
+  const target = expanded.values[1];
+  const val = expanded.values[2];
+  assertEquals(op.value, "=");
+  assertEquals(target.value, "c:value");
+  assertEquals(val.value, 42);
 });

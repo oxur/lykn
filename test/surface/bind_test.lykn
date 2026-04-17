@@ -1,6 +1,8 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
 (import "../../packages/lang/mod.js" ((alias lykn compile)))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/reader.js" (read))
 
 (test-compiles "bind: simple binding"
   "(bind x 42)" "const x = 42;")
@@ -31,3 +33,27 @@
 
 (test-compiles "bind: kebab-case name"
   "(bind my-value 10)" "const myValue = 10;")
+
+(test "bind: expansion produces const form"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(bind x 42)")))
+  (bind form (get result 0))
+  (bind head (get form:values 0))
+  (bind name-node (get form:values 1))
+  (bind val-node (get form:values 2))
+  (is-equal head:value "const")
+  (is-equal name-node:value "x")
+  (is-equal val-node:value 42))
+
+(test "bind: typed expansion drops type keyword"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(bind :number x 42)")))
+  (bind form (get result 0))
+  (bind head (get form:values 0))
+  (bind name-node (get form:values 1))
+  (bind val-node (get form:values 2))
+  (is-equal head:value "const")
+  (is-equal name-node:value "x")
+  (is-equal val-node:value 42))

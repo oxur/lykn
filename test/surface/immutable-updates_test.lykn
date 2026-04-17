@@ -1,6 +1,8 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
 (import "../../packages/lang/mod.js" ((alias lykn compile)))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/reader.js" (read))
 
 ;; --- assoc ---
 
@@ -16,7 +18,7 @@
 (test-compiles "assoc: expression value"
   "(assoc obj :score (+ base bonus))" "({\n  ...obj,\n  score: base + bonus\n});")
 
-;; skipped: assoc: expansion produces object with spread (uses ex())
+
 
 ;; --- dissoc ---
 
@@ -30,7 +32,7 @@
   (includes result "...")
   (includes result "obj"))
 
-;; skipped: dissoc: expansion produces IIFE (uses ex())
+
 
 ;; --- conj ---
 
@@ -40,4 +42,45 @@
 (test-compiles "conj: append expression"
   "(conj items (+ 1 2))" "[...items, 1 + 2];")
 
-;; skipped: conj: expansion produces array with spread (uses ex())
+(test "assoc: expansion produces object with spread"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(assoc obj :age 43)")))
+  (bind expanded (get result 0))
+  (bind head (get expanded:values 0))
+  (bind spread-pair (get expanded:values 1))
+  (bind spread-op (get spread-pair:values 0))
+  (bind spread-arg (get spread-pair:values 1))
+  (bind kv-pair (get expanded:values 2))
+  (bind kv-key (get kv-pair:values 0))
+  (bind kv-val (get kv-pair:values 1))
+  (is-equal head:value "object")
+  (is-equal spread-op:value "spread")
+  (is-equal spread-arg:value "obj")
+  (is-equal kv-key:value "age")
+  (is-equal kv-val:value 43))
+
+(test "dissoc: expansion produces IIFE"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(dissoc obj :key)")))
+  (bind expanded (get result 0))
+  (is-equal expanded:type "list")
+  (bind arrow (get expanded:values 0))
+  (bind arrow-head (get arrow:values 0))
+  (is-equal arrow-head:value "=>"))
+
+(test "conj: expansion produces array with spread"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(conj arr val)")))
+  (bind expanded (get result 0))
+  (bind head (get expanded:values 0))
+  (bind spread-pair (get expanded:values 1))
+  (bind spread-op (get spread-pair:values 0))
+  (bind spread-arg (get spread-pair:values 1))
+  (bind val-node (get expanded:values 2))
+  (is-equal head:value "array")
+  (is-equal spread-op:value "spread")
+  (is-equal spread-arg:value "arr")
+  (is-equal val-node:value "val"))

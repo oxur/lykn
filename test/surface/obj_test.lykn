@@ -1,6 +1,8 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
 (import "../../packages/lang/mod.js" ((alias lykn compile)))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/reader.js" (read))
 
 (test-compiles "obj: simple object"
   "(obj :name \"Duncan\" :age 42)" "({\n  name: \"Duncan\",\n  age: 42\n});")
@@ -19,3 +21,17 @@
 
 (test-compiles "obj: variable value"
   "(obj :name user-name)" "({\n  name: userName\n});")
+
+(test "obj: expansion produces object form"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(obj :name \"Duncan\")")))
+  (bind expanded (get result 0))
+  (bind head (get expanded:values 0))
+  (bind pair (get expanded:values 1))
+  (bind pair-key (get pair:values 0))
+  (bind pair-val (get pair:values 1))
+  (is-equal head:value "object")
+  (is-equal pair:type "list")
+  (is-equal pair-key:value "name")
+  (is-equal pair-val:value "Duncan"))

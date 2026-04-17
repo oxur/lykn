@@ -1,5 +1,7 @@
 import {assert, assertEquals, assertNotEquals, assertStrictEquals, assertExists, assertThrows, assertRejects, assertMatch, assertStringIncludes, assertArrayIncludes, assertObjectMatch} from "jsr:@std/assert";
 import {lykn as compile} from "../../packages/lang/mod.js";
+import {expand, resetGensym, resetMacros} from "../../packages/lang/expander.js";
+import {read} from "../../packages/lang/reader.js";
 Deno.test("bind: simple binding", () => {
   const r__gensym0 = compile("(bind x 42)");
   assertEquals(r__gensym0.trim(), "const x = 42;");
@@ -34,4 +36,28 @@ Deno.test("bind: type mismatch on literal — compile error", () => assertThrows
 Deno.test("bind: kebab-case name", () => {
   const r__gensym6 = compile("(bind my-value 10)");
   assertEquals(r__gensym6.trim(), "const myValue = 10;");
+});
+Deno.test("bind: expansion produces const form", () => {
+  resetMacros();
+  resetGensym();
+  const result = expand(read("(bind x 42)"));
+  const form = result[0];
+  const head = form.values[0];
+  const nameNode = form.values[1];
+  const valNode = form.values[2];
+  assertEquals(head.value, "const");
+  assertEquals(nameNode.value, "x");
+  assertEquals(valNode.value, 42);
+});
+Deno.test("bind: typed expansion drops type keyword", () => {
+  resetMacros();
+  resetGensym();
+  const result = expand(read("(bind :number x 42)"));
+  const form = result[0];
+  const head = form.values[0];
+  const nameNode = form.values[1];
+  const valNode = form.values[2];
+  assertEquals(head.value, "const");
+  assertEquals(nameNode.value, "x");
+  assertEquals(valNode.value, 42);
 });

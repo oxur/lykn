@@ -1,6 +1,8 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
 (import "../../packages/lang/mod.js" ((alias lykn compile)))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/reader.js" (read))
 
 ;; --- -> (thread-first) ---
 
@@ -35,3 +37,28 @@
 
 (test-compiles "->>: three steps with args"
   "(->> items (filter pred) (map f) (reduce g init))" "reduce(g, init, map(f, filter(pred, items)));")
+
+(test "->: expansion nests correctly"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(-> x f g)")))
+  (bind expanded (get result 0))
+  (bind outer-fn (get expanded:values 0))
+  (bind inner (get expanded:values 1))
+  (bind inner-fn (get inner:values 0))
+  (bind inner-arg (get inner:values 1))
+  (is-equal outer-fn:value "g")
+  (is-equal inner-fn:value "f")
+  (is-equal inner-arg:value "x"))
+
+(test "->>: expansion nests correctly"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (expand (read "(->> x (f a))")))
+  (bind expanded (get result 0))
+  (bind fn-node (get expanded:values 0))
+  (bind arg-a (get expanded:values 1))
+  (bind arg-x (get expanded:values 2))
+  (is-equal fn-node:value "f")
+  (is-equal arg-a:value "a")
+  (is-equal arg-x:value "x"))
