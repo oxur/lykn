@@ -152,7 +152,7 @@ fn resolve_specifier(
         }
     }
 
-    // Workspace package fallback: try packages/<name>/mod.lykn from project root
+    // Workspace package fallback: try packages/<name>/mod.lykn or mod.lyk from project root
     if !module_path.starts_with("./")
         && !module_path.starts_with("../")
         && !module_path.starts_with('/')
@@ -164,9 +164,14 @@ fn resolve_specifier(
             .unwrap_or_else(|| PathBuf::from("."));
         let mut dir = start_dir.as_path();
         loop {
-            let candidate = dir.join("packages").join(module_path).join("mod.lykn");
-            if dir.join("project.json").exists() && candidate.exists() {
-                return Ok(candidate);
+            let pkg_dir = dir.join("packages").join(module_path);
+            if dir.join("project.json").exists() {
+                for entry in &["mod.lykn", "mod.lyk"] {
+                    let candidate = pkg_dir.join(entry);
+                    if candidate.exists() {
+                        return Ok(candidate);
+                    }
+                }
             }
             match dir.parent() {
                 Some(parent) => dir = parent,
@@ -187,8 +192,9 @@ fn resolve_specifier(
 ///
 /// The lookup chain is:
 /// 1. `deno.json` field `lykn.macroEntry`
-/// 2. Fallback files: `mod.lykn`, `macros.lykn`, `index.lykn`
-/// 3. `deno.json` field `exports` if it points to a `.lykn` file
+/// 2. Fallback files: `mod.lykn`, `mod.lyk`, `macros.lykn`, `macros.lyk`,
+///    `index.lykn`, `index.lyk`
+/// 3. `deno.json` field `exports` if it points to a `.lykn` or `.lyk` file
 fn find_macro_entry(pkg_dir: &Path) -> Result<PathBuf, LyknError> {
     let deno_json = pkg_dir.join("deno.json");
 
@@ -204,20 +210,27 @@ fn find_macro_entry(pkg_dir: &Path) -> Result<PathBuf, LyknError> {
         }
     }
 
-    // Fallback chain
-    for candidate in &["mod.lykn", "macros.lykn", "index.lykn"] {
+    // Fallback chain (.lykn preferred, .lyk as alternative)
+    for candidate in &[
+        "mod.lykn",
+        "mod.lyk",
+        "macros.lykn",
+        "macros.lyk",
+        "index.lykn",
+        "index.lyk",
+    ] {
         let path = pkg_dir.join(candidate);
         if path.exists() {
             return Ok(path);
         }
     }
 
-    // Check if exports points to a .lykn file
+    // Check if exports points to a .lykn or .lyk file
     if deno_json.exists()
         && let Ok(content) = std::fs::read_to_string(&deno_json)
         && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content)
         && let Some(exports) = parsed.get("exports").and_then(|v| v.as_str())
-        && exports.ends_with(".lykn")
+        && (exports.ends_with(".lykn") || exports.ends_with(".lyk"))
     {
         let path = pkg_dir.join(exports);
         if path.exists() {
@@ -229,7 +242,7 @@ fn find_macro_entry(pkg_dir: &Path) -> Result<PathBuf, LyknError> {
         message: format!(
             "import-macros: no macro entry found in {}\n  \
              checked: lykn.macroEntry (absent or file not found)\n  \
-             checked: mod.lykn, macros.lykn, index.lykn (not found)\n  \
+             checked: mod.lykn, mod.lyk, macros.lykn, macros.lyk, index.lykn, index.lyk (not found)\n  \
              hint: add lykn.macroEntry to the package's deno.json",
             pkg_dir.display()
         ),

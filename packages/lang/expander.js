@@ -986,12 +986,12 @@ function findMacroEntry(pkgDir) {
       try { Deno.statSync(entryPath); return entryPath; } catch { /* file not found */ }
     }
     // Fallback chain
-    for (const candidate of ['mod.lykn', 'macros.lykn', 'index.lykn']) {
+    for (const candidate of ['mod.lykn', 'mod.lyk', 'macros.lykn', 'macros.lyk', 'index.lykn', 'index.lyk']) {
       const p = _resolve(pkgDir, candidate);
       try { Deno.statSync(p); return p; } catch { /* file not found */ }
     }
     // Check exports
-    if (typeof config.exports === 'string' && config.exports.endsWith('.lykn')) {
+    if (typeof config.exports === 'string' && (config.exports.endsWith('.lykn') || config.exports.endsWith('.lyk'))) {
       const p = _resolve(pkgDir, config.exports);
       try { Deno.statSync(p); return p; } catch { /* file not found */ }
     }
@@ -999,7 +999,7 @@ function findMacroEntry(pkgDir) {
 
   throw new Error(
     `import-macros: no macro entry found in ${pkgDir}\n` +
-    `  checked: lykn.macroEntry, mod.lykn, macros.lykn, index.lykn\n` +
+    `  checked: lykn.macroEntry, mod.lykn, mod.lyk, macros.lykn, macros.lyk, index.lykn, index.lyk\n` +
     `  hint: add lykn.macroEntry to the package's deno.json`
   );
 }
@@ -1079,16 +1079,18 @@ function resolveImportMacrosSpecifier(specifier, filePath) {
         return resolveImportMacrosSpecifier(`${target}${suffix}`, filePath);
       }
 
-      // Workspace package fallback: try packages/<name>/mod.lykn
-      const modPath = _resolve(projectRoot, 'packages', specifier, 'mod.lykn');
-      try { Deno.statSync(modPath); return modPath; } catch { /* not found */ }
+      // Workspace package fallback: try packages/<name>/mod.lykn or mod.lyk
+      for (const entry of ['mod.lykn', 'mod.lyk']) {
+        const modPath = _resolve(projectRoot, 'packages', specifier, entry);
+        try { Deno.statSync(modPath); return modPath; } catch { /* not found */ }
+      }
     }
   }
 
   // Tier 3: Filesystem path (current behavior)
   if (specifier.startsWith('./') || specifier.startsWith('../')) {
-    if (!specifier.endsWith('.lykn')) {
-      throw new Error(`import-macros path must end with .lykn: "${specifier}"`);
+    if (!specifier.endsWith('.lykn') && !specifier.endsWith('.lyk')) {
+      throw new Error(`import-macros path must end with .lykn or .lyk: "${specifier}"`);
     }
     const baseDir = filePath ? _dirname(filePath) : (typeof Deno !== 'undefined' ? Deno.cwd() : '.');
     return _resolve(baseDir, specifier);

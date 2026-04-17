@@ -302,7 +302,7 @@ fn write_package_json(
         "type": "module",
         "main": "./mod.js",
         "exports": exports_map,
-        "files": ["*.js", "*.lykn", "README.md", "LICENSE"],
+        "files": ["*.js", "*.lykn", "*.lyk", "README.md", "LICENSE"],
         "keywords": ["lisp", "s-expression", "lykn"],
         "author": "Duncan McGreggor",
         "license": "Apache-2.0",
@@ -764,9 +764,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&deno_json).unwrap();
         assert!(parsed.get("lykn").is_some());
 
-        // Check package.json includes .lykn in files
+        // Check package.json includes .lykn and .lyk in files
         let pkg_json = fs::read_to_string(root.join("dist/testing/package.json")).unwrap();
         assert!(pkg_json.contains("*.lykn"));
+        assert!(pkg_json.contains("*.lyk"));
     }
 
     #[test]

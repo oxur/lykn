@@ -278,8 +278,8 @@ fn exec_deno(args: &[&str]) {
 fn cmd_run(file: &std::path::Path, args: &[String]) {
     let config = find_config();
 
-    if file.extension().is_some_and(|e| e == "lykn") {
-        // Compile .lykn to temp .js, then run
+    if file.extension().is_some_and(|e| e == "lykn" || e == "lyk") {
+        // Compile .lykn/.lyk to temp .js, then run
         let temp = std::env::temp_dir().join("lykn_run.js");
         match compile::compile_file(file, false, false) {
             Ok(js) => {
@@ -416,15 +416,18 @@ fn discover_lykn_test_files(patterns: &[String]) -> Vec<PathBuf> {
 
 /// Check whether a path matches lykn test file naming conventions.
 ///
-/// Matches: `*_test.lykn`, `*.test.lykn`, and any `.lykn` file inside a
-/// `__tests__` directory.
+/// Matches: `*_test.lykn`, `*.test.lykn`, `*_test.lyk`, `*.test.lyk`,
+/// and any `.lykn`/`.lyk` file inside a `__tests__` directory.
 fn is_lykn_test_file(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if name.ends_with("_test.lykn") || name.ends_with(".test.lykn") {
+    if name.ends_with("_test.lykn")
+        || name.ends_with(".test.lykn")
+        || name.ends_with("_test.lyk")
+        || name.ends_with(".test.lyk")
+    {
         return true;
     }
-    // Also match any .lykn file inside a __tests__ directory
-    if name.ends_with(".lykn")
+    if (name.ends_with(".lykn") || name.ends_with(".lyk"))
         && let Some(parent) = path.parent()
     {
         return parent.components().any(|c| c.as_os_str() == "__tests__");

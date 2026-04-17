@@ -13,6 +13,7 @@ expression: value
   "files": [
     "*.js",
     "*.lykn",
+    "*.lyk",
     "README.md",
     "LICENSE"
   ],
