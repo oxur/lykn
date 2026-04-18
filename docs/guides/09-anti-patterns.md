@@ -285,7 +285,7 @@ language provides no way to mutate via `=`. For object updates, use
 ```lykn
 ;; Anti-pattern — shallow copy shares nested refs
 (bind original (obj :user (obj :name "Alice") :tags #a("admin")))
-(bind copy (assoc original))
+(bind copy (object (spread original)))
 ;; copy:user is the same reference as original:user
 
 ;; Fix — structuredClone for deep independence
@@ -503,7 +503,7 @@ inherited ones. Use `for-of`.
 (for-of value arr (console:log value))
 
 ;; Good — for-of with entries for index + value
-(for-of (const (array i value) (arr:entries))
+(for-of (array i value) (arr:entries)
   (console:log (template i ": " value)))
 ```
 

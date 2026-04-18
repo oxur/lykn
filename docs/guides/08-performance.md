@@ -197,7 +197,7 @@ repeated array resizing.
 
 ```lykn
 ;; Good — pre-allocate dense array
-(bind result (Array:from (obj :length n) (fn (:any _ :number i) (compute i))))
+(bind result (Array:from (obj :length n) (fn (:any _v :number i) (compute i))))
 ```
 
 ---
@@ -243,8 +243,8 @@ repeated array resizing.
 (function* lazy-filter (pred iterable)
   (for-of x iterable (if (pred x) (yield x))))
 
-(function* lazy-map (fn iterable)
-  (for-of x iterable (yield (fn x))))
+(function* lazy-map (f iterable)
+  (for-of x iterable (yield (f x))))
 
 (function* take (n iterable)
   (for-of x iterable
@@ -418,7 +418,7 @@ nested independence is required.
 
 ```lykn
 ;; Good — shallow copy is sufficient for flat data
-(bind copy (assoc config))
+(bind copy (object (spread config)))
 
 ;; Good — deep copy only when nesting requires it
 (bind independent (structuredClone deeply-nested))
@@ -442,12 +442,12 @@ reuse from a pool. Only for extreme scenarios.
 **Summary**: Cache results of expensive computations keyed by arguments.
 
 ```lykn
-(func memoize :args (:function fn) :returns :function :body
+(func memoize :args (:function f) :returns :function :body
   (bind cache (new Map))
   (fn (:any arg)
     (if (cache:has arg) (cache:get arg)
       (block
-        (bind result (fn arg))
+        (bind result (f arg))
         (cache:set arg result)
         result))))
 
@@ -467,7 +467,7 @@ reuse from a pool. Only for extreme scenarios.
 **Summary**: Unbounded caches grow forever. Implement a size limit.
 
 ```lykn
-(func memoize-lru :args (:function fn :number max-size) :returns :function :body
+(func memoize-lru :args (:function f :number max-size) :returns :function :body
   (bind cache (new Map))
   (fn (:any arg)
     (if (cache:has arg)
@@ -479,7 +479,7 @@ reuse from a pool. Only for extreme scenarios.
       (block
         (if (>= cache:size max-size)
           (cache:delete (-> (cache:keys) (:next) :value)))
-        (bind result (fn arg))
+        (bind result (f arg))
         (cache:set arg result)
         result))))
 ```
