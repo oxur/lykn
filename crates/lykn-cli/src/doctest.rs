@@ -477,7 +477,7 @@ fn sanitize_filename(path: &str) -> String {
 /// This function:
 /// 1. Finds `.md` files in the given path (file or directory).
 /// 2. Extracts lykn code blocks from each.
-/// 3. Generates temporary Deno test files under `.lykn-test-out/`.
+/// 3. Generates temporary Deno test files under `target/test/doctest/`.
 /// 4. Invokes `deno test` on the generated files.
 /// 5. Exits with Deno's exit code.
 pub fn run_doc_tests(docs_path: &str, config: &str, deno_args: &[String]) -> ! {
@@ -507,7 +507,10 @@ pub fn run_doc_tests(docs_path: &str, config: &str, deno_args: &[String]) -> ! {
     let config_path = Path::new(config);
     let config_dir = config_path.parent().unwrap_or(Path::new("."));
 
-    let out_dir = config_dir.join(".lykn-test-out");
+    let out_dir = config_dir.join("target/test/doctest");
+    if out_dir.exists() {
+        let _ = fs::remove_dir_all(&out_dir);
+    }
     if let Err(e) = fs::create_dir_all(&out_dir) {
         eprintln!("error creating {}: {e}", out_dir.display());
         process::exit(1);

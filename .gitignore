@@ -9,4 +9,3 @@ target/
 /assets/ai/ai-*
 /dist
 /.npmrc
-.lykn-test-out/
