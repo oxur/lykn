@@ -746,6 +746,167 @@ are clearer, safer, and more composable.
 
 ---
 
+## ID-42: Using `fn` as a Parameter Name
+
+**Strength**: MUST-AVOID
+
+**Summary**: `fn` is a surface macro in lykn. Using it as a parameter
+name causes the expander to interpret it as a macro invocation rather
+than a variable reference.
+
+```lykn
+;; Bad — fn is a surface macro name
+;; (func apply-to-all :args (:array items :function fn) ...)
+;; Throws: "fn requires at least 2 arguments"
+
+;; Good — use f, callback, transform, etc.
+(func apply-to-all
+  :args (:array items :function f)
+  :returns :array
+  :body (items:map f))
+
+(console:log (apply-to-all #a(1 2 3) (fn (:number x) (* x 2))))
+```
+
+```
+[ 2, 4, 6 ]
+```
+
+**Other reserved names**: All surface macro names are reserved as
+identifiers: `fn`, `func`, `bind`, `type`, `match`, `cell`,
+`express`, `obj`, `assoc`, `dissoc`, `conj`, `set!`, `reset!`,
+`swap!`, `and`, `or`, `not`, `lambda`, `genfunc`, `genfn`.
+
+**Fix**: Use descriptive names: `f`, `callback`, `predicate`,
+`transform`, `handler`.
+
+---
+
+## ID-43: Using `assoc` for Shallow Copies (No Key-Value Pairs)
+
+**Strength**: MUST-AVOID
+
+**Summary**: `assoc` requires at least one key-value pair. Calling
+`(assoc obj)` with no updates throws an error.
+
+```lykn
+;; Bad — assoc requires key-value pairs
+;; (bind copy (assoc original))
+;; Throws: "assoc requires at least 3 arguments"
+
+;; Good — use kernel spread for shallow copies
+(bind original (obj :name "Alice" :age 30))
+(bind copy (object (spread original)))
+(console:log copy)
+
+;; Good — structuredClone for deep copies
+(bind deep (structuredClone original))
+(console:log deep)
+```
+
+```
+{ name: "Alice", age: 30 }
+{ name: "Alice", age: 30 }
+```
+
+**Fix**: `04-values-references.md` ID-08, ID-09.
+
+---
+
+## ID-44: Wrapping `for-of` Binding in `(const ...)`
+
+**Strength**: MUST-AVOID
+
+**Summary**: `for-of` already creates `const` bindings. Wrapping
+the binding in `(const ...)` causes a compilation error.
+
+```lykn
+;; Bad — const wrapper is invalid
+;; (for-of (const (array i v) (items:entries)) ...)
+;; Throws: "for-of requires binding, iterable, and body"
+
+;; Good — destructuring pattern directly
+(bind items #a("a" "b" "c"))
+(for-of (array i v) (items:entries)
+  (console:log (template i ": " v)))
+```
+
+```
+0: a
+1: b
+2: c
+```
+
+**Fix**: `00-lykn-surface-forms.md` Control Flow.
+
+---
+
+## ID-45: Double Parens in Class Method Parameters
+
+**Strength**: MUST-AVOID
+
+**Summary**: In class methods, parameters use a single paren list:
+`(method-name (param1 param2) body)`. Double parens `((param))` make
+the parameter a function call in the compiled output.
+
+```lykn
+;; Bad — double parens make name a function call
+;; (class Dog ()
+;;   (speak ((name)) (return name)))
+;; Compiles to: speak(name()) — not what you want
+
+;; Good — single paren list for parameters
+(class Dog ()
+  (constructor (name)
+    (assign this:name name))
+  (speak ()
+    (return (template this:name " says woof"))))
+
+(bind d (new Dog "Rex"))
+(console:log (d:speak))
+```
+
+```
+Rex says woof
+```
+
+**Fix**: `00-lykn-surface-forms.md` Classes.
+
+---
+
+## ID-46: Using `=` for Assignment in Class Bodies
+
+**Strength**: MUST-AVOID
+
+**Summary**: In surface lykn, `(= a b)` is strict equality (`===`),
+not assignment. Inside class constructors, use `assign` for property
+assignment.
+
+```lykn
+;; Bad — = is equality in surface lykn
+;; (class C ()
+;;   (constructor (x)
+;;     (= this:x x)))   ;; this === x, not this.x = x
+
+;; Good — assign for property assignment
+(class Counter ()
+  (constructor (initial)
+    (assign this:count initial))
+  (get-count ()
+    (return this:count)))
+
+(bind c (new Counter 42))
+(console:log (c:get-count))
+```
+
+```
+42
+```
+
+**Fix**: `00-lykn-surface-forms.md` Classes.
+
+---
+
 ---
 
 ## Best Practices Summary
@@ -795,8 +956,13 @@ are clearer, safer, and more composable.
 | 39 | `:any` everywhere | MUST-AVOID | **lykn-specific** |
 | 40 | Overusing `js:` interop | SHOULD-AVOID | **lykn-specific** |
 | 41 | `cell` when pure works | SHOULD-AVOID | **lykn-specific** |
+| 42 | `fn` as parameter name | MUST-AVOID | **lykn-specific** |
+| 43 | `assoc` for shallow copy | MUST-AVOID | **lykn-specific** |
+| 44 | `(const ...)` in `for-of` | MUST-AVOID | **lykn-specific** |
+| 45 | `((param))` in class methods | MUST-AVOID | **lykn-specific** |
+| 46 | `=` for assignment in classes | MUST-AVOID | **lykn-specific** |
 
-**12 ELIMINATED** by language design. **24 converted** from JS. **5 new**
+**12 ELIMINATED** by language design. **24 converted** from JS. **10 new**
 lykn-specific anti-patterns.
 
 ---
