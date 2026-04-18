@@ -61,8 +61,8 @@ enum Commands {
         /// Test lykn code blocks in Markdown files
         #[arg(long)]
         docs: Option<String>,
-        /// Write compiled JS to a separate directory
-        #[arg(long)]
+        /// Directory for compiled JS test output (reserved for future use)
+        #[arg(long, hide = true)]
         out_dir: Option<PathBuf>,
         /// Compile .lykn files but don't run tests
         #[arg(long)]
@@ -268,8 +268,8 @@ fn find_config() -> String {
         .unwrap_or_else(|| "project.json".to_string())
 }
 
-/// Execute a deno command, exiting with its status code.
-fn exec_deno(args: &[&str]) {
+/// Execute a deno command, returning its exit code.
+fn run_deno(args: &[&str]) -> i32 {
     let status = Command::new("deno")
         .args(args)
         .status()
@@ -278,7 +278,12 @@ fn exec_deno(args: &[&str]) {
             eprintln!("is deno installed? try: brew install deno");
             process::exit(1);
         });
-    process::exit(status.code().unwrap_or(1));
+    status.code().unwrap_or(1)
+}
+
+/// Execute a deno command, exiting with its status code.
+fn exec_deno(args: &[&str]) {
+    process::exit(run_deno(args));
 }
 
 fn cmd_run(file: &std::path::Path, args: &[String]) {
@@ -316,7 +321,7 @@ fn cmd_run(file: &std::path::Path, args: &[String]) {
 fn cmd_test(
     patterns: &[String],
     docs: Option<&str>,
-    out_dir: Option<&Path>,
+    _out_dir: Option<&Path>,
     compile_only: bool,
     extra_deno_args: &[String],
 ) {
@@ -327,18 +332,17 @@ fn cmd_test(
         // If there are also .lykn patterns, compile them first
         let lykn_files = discover_lykn_test_files(patterns);
         if !lykn_files.is_empty() {
-            let compiled = compile_lykn_test_files(&lykn_files, out_dir);
+            let compiled = compile_lykn_test_files(&lykn_files, None);
             if compile_only {
                 eprintln!("Compiled {} .lykn test file(s).", compiled.len());
-                // Still run doc tests below (compile_only only affects .lykn files)
             } else {
-                // Run .lykn tests first, then doc tests
                 let test_paths: Vec<String> = compiled
                     .iter()
                     .map(|p| p.to_string_lossy().into_owned())
                     .collect();
                 run_deno_test(&config, &test_paths, extra_deno_args);
             }
+            clean_compiled_test_files(&compiled);
         }
         // run_doc_tests exits the process
         doctest::run_doc_tests(docs_path, &config, extra_deno_args);
@@ -360,45 +364,44 @@ fn cmd_test(
         deno_args.extend(extra_refs);
         exec_deno(&deno_args);
     } else {
-        // Compile .lykn files, then optionally run them
-        let compiled = compile_lykn_test_files(&lykn_files, out_dir);
+        // Compile .lykn files next to sources, run, then clean up
+        let compiled = compile_lykn_test_files(&lykn_files, None);
         eprintln!("Compiled {} .lykn test file(s).", compiled.len());
 
         if compile_only {
             return;
         }
 
-        // Build the list of paths to pass to deno test
-        let test_paths = if let Some(od) = out_dir {
-            // With --out-dir, test the output directory
-            vec![od.to_string_lossy().into_owned()]
-        } else {
-            // Test the directories/files that contain the compiled output.
-            // If patterns were directories, pass those. If individual files,
-            // pass the compiled .js paths.
-            let mut paths: Vec<String> = Vec::new();
-            for pattern in patterns {
-                let p = Path::new(pattern);
-                if p.is_dir() {
-                    paths.push(pattern.clone());
-                }
+        // Run tests from the original directories
+        let mut paths: Vec<String> = Vec::new();
+        for pattern in patterns {
+            let p = Path::new(pattern);
+            if p.is_dir() {
+                paths.push(pattern.clone());
             }
-            if paths.is_empty() {
-                // Individual files — pass compiled JS paths
-                paths = compiled
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect();
-            }
-            paths
-        };
+        }
+        if paths.is_empty() {
+            paths = compiled
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+        }
 
-        let path_refs: Vec<&str> = test_paths.iter().map(|s| s.as_str()).collect();
+        let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
         let mut deno_args = vec!["test", "--config", &config, "--no-check", "-A"];
         deno_args.extend(path_refs);
         let extra_refs: Vec<&str> = extra_deno_args.iter().map(|s| s.as_str()).collect();
         deno_args.extend(extra_refs);
-        exec_deno(&deno_args);
+        let exit_code = run_deno(&deno_args);
+
+        clean_compiled_test_files(&compiled);
+        process::exit(exit_code);
+    }
+}
+
+fn clean_compiled_test_files(compiled: &[PathBuf]) {
+    for path in compiled {
+        let _ = fs::remove_file(path);
     }
 }
 
