@@ -1089,7 +1089,7 @@ export function registerSurfaceMacros(macroEnv) {
 			if (i + 1 >= args.length) {
 				throw new Error(`obj: keyword :${args[i].value} has no value`);
 			}
-			pairs.push(array(sym(args[i].value), args[i + 1]));
+			pairs.push(kernelArray(sym(args[i].value), args[i + 1]));
 		}
 		return array(sym("object"), ...pairs);
 	});

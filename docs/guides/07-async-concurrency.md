@@ -300,21 +300,15 @@ rejection. For timeouts, prefer `AbortSignal:timeout` (ID-26).
 
 ```lykn
 (async (func map-with-limit
-  :args (:array items :number limit :function fn)
+  :args (:array items :number limit :function f)
   :returns :array
   :body
-  (bind results (new Array items:length))
-  (bind next-index (cell 0))
-
-  (async (func worker :returns :void :body
-    (while (< (express next-index) items:length)
-      (bind i (express next-index))
-      (swap! next-index (fn (:number n) (+ n 1)))
-      (= (get results i) (await (fn (get items i)))))))
-
-  (await (Promise:all
-    (Array:from (obj :length limit) (fn () (worker)))))
-  results))
+  (bind results (cell #a()))
+  (for (let i 0) (< i items:length) (+= i limit)
+    (bind batch (items:slice i (+ i limit)))
+    (bind batch-results (await (Promise:all (batch:map f))))
+    (swap! results (fn (:array r) (r:concat batch-results))))
+  (express results)))
 ```
 
 ---
@@ -585,21 +579,21 @@ throttle patterns require.
 
 ```lykn
 ;; Good — debounce: fire after events stop for wait ms
-(func debounce :args (:function fn :number wait) :returns :function :body
+(func debounce :args (:function f :number wait) :returns :function :body
   (bind timer (cell null))
   (fn (:any args)
     (clearTimeout (express timer))
-    (reset! timer (setTimeout (fn () (fn args)) wait))))
+    (reset! timer (setTimeout (fn () (f args)) wait))))
 
 ;; Good — throttle: fire at most once per interval ms
-(func throttle :args (:function fn :number interval) :returns :function :body
+(func throttle :args (:function f :number interval) :returns :function :body
   (bind last-event (cell null))
   (bind timer-id (cell null))
   (fn (:any args)
     (reset! last-event args)
     (if (= (express timer-id) null)
       (reset! timer-id (setTimeout (fn ()
-        (fn (express last-event))
+        (f (express last-event))
         (reset! timer-id null)) interval)))))
 ```
 

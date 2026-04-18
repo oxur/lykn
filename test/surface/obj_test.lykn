@@ -20,6 +20,21 @@
 (test-compiles "obj: variable value"
   "(obj :name user-name)" "({\n  name: userName\n});")
 
+;; Keywords that collide with surface macro names must not be
+;; intercepted by the expander (e.g., :type, :fn, :match).
+(test "obj: keyword :type does not collide with type macro"
+  (bind result (compile "(obj :type \"module\")"))
+  (includes result "type: \"module\""))
+
+(test "obj: keyword :fn does not collide with fn macro"
+  (bind result (compile "(obj :fn \"value\")"))
+  (includes result "fn: \"value\""))
+
+(test "obj: runtime with :type keyword"
+  (bind o (obj :type "module" :name "test"))
+  (is-equal o:type "module")
+  (is-equal o:name "test"))
+
 (test "obj: expansion produces object form"
   (reset-macros)
   (reset-gensym)
