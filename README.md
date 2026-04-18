@@ -21,11 +21,14 @@ squint at the Icelandic — *closure*.
 
 ## Status
 
-**v0.4.0** — Safe operators land. **`=` is now strict equality** in surface
-syntax (`a === b`), matching every Lisp dialect. `and`/`or`/`not` are
-short-circuit logical operators, not function calls. All mutation goes through
-named forms (`bind`, `reset!`, `swap!`). See DD-22. Self-contained Rust
-compiler (no runtime dependencies). 73KB browser bundle.
+**v0.5.0** — Workspace toolchain, testing DSL, and publishing pipeline.
+`lykn` is now a unified CLI wrapping Deno: `lykn new`, `lykn run`,
+`lykn test`, `lykn build --dist`, `lykn publish`. The language gains typed
+bindings, destructured parameters, generator functions, surface forms in
+class bodies, and cross-package macro resolution via `jsr:` / `npm:`
+specifiers. Three published packages: `@lykn/lang`, `@lykn/browser`,
+`@lykn/testing`. Both `.lykn` (surface) and `.lyk` (kernel) file extensions
+are supported.
 
 ## Quick Start
 
@@ -61,7 +64,7 @@ lykn test
 (bind result (-> 5 (+ 3) (* 2)))
 
 ;; Objects with keyword syntax
-(bind user (obj :name "lykn" :version "0.4.0"))
+(bind user (obj :name "lykn" :version "0.5.0"))
 
 ;; Controlled mutation via cells
 (bind counter (cell 0))
@@ -95,7 +98,7 @@ function greet(name) {
   return result__gensym0;
 }
 const result = (5 + 3) * 2;
-const user = {name: "lykn", version: "0.4.0"};
+const user = {name: "lykn", version: "0.5.0"};
 const counter = {value: 0};
 counter.value = ((n) => n + 1)(counter.value);
 console.log(counter.value);
@@ -149,35 +152,33 @@ lykn has two compiler implementations sharing the same syntax and semantics:
 
 ```sh
 brew install deno
-```
-
-### Lint
-
-```sh
-# JS
-deno lint packages/
-
-# Rust
-cargo clippy
-```
-
-### Format
-
-```sh
-# JS
-deno fmt packages/
-
-# Rust
-cargo fmt
+cargo install lykn
 ```
 
 ### Test
 
 ```sh
-deno task test              # all tests
-deno task test:unit         # unit tests only
-deno task test:integration  # integration tests only
+lykn test                   # discover and run .lykn/.lyk tests
+lykn test test/surface/     # test a specific directory
 cargo test                  # Rust tests
+```
+
+### Lint & Format
+
+```sh
+lykn lint packages/         # lint compiled JS via Deno
+cargo clippy                # lint Rust
+cargo fmt                   # format Rust
+lykn fmt main.lykn          # format lykn source
+```
+
+### Build & Publish
+
+```sh
+lykn build --dist           # stage all packages into dist/
+lykn publish --jsr          # publish to JSR
+lykn publish --npm          # publish to npm
+lykn publish --jsr --dry-run  # verify without publishing
 ```
 
 ## Usage
@@ -208,24 +209,19 @@ await lykn.load('/app.lykn')
 > **Note:** `import-macros` is not available in the browser (no file system
 > access). Inline `macro` definitions work.
 
-### Build Browser Bundle
+### CLI
 
 ```sh
-deno task build
-```
-
-### Rust CLI
-
-```sh
-# Build from source
-mkdir -p ./bin
-cargo build --release && cp ./target/release/lykn ./bin
+# Create a new project
+lykn new my-app
 
 # Compile .lykn to JavaScript
 lykn compile main.lykn                    # output to stdout
 lykn compile main.lykn -o main.js         # output to file
 lykn compile main.lykn --strip-assertions # omit type checks / contracts
-lykn compile main.lykn --kernel-json      # output kernel JSON (debug)
+
+# Run directly
+lykn run main.lykn
 
 # Format
 lykn fmt main.lykn                        # stdout
@@ -233,20 +229,34 @@ lykn fmt -w main.lykn                     # in place
 
 # Syntax check
 lykn check main.lykn
+
+# Build browser bundle
+lykn build --browser
+```
+
+Build from source:
+
+```sh
+mkdir -p ./bin
+cargo build --release && cp ./target/release/lykn ./bin
 ```
 
 ### Run Examples
 
 ```sh
-# Compile to JS and run with any JS runtime
+# Run a lykn file directly
+lykn run examples/surface/main.lykn
+
+# Or compile and run separately
 lykn compile examples/surface/main.lykn -o /tmp/main.js && deno run /tmp/main.js
 
-# Serve the browser examples (needs a local server for external .lykn files)
+# Serve the browser examples
 deno run --allow-net --allow-read jsr:@std/http@1/file-server --port 5099
 # Then open http://localhost:5099/examples/surface/browser.html
 ```
 
-Both `examples/surface/` (recommended) and `examples/kernel/` are available.
+Both `examples/surface/` (`.lykn`) and `examples/kernel/` (`.lyk`) are
+available.
 
 ## Supported forms
 
@@ -260,6 +270,7 @@ kernel forms at compile time.
 | lykn | JS |
 |---|---|
 | `(bind x 1)` | `const x = 1;` |
+| `(bind :number x (compute))` | `const x = compute();` with runtime type check |
 | `(bind counter (cell 0))` | `const counter = { value: 0 };` |
 | `(swap! counter f)` | `counter.value = f(counter.value);` |
 | `(reset! counter 0)` | `counter.value = 0;` |
@@ -273,6 +284,9 @@ kernel forms at compile time.
 | `(func add :args (:number a :number b) :returns :number :body (+ a b))` | `function add(a, b) { ... return a + b; }` with type checks |
 | `(func now (Date:now))` | `function now() { return Date.now(); }` |
 | `(fn (:number x) (* x 2))` | `x => { ...; x * 2; }` with type check |
+| `(func f :args ((object :string host :number port)) :body ...)` | Destructured params with per-field types |
+| `(genfunc range :args (:number a :number b) :yields :number :body ...)` | Generator with typed yields |
+| `(genfn () (yield 1) (yield 2))` | Anonymous generator |
 
 #### Types & pattern matching
 
@@ -413,7 +427,8 @@ Surface forms work inside class bodies — `bind`, `=` (equality), `set!`, threa
 | lykn | What it does |
 |---|---|
 | `` (macro when (test (rest body)) `(if ,test (block ,@body))) `` | Define a macro with quasiquote template |
-| `(import-macros "./lib.lykn" (when unless))` | Import macros from another file |
+| `(import-macros "./lib.lykn" (when unless))` | Import macros from a local file |
+| `(import-macros "jsr:@lykn/testing" (test is-equal))` | Import macros from a published package |
 | `` `(if ,test ,@body) `` | Quasiquote with unquote and splicing |
 | `temp#gen` | Auto-gensym (hygienic binding) |
 | `(gensym "prefix")` | Programmatic gensym |
@@ -432,6 +447,27 @@ Surface forms work inside class bodies — `bind`, `=` (equality), `set!`, threa
 | `#; expr` | Expression comment (discards next form) |
 | `#\| ... \|#` | Nestable block comment |
 
+## Testing
+
+lykn includes a testing DSL via the `@lykn/testing` macro module:
+
+```lykn
+(import-macros "jsr:@lykn/testing" (test suite is-equal ok))
+
+(suite "arithmetic"
+  (test "addition"
+    (is-equal (+ 1 1) 2))
+  (test "positive"
+    (ok (> 5 0))))
+```
+
+Compiles to `Deno.test()` + `@std/assert` — no runtime dependency or custom
+test runner. Available assertions: `is`, `is-equal`, `ok`, `is-thrown`,
+`matches`.
+
+Test files use `*_test.lykn` / `*.test.lykn` (or `.lyk`) naming. Run with
+`lykn test`.
+
 ## Design principles
 
 - **Thin skin over JS.** lykn is not a new language. It's a syntax for the
@@ -445,6 +481,8 @@ Surface forms work inside class bodies — `bind`, `=` (equality), `set!`, threa
 
 ## References
 
+- [EBNF grammar](https://github.com/lykn-lang/grammar/tree/main/ebnf) — formal
+  grammar specification for lykn syntax
 - [ESTree spec](https://github.com/estree/estree) — the AST format lykn
   targets
 - [astring](https://github.com/davidbonnet/astring) — ESTree to JS code
