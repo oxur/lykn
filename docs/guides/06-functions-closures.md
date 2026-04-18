@@ -37,7 +37,7 @@ provides type annotations, contracts, and multi-clause dispatch.
   (bind parts (line:split "="))
   (bind key ((get parts 0):trim))
   (bind val ((parts:slice 1):join "="))
-  #a(key (val:trim))))
+  #a(key (val:trim)))
 ```
 
 **Rationale**: `func` is the primary function form in lykn. It emits
@@ -66,19 +66,6 @@ typed arrow functions.
 
 ;; Good — :any for untyped
 (bind identity (fn (:any x) x))
-```
-
-Compiles to:
-
-```js
-const doubled = items.map((x) => {
-  if (typeof x !== "number" || Number.isNaN(x))
-    throw new TypeError("anonymous: arg 'x' expected number, got " + typeof x);
-  return x * 2;
-});
-const adults = users.filter((u) => {
-  return u.age >= 18;
-});
 ```
 
 **`fn` constraints**: No own `this`, cannot be used with `new`. For
@@ -114,13 +101,6 @@ with keyword syntax.
 ;; Caller — self-documenting, order-independent
 (connect (obj :host "localhost" :port 5432))
 (connect (obj :host "db.prod.internal" :port 5432 :ssl true))
-```
-
-```js
-function connect({host, port, ssl = true}) {
-  openConnection(host, port, ssl);
-}
-connect({ host: "localhost", port: 5432 });
 ```
 
 **Why it's idiomatic**: The lykn caller side is `(obj :host "localhost"
@@ -381,24 +361,8 @@ Use `assign` for `this`-property assignment in constructors:
     (return (template this:name " fetches " toy-name))))
 ```
 
-```js
-class Dog extends Animal {
-  constructor(name, breed) {
-    super(name);
-    this.breed = breed;
-  }
-  speak() {
-    const greeting = `${this.name} says woof`;
-    if (this.breed === "poodle") return `${greeting} (fancy)`;
-    return greeting;
-  }
-  fetchToy(toyName) {
-    return `${this.name} fetches ${toyName}`;
-  }
-}
-```
-
 **Key forms inside class bodies**:
+
 - `assign` — `this`-property assignment, class body only (compile error elsewhere)
 - `bind` → `const` — immutable binding
 - `=` → `===` — equality (not assignment)
@@ -902,18 +866,17 @@ pattern. It is built into the language — no utility function needed.
 ;; pipe(trim, toLowerCase, s => s.replace(/\s+/g, "-"))(name)
 ```
 
-Compiles to:
-
-```js
-const result = name.trim().toLowerCase().replace(/\s+/g, "-");
+```lykn
+(bind name "  Hello World  ")
+(bind result (-> name
+  (:trim)
+  (:to-lower-case)
+  (:replace (regex "\\s+" "g") "-")))
+(console:log result)
 ```
 
-```lykn
-;; Good — ->> thread-last for data-last APIs
-(bind result (->> items
-  (filter even?)
-  (map double)
-  (take 5)))
+```
+hello-world
 ```
 
 **Rationale**: `->` and `->>` are built-in threading macros that
@@ -1068,25 +1031,13 @@ This replaces JS overloading patterns.
    :returns :string
    :body (template greeting ", " name "!")))
 
-(greet "world")         ;; "Hello, world!"
-(greet "Howdy" "world") ;; "Howdy, world!"
+(console:log (greet "world"))
+(console:log (greet "Howdy" "world"))
 ```
 
-Compiles to:
-
-```js
-function greet(...args) {
-  if (args.length === 2 && typeof args[0] === "string" && typeof args[1] === "string") {
-    const greeting = args[0];
-    const name = args[1];
-    return greeting + ", " + name + "!";
-  }
-  if (args.length === 1 && typeof args[0] === "string") {
-    const name = args[0];
-    return "Hello, " + name + "!";
-  }
-  throw new TypeError("greet: no matching clause for arguments");
-}
+```
+Hello, world!
+Howdy, world!
 ```
 
 **Rationale**: Multi-clause dispatch replaces the JS pattern of
