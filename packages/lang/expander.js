@@ -668,7 +668,7 @@ function quoteLiteral(form) {
 
 // --- Dispatch Table ---
 
-const dispatchTable = {
+const dispatchTable = Object.assign(Object.create(null), {
   "quote":       { walk: "none" },
   "macro":       { walk: "register-macro" },
   "cons":        { walk: "desugar", transform: desugarCons },
@@ -684,7 +684,7 @@ const dispatchTable = {
   "import-macros": { walk: "import-macros" },
   "macroexpand":   { walk: "debug-expand", mode: "full" },
   "macroexpand-1": { walk: "debug-expand", mode: "once" },
-};
+});
 
 // --- Expansion Walk ---
 

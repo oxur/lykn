@@ -1,0 +1,106 @@
+(import-macros "testing"
+  (test is-equal ok is))
+
+;; Runtime tests — compile, instantiate, and verify class behavior
+;; through the full surface pipeline.
+
+(class Counter ()
+  (field -count 0)
+  (constructor (initial)
+    (assign this:-count initial))
+  (increment ()
+    (assign this:-count (+ this:-count 1)))
+  (get-count ()
+    (return this:-count)))
+
+(test "class runtime: instantiation and field access"
+  (bind c (new Counter 0))
+  (is-equal (c:get-count) 0))
+
+(test "class runtime: method mutates state"
+  (bind c (new Counter 5))
+  (c:increment)
+  (is-equal (c:get-count) 6))
+
+(test "class runtime: multiple increments"
+  (bind c (new Counter 0))
+  (c:increment)
+  (c:increment)
+  (c:increment)
+  (is-equal (c:get-count) 3))
+
+(class Greeter ()
+  (constructor (name)
+    (assign this:name name))
+  (greet ()
+    (return (template "Hello, " this:name "!"))))
+
+(test "class runtime: template literal in method"
+  (bind g (new Greeter "world"))
+  (is-equal (g:greet) "Hello, world!"))
+
+(class Point ()
+  (constructor (x y)
+    (assign this:x x)
+    (assign this:y y))
+  (to-string ()
+    (return (template "(" this:x ", " this:y ")"))))
+
+(test "class runtime: multiple constructor params"
+  (bind p (new Point 3 4))
+  (is-equal p:x 3)
+  (is-equal p:y 4))
+
+(test "class runtime: method with template literal"
+  (bind p (new Point 1 2))
+  (is-equal (p:to-string) "(1, 2)"))
+
+(class Animal ()
+  (constructor (name)
+    (assign this:name name))
+  (speak ()
+    (return (template this:name " makes a sound"))))
+
+(class Dog (Animal)
+  (constructor (name breed)
+    (super name)
+    (assign this:breed breed))
+  (speak ()
+    (return (template this:name " barks"))))
+
+(test "class runtime: inheritance"
+  (bind d (new Dog "Rex" "Labrador"))
+  (is-equal d:name "Rex")
+  (is-equal d:breed "Labrador"))
+
+(test "class runtime: method override"
+  (bind d (new Dog "Rex" "Labrador"))
+  (is-equal (d:speak) "Rex barks"))
+
+(test "class runtime: instanceof"
+  (bind d (new Dog "Rex" "Labrador"))
+  (is (instanceof d Dog))
+  (is (instanceof d Animal)))
+
+(class WithGetter ()
+  (constructor (width height)
+    (assign this:width width)
+    (assign this:height height))
+  (get area ()
+    (return (* this:width this:height))))
+
+(test "class runtime: getter"
+  (bind r (new WithGetter 3 4))
+  (is-equal r:area 12))
+
+(class WithStatic ()
+  (static (field instance-count 0))
+  (static (create ()
+    (assign WithStatic:instance-count (+ WithStatic:instance-count 1))
+    (return (new WithStatic)))))
+
+(test "class runtime: static method and field"
+  (assign WithStatic:instance-count 0)
+  (WithStatic:create)
+  (WithStatic:create)
+  (is-equal WithStatic:instance-count 2))

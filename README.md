@@ -50,7 +50,7 @@ lykn test
 
 ## Quick taste
 
-```lisp
+```lykn
 ;; Immutable bindings
 (bind greeting "hello, world")
 
@@ -87,24 +87,11 @@ lykn test
   (console:log "positive"))
 ```
 
-Compiles to:
+Output:
 
-```js
-const greeting = "hello, world";
-function greet(name) {
-  if (typeof name !== "string") throw new TypeError("greet: arg 'name' expected string, got " + typeof name);
-  const result__gensym0 = greeting + ", " + name + "!";
-  if (typeof result__gensym0 !== "string") throw new TypeError("greet: return value expected string, got " + typeof result__gensym0);
-  return result__gensym0;
-}
-const result = (5 + 3) * 2;
-const user = {name: "lykn", version: "0.5.0"};
-const counter = {value: 0};
-counter.value = ((n) => n + 1)(counter.value);
-console.log(counter.value);
-if (result > 0) {
-  console.log("positive");
-}
+```
+1
+positive
 ```
 
 ## Architecture
@@ -451,7 +438,7 @@ Surface forms work inside class bodies — `bind`, `=` (equality), `set!`, threa
 
 lykn includes a testing DSL via the `@lykn/testing` macro module:
 
-```lykn
+```lykn,skip
 (import-macros "jsr:@lykn/testing" (test suite is-equal ok))
 
 (suite "arithmetic"

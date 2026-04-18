@@ -51,6 +51,9 @@ help:
 	@echo "  $(YELLOW)make test-rust$(RESET)        - Run Rust tests only"
 	@echo "  $(YELLOW)make test-js$(RESET)          - Run JS tests only"
 	@echo "  $(YELLOW)make test-lykn$(RESET)        - Run lykn tests only"
+	@echo "  $(YELLOW)make test-docs$(RESET)        - Run all documentation tests"
+	@echo "  $(YELLOW)make test-docs-guides$(RESET) - Test lykn blocks in docs/guides/"
+	@echo "  $(YELLOW)make test-docs-readme$(RESET) - Test lykn blocks in README.md"
 	@echo "  $(YELLOW)make test-publishing$(RESET)  - Run publishing pipeline tests"
 	@echo "  $(YELLOW)make lint$(RESET)             - Run clippy, format check, and JS lint"
 	@echo "  $(YELLOW)make format$(RESET)           - Format all code with rustfmt"
@@ -212,6 +215,21 @@ test-lykn:
 	@$(BIN_DIR)/$(CODE_NAME) test test/surface/
 	@echo "$(GREEN)✓ lykn tests passed$(RESET)"
 
+.PHONY: test-docs
+test-docs: test-docs-guides test-docs-readme
+
+.PHONY: test-docs-guides
+test-docs-guides:
+	@echo "$(BLUE)Running documentation tests (guides)...$(RESET)"
+	@$(BIN_DIR)/$(CODE_NAME) test --docs docs/guides/
+	@echo "$(GREEN)✓ Guide documentation tests passed$(RESET)"
+
+.PHONY: test-docs-readme
+test-docs-readme:
+	@echo "$(BLUE)Running documentation tests (README)...$(RESET)"
+	@$(BIN_DIR)/$(CODE_NAME) test --docs README.md
+	@echo "$(GREEN)✓ README documentation tests passed$(RESET)"
+
 .PHONY: test-publishing
 test-publishing:
 	@echo "$(BLUE)Running publishing pipeline tests (Layers 1-3)...$(RESET)"
@@ -269,7 +287,7 @@ check: common-checks test
 	@echo ""
 
 .PHONY: check-all
-check-all: common-checks coverage test-js test-publishing
+check-all: common-checks coverage test-js test-docs test-publishing
 	@echo ""
 	@echo "$(GREEN)✓ Full validation complete (build + lint + coverage + publishing)$(RESET)"
 	@echo ""

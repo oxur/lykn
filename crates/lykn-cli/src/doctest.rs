@@ -70,6 +70,10 @@ pub struct CodeBlock {
     pub source: String,
     /// Optional expected JS output (from a following `` ```js `` block).
     pub expected_js: Option<String>,
+    /// Optional expected execution output (from a following plain `` ``` ``
+    /// or `` ```text `` block). The lykn is compiled, the resulting JS is
+    /// evaluated, and the result is compared to this string.
+    pub expected_output: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -132,14 +136,20 @@ pub fn extract_blocks(source: &str) -> Vec<CodeBlock> {
 
             block_number += 1;
 
-            // Look ahead for a paired ```js block (within a few lines)
-            let expected_js = look_ahead_for_js_block(&lines, i);
+            // Look ahead for a paired expected-output block
+            let expected_block = look_ahead_for_expected_block(&lines, i);
+            let (expected_js, expected_output) = match expected_block {
+                Some(ExpectedBlock::Js(s)) => (Some(s), None),
+                Some(ExpectedBlock::Output(s)) => (None, Some(s)),
+                None => (None, None),
+            };
 
             blocks.push(CodeBlock {
                 number: block_number,
                 annotation,
                 source: body,
                 expected_js,
+                expected_output,
             });
         } else {
             i += 1;
@@ -149,51 +159,71 @@ pub fn extract_blocks(source: &str) -> Vec<CodeBlock> {
     blocks
 }
 
-/// Look ahead from position `start` for a `` ```js `` block within a few
-/// lines. Returns `Some(content)` if found, `None` otherwise.
+/// What kind of expected-output block follows a lykn block.
+#[derive(Debug)]
+enum ExpectedBlock {
+    /// A `` ```js `` block — compare compiled JS source.
+    Js(String),
+    /// A plain `` ``` `` or `` ```text `` block — compare execution output.
+    Output(String),
+}
+
+/// Look ahead from position `start` for an expected-output block within a
+/// few lines. Returns a `` ```js `` block as `Js` (compiler output matching)
+/// or a plain `` ``` `` / `` ```text `` block as `Output` (execution output
+/// matching).
 ///
-/// Skips blank lines and lines that look like prose connectors
-/// (e.g., "Compiles to:").
-fn look_ahead_for_js_block(lines: &[&str], start: usize) -> Option<String> {
-    // Look at most 5 lines ahead for a ```js fence
+/// Skips blank lines and short prose connectors (e.g., "Compiles to:",
+/// "Output:").
+fn look_ahead_for_expected_block(lines: &[&str], start: usize) -> Option<ExpectedBlock> {
     let limit = (start + 5).min(lines.len());
     let mut i = start;
 
     while i < limit {
         let line = lines[i].trim();
 
-        if line.starts_with("```js") && !line.starts_with("````") {
-            // Found a JS block — collect its content
-            i += 1;
-            let mut body = String::new();
-            while i < lines.len() {
-                let l = lines[i];
-                if l.trim() == "```" {
-                    break;
-                }
-                if !body.is_empty() {
-                    body.push('\n');
-                }
-                body.push_str(l);
-                i += 1;
+        if !line.starts_with("````") {
+            if line.starts_with("```js") {
+                return collect_block_body(lines, i + 1).map(ExpectedBlock::Js);
             }
-            return if body.trim().is_empty() {
-                None
-            } else {
-                Some(body)
-            };
+            if line == "```" || line == "```text" {
+                return collect_block_body(lines, i + 1).map(ExpectedBlock::Output);
+            }
         }
 
-        // If we hit another fenced block that isn't JS, stop looking
-        if line.starts_with("```") && line != "```" && !line.starts_with("```js") {
+        // If we hit another fenced block type, stop looking
+        if line.starts_with("```") && line != "```" && !line.starts_with("```js")
+            && !line.starts_with("```text")
+        {
             return None;
         }
 
-        // Skip blank lines and short prose lines
         i += 1;
     }
 
     None
+}
+
+/// Collect lines from `start` until a closing `` ``` `` fence.
+fn collect_block_body(lines: &[&str], start: usize) -> Option<String> {
+    let mut body = String::new();
+    let mut i = start;
+    while i < lines.len() {
+        let l = lines[i];
+        if l.trim() == "```" {
+            break;
+        }
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str(l);
+        i += 1;
+    }
+    if body.trim().is_empty() {
+        None
+    } else {
+        Some(body)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -359,37 +389,49 @@ pub fn generate_test_file(
                 ));
             }
             _ => {
-                // Compile or Continue — check compilation succeeds
-                if let Some(ref expected) = block.expected_js {
-                    // Output matching mode
+                if let Some(ref expected) = block.expected_output {
+                    // Execution output matching — compile, eval, compare result
                     let escaped_expected = js_escape_template(expected);
-                    let is_multiline = expected.contains('\n');
-
                     out.push_str(&format!(
-                        "Deno.test(\"{name}\", () => {{\n\
-                         \x20 const result = lykn(`{src}`);\n",
+                        concat!(
+                            "Deno.test(\"{name}\", () => {{\n",
+                            "  const js = lykn(`{src}`);\n",
+                            "  const __logs = [];\n",
+                            "  const __origLog = console.log;\n",
+                            "  console.log = (...args) => __logs.push(args.map(String).join(\" \"));\n",
+                            "  let __result;\n",
+                            "  try {{\n",
+                            "    __result = (0, eval)(js);\n",
+                            "  }} finally {{\n",
+                            "    console.log = __origLog;\n",
+                            "  }}\n",
+                            "  const __output = __logs.length > 0\n",
+                            "    ? __logs.join(\"\\n\")\n",
+                            "    : (__result !== undefined ? String(__result) : \"\");\n",
+                            "  assertEquals(__output.trim(), `{expected}`.trim());\n",
+                            "}});\n\n",
+                        ),
                         name = test_name,
                         src = escaped_source,
+                        expected = escaped_expected,
                     ));
-
-                    if is_multiline {
-                        // Exact match after trimming
-                        out.push_str(&format!(
-                            "  assertEquals(result.trim(), `{}`.trim());\n",
-                            escaped_expected
-                        ));
-                    } else {
-                        // Whitespace-normalized comparison
-                        out.push_str(
-                            "  const normalize = (s) => s.trim().replace(/\\s+/g, \" \");\n",
-                        );
-                        out.push_str(&format!(
-                            "  assertEquals(normalize(result), normalize(`{}`));\n",
-                            escaped_expected
-                        ));
-                    }
-
-                    out.push_str("});\n\n");
+                } else if let Some(ref expected) = block.expected_js {
+                    // Compiler output matching — normalize whitespace and compare
+                    let escaped_expected = js_escape_template(expected);
+                    out.push_str(&format!(
+                        "Deno.test(\"{name}\", () => {{\n\
+                         \x20 const normalize = (s) => s\n\
+                         \x20   .replace(/\\/\\/[^\\n]*/g, \"\")\n\
+                         \x20   .replace(/\\/\\*[\\s\\S]*?\\*\\//g, \"\")\n\
+                         \x20   .replace(/\\s+/g, \" \")\n\
+                         \x20   .trim();\n\
+                         \x20 const result = lykn(`{src}`);\n\
+                         \x20 assertEquals(normalize(result), normalize(`{expected}`));\n\
+                         }});\n\n",
+                        name = test_name,
+                        src = escaped_source,
+                        expected = escaped_expected,
+                    ));
                 } else {
                     // Simple compile check
                     out.push_str(&format!(
@@ -874,6 +916,7 @@ Some prose here.
             annotation: Annotation::Compile,
             source: "(bind x 42)".to_string(),
             expected_js: None,
+            expected_output: None,
         }];
         let config = Path::new("/project/project.json");
         let result = generate_test_file("test.md", &blocks, "```lykn\n(bind x 42)\n```", config);
@@ -889,6 +932,7 @@ Some prose here.
             annotation: Annotation::CompileFail,
             source: "(bind)".to_string(),
             expected_js: None,
+            expected_output: None,
         }];
         let config = Path::new("/project/project.json");
         let result = generate_test_file(
@@ -908,6 +952,7 @@ Some prose here.
             annotation: Annotation::Compile,
             source: "(bind x 42)".to_string(),
             expected_js: Some("const x = 42;".to_string()),
+            expected_output: None,
         }];
         let md = "```lykn\n(bind x 42)\n```\n\n```js\nconst x = 42;\n```";
         let config = Path::new("/project/project.json");
@@ -923,13 +968,12 @@ Some prose here.
             annotation: Annotation::Compile,
             source: "(func greet :args (name) :body name)".to_string(),
             expected_js: Some(expected.to_string()),
+            expected_output: None,
         }];
         let md = "```lykn\n(func greet :args (name) :body name)\n```\n\n```js\nfunction greet(name) {\n  return name;\n}\n```";
         let config = Path::new("/project/project.json");
         let result = generate_test_file("test.md", &blocks, md, config);
-        // Multiline → exact match with trim, no normalize
-        assert!(result.contains(".trim()"));
-        assert!(!result.contains("normalize"));
+        assert!(result.contains("normalize"));
     }
 
     #[test]
@@ -940,12 +984,14 @@ Some prose here.
                 annotation: Annotation::Skip,
                 source: "(partial)".to_string(),
                 expected_js: None,
+            expected_output: None,
             },
             CodeBlock {
                 number: 2,
                 annotation: Annotation::Fragment,
                 source: "(also partial)".to_string(),
                 expected_js: None,
+            expected_output: None,
             },
         ];
         let md = "```lykn,skip\n(partial)\n```\n\n```lykn,fragment\n(also partial)\n```";
@@ -1076,6 +1122,7 @@ Some prose here.
             annotation: Annotation::Compile,
             source: "(bind x 1)".to_string(),
             expected_js: None,
+            expected_output: None,
         }];
         let config = Path::new("/my/project/project.json");
         let result = generate_test_file("test.md", &blocks, "```lykn\n(bind x 1)\n```", config);
@@ -1089,6 +1136,7 @@ Some prose here.
             annotation: Annotation::Run,
             source: "(console:log \"hello\")".to_string(),
             expected_js: None,
+            expected_output: None,
         }];
         let md = "```lykn,run\n(console:log \"hello\")\n```";
         let config = Path::new("/project/project.json");
@@ -1110,5 +1158,72 @@ Some prose here.
         let blocks = extract_blocks(md);
         // Block with only whitespace should be skipped
         assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_blocks_plain_output_block() {
+        let md = r#"```lykn
+(+ 1 2 3)
+```
+
+Output:
+
+```
+6
+```
+"#;
+        let blocks = extract_blocks(md);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].expected_js, None);
+        assert_eq!(blocks[0].expected_output.as_deref(), Some("6"));
+    }
+
+    #[test]
+    fn test_extract_blocks_text_output_block() {
+        let md = r#"```lykn
+(+ 1 2)
+```
+
+```text
+3
+```
+"#;
+        let blocks = extract_blocks(md);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].expected_js, None);
+        assert_eq!(blocks[0].expected_output.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn test_extract_blocks_js_block_preferred_over_plain() {
+        let md = r#"```lykn
+(bind x 1)
+```
+
+```js
+const x = 1;
+```
+"#;
+        let blocks = extract_blocks(md);
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].expected_js.is_some());
+        assert_eq!(blocks[0].expected_output, None);
+    }
+
+    #[test]
+    fn test_generate_test_file_execution_output() {
+        let blocks = vec![CodeBlock {
+            number: 1,
+            annotation: Annotation::Compile,
+            source: "(+ 1 2 3)".to_string(),
+            expected_js: None,
+            expected_output: Some("6".to_string()),
+        }];
+        let md = "```lykn\n(+ 1 2 3)\n```\n\n```\n6\n```";
+        let config = Path::new("/project/project.json");
+        let result = generate_test_file("test.md", &blocks, md, config);
+        assert!(result.contains("eval"));
+        assert!(result.contains("__logs"));
+        assert!(result.contains("`6`"));
     }
 }

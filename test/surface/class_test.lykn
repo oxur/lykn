@@ -1,0 +1,116 @@
+(import-macros "testing"
+  (test test-compiles is-equal ok is-thrown includes))
+(import "testing/helpers.js" (compile))
+
+;; Surface compilation tests — these go through the full surface expander,
+;; unlike the kernel-only tests in test/forms/class_test.lykn.
+
+;; --- Basic class structure ---
+
+(test "class surface: empty body"
+  (bind result (compile "(class Empty ())"))
+  (includes result "class Empty"))
+
+(test "class surface: constructor with param"
+  (bind result (compile "(class Dog () (constructor (name) (assign this:name name)))"))
+  (includes result "constructor(name)")
+  (includes result "this.name = name"))
+
+(test "class surface: constructor no params"
+  (bind result (compile "(class Counter () (constructor () (assign this:count 0)))"))
+  (includes result "constructor()")
+  (includes result "this.count = 0"))
+
+(test "class surface: method"
+  (bind result (compile "(class Greeter () (greet () (return 42)))"))
+  (includes result "greet()"))
+
+(test "class surface: constructor and method"
+  (bind result (compile "(class Dog ()
+    (constructor (name) (assign this:name name))
+    (greet () (return this:name)))"))
+  (includes result "constructor(name)")
+  (includes result "greet()"))
+
+;; --- Extends ---
+
+(test "class surface: extends"
+  (bind result (compile "(class Dog (Animal) (constructor (name) (super name)))"))
+  (includes result "extends Animal")
+  (includes result "super(name)"))
+
+;; --- Fields ---
+
+(test "class surface: field with value"
+  (bind result (compile "(class C () (field name \"default\"))"))
+  (includes result "name = \"default\""))
+
+(test "class surface: private field"
+  (bind result (compile "(class C () (field -count 0))"))
+  (includes result "#_count = 0"))
+
+;; --- Getters / setters ---
+
+(test "class surface: getter"
+  (bind result (compile "(class C () (get area () (return 42)))"))
+  (includes result "get area()"))
+
+(test "class surface: setter"
+  (bind result (compile "(class C () (set radius (r) (assign this:r r)))"))
+  (includes result "set radius(r)"))
+
+;; --- Static ---
+
+(test "class surface: static field"
+  (bind result (compile "(class C () (static (field count 0)))"))
+  (includes result "static")
+  (includes result "count = 0"))
+
+(test "class surface: static method"
+  (bind result (compile "(class C () (static (create () (return (new C)))))"))
+  (includes result "static")
+  (includes result "create()"))
+
+;; --- Async ---
+
+(test "class surface: async method"
+  (bind result (compile "(class C () (async (fetch-data () (return 1))))"))
+  (includes result "async")
+  (includes result "fetchData"))
+
+;; --- Private methods ---
+
+(test "class surface: private method"
+  (bind result (compile "(class C () (-helper () (return 42)))"))
+  (includes result "#_helper"))
+
+;; --- camelCase ---
+
+(test "class surface: camelCase method name"
+  (bind result (compile "(class C () (get-data () (return 1)))"))
+  (includes result "getData"))
+
+(test "class surface: camelCase in constructor body"
+  (bind result (compile "(class User () (constructor (first-name) (assign this:first-name first-name)))"))
+  (includes result "this.firstName = firstName"))
+
+;; --- Surface forms inside class bodies ---
+
+(test "class surface: bind inside method"
+  (bind result (compile "(class C () (compute () (bind x 42) (return x)))"))
+  (includes result "const x = 42"))
+
+(test "class surface: template literal in method"
+  (bind result (compile "(class Greeter ()
+    (constructor (name) (assign this:name name))
+    (greet () (return (template \"Hello, \" this:name \"!\"))))"))
+  (includes result "Hello, ${this.name}!"))
+
+;; --- Multiple constructor params ---
+
+(test "class surface: constructor with multiple params"
+  (bind result (compile "(class Point ()
+    (constructor (x y) (assign this:x x) (assign this:y y)))"))
+  (includes result "constructor(x, y)")
+  (includes result "this.x = x")
+  (includes result "this.y = y"))
