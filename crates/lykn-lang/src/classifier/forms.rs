@@ -127,6 +127,7 @@ fn classify_surface_form(
         "swap!" => classify_swap(args, span),
         "reset!" => classify_reset(args, span),
         "set!" => classify_set(args, span),
+        "set-symbol!" => classify_set_symbol(args, span),
         "->" => classify_threading(args, span, false, false),
         "->>" => classify_threading(args, span, true, false),
         "some->" => classify_threading(args, span, false, true),
@@ -286,6 +287,21 @@ fn classify_set(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
     Ok(SurfaceForm::Set {
         target: args[0].clone(),
         value: args[1].clone(),
+        span,
+    })
+}
+
+fn classify_set_symbol(args: &[SExpr], span: Span) -> Result<SurfaceForm, Diagnostic> {
+    if args.len() != 3 {
+        return Err(err(
+            "set-symbol! requires exactly 3 arguments: (set-symbol! obj key value)",
+            span,
+        ));
+    }
+    Ok(SurfaceForm::SetSymbol {
+        obj: args[0].clone(),
+        key: args[1].clone(),
+        value: args[2].clone(),
         span,
     })
 }
@@ -2178,6 +2194,73 @@ mod tests {
         let result = form("reset!", vec![atom("c"), num(1.0), num(2.0)]);
         assert!(result.is_err());
         assert!(result.unwrap_err().message.contains("exactly 2"));
+    }
+
+    // ---------------------------------------------------------------
+    // classify_set_symbol
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_classify_set_symbol_valid() {
+        let result =
+            form("set-symbol!", vec![atom("obj"), atom("key"), num(42.0)]).unwrap();
+        match result {
+            SurfaceForm::SetSymbol {
+                obj, key, value, ..
+            } => {
+                assert_eq!(obj.as_atom(), Some("obj"));
+                assert_eq!(key.as_atom(), Some("key"));
+                assert!(matches!(value, SExpr::Number { value: v, .. } if v == 42.0));
+            }
+            other => panic!("expected SetSymbol, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_set_symbol_with_expression_key() {
+        let result = form(
+            "set-symbol!",
+            vec![
+                atom("this"),
+                list(vec![atom("Symbol"), string("meta")]),
+                atom("value"),
+            ],
+        )
+        .unwrap();
+        match result {
+            SurfaceForm::SetSymbol { key, .. } => {
+                if let SExpr::List { values, .. } = &key {
+                    assert_eq!(values[0].as_atom(), Some("Symbol"));
+                } else {
+                    panic!("expected list key");
+                }
+            }
+            other => panic!("expected SetSymbol, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_set_symbol_too_few_args_error() {
+        let result = form("set-symbol!", vec![atom("obj"), atom("key")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("3 arguments"));
+    }
+
+    #[test]
+    fn test_classify_set_symbol_too_many_args_error() {
+        let result = form(
+            "set-symbol!",
+            vec![atom("obj"), atom("key"), num(1.0), num(2.0)],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("3 arguments"));
+    }
+
+    #[test]
+    fn test_classify_set_symbol_zero_args_error() {
+        let result = form("set-symbol!", vec![]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("3 arguments"));
     }
 
     // ---------------------------------------------------------------

@@ -273,6 +273,13 @@ impl Analyze for SurfaceForm {
                 track_references_in_expr(target, scope);
                 track_references_in_expr(value, scope);
             }
+            SurfaceForm::SetSymbol {
+                obj, key, value, ..
+            } => {
+                track_references_in_expr(obj, scope);
+                track_references_in_expr(key, scope);
+                track_references_in_expr(value, scope);
+            }
             SurfaceForm::ThreadFirst { initial, steps, .. }
             | SurfaceForm::ThreadLast { initial, steps, .. }
             | SurfaceForm::SomeThreadFirst { initial, steps, .. }

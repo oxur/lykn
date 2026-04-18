@@ -291,6 +291,13 @@ pub enum SurfaceForm {
         value: SExpr,
         span: Span,
     },
+    // TODO: deprecate when surface/kernel syntaxes are separated; remove the release after that.
+    SetSymbol {
+        obj: SExpr,
+        key: SExpr,
+        value: SExpr,
+        span: Span,
+    },
     ThreadFirst {
         initial: SExpr,
         steps: Vec<ThreadingStep>,

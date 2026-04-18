@@ -147,6 +147,20 @@ pub fn emit_form(
                 emit_expr(value, ctx, registry),
             ])]
         }
+        SurfaceForm::SetSymbol {
+            obj, key, value, ..
+        } => {
+            // (set-symbol! obj key value) → (= (get obj key) value)
+            vec![list(vec![
+                atom("="),
+                list(vec![
+                    atom("get"),
+                    emit_expr(obj, ctx, registry),
+                    emit_expr(key, ctx, registry),
+                ]),
+                emit_expr(value, ctx, registry),
+            ])]
+        }
         SurfaceForm::ThreadFirst { initial, steps, .. } => {
             vec![emit_thread_first(initial, steps, ctx, registry)]
         }
@@ -3991,6 +4005,77 @@ mod tests {
             }
         } else {
             panic!("expected IIFE");
+        }
+    }
+
+    // =======================================================================
+    // SetSymbol
+    // =======================================================================
+
+    #[test]
+    fn test_emit_set_symbol() {
+        let form = SurfaceForm::SetSymbol {
+            obj: atom("item"),
+            key: atom("META"),
+            value: num(42.0),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        // Should be (= (get item META) 42)
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values.len(), 3);
+            assert_eq!(values[0].as_atom(), Some("="));
+            if let SExpr::List {
+                values: get_form, ..
+            } = &values[1]
+            {
+                assert_eq!(get_form[0].as_atom(), Some("get"));
+                assert_eq!(get_form[1].as_atom(), Some("item"));
+                assert_eq!(get_form[2].as_atom(), Some("META"));
+            } else {
+                panic!("expected (get ...) form");
+            }
+            // value is a number
+            assert!(matches!(&values[2], SExpr::Number { value, .. } if *value == 42.0));
+        } else {
+            panic!("expected list");
+        }
+    }
+
+    #[test]
+    fn test_emit_set_symbol_with_expression_key() {
+        let form = SurfaceForm::SetSymbol {
+            obj: atom("this"),
+            key: list(vec![atom("Symbol"), str_lit("meta")]),
+            value: list(vec![atom("object"), list(vec![atom("version"), num(1.0)])]),
+            span: s(),
+        };
+        let mut c = ctx();
+        let result = emit_form(&form, &mut c, &reg());
+        assert_eq!(result.len(), 1);
+        if let SExpr::List { values, .. } = &result[0] {
+            assert_eq!(values[0].as_atom(), Some("="));
+            if let SExpr::List {
+                values: get_form, ..
+            } = &values[1]
+            {
+                assert_eq!(get_form[0].as_atom(), Some("get"));
+                assert_eq!(get_form[1].as_atom(), Some("this"));
+                if let SExpr::List {
+                    values: sym_form, ..
+                } = &get_form[2]
+                {
+                    assert_eq!(sym_form[0].as_atom(), Some("Symbol"));
+                } else {
+                    panic!("expected Symbol form");
+                }
+            } else {
+                panic!("expected (get ...) form");
+            }
+        } else {
+            panic!("expected list");
         }
     }
 
