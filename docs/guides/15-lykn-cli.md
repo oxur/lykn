@@ -67,7 +67,7 @@ or Node.js required for compilation.
 
 ---
 
-## ID-02: `lykn compile` — Compile `.lykn` to JavaScript
+## ID-02: `lykn compile` — Compile `.lykn`/`.lyk` to JavaScript
 
 **Strength**: MUST
 
@@ -108,7 +108,7 @@ done
 
 ---
 
-## ID-03: `lykn fmt` — Format `.lykn` Source
+## ID-03: `lykn fmt` — Format `.lykn`/`.lyk` Source
 
 **Strength**: SHOULD
 
@@ -154,7 +154,7 @@ Use it in CI to catch issues before compilation.
 
 ---
 
-## ID-04a: `lykn run` — Run `.lykn` or `.js` Files
+## ID-04a: `lykn run` — Run `.lykn`/`.lyk` or `.js` Files
 
 **Strength**: SHOULD
 
@@ -216,27 +216,63 @@ Wraps `deno lint --config project.json`.
 
 ---
 
-## ID-04d: `lykn publish` — Publish Packages
+## ID-04d: `lykn build --dist` — Stage Packages for Publishing
 
 **Strength**: SHOULD
 
-**Summary**: Publish to JSR, npm, or both.
+**Summary**: Stage all workspace members into `dist/<pkg>/` with
+generated `deno.json` and `package.json`, ready for both JSR and npm.
+
+```sh
+lykn build --dist
+```
+
+Each package is staged according to its kind (set via `lykn.kind` in
+the package's `deno.json`):
+
+| Kind | `lykn.kind` value | What gets staged |
+|------|-------------------|------------------|
+| **Runtime** | `"runtime"` | `.js` files with workspace imports rewritten to `@lykn/` scope |
+| **Macro module** | `"macro-module"` | All files (`.lykn`/`.lyk` + `.js`), plus a generated `mod.js` stub |
+| **Tooling** | `"tooling"` | Same as runtime |
+
+Example package `deno.json` with lykn metadata:
+
+```json
+{
+    "name": "@lykn/testing",
+    "version": "0.5.0",
+    "exports": "./mod.lykn",
+    "lykn": {
+        "kind": "macro-module",
+        "macroEntry": "mod.lykn"
+    }
+}
+```
+
+---
+
+## ID-04e: `lykn publish` — Publish Packages
+
+**Strength**: SHOULD
+
+**Summary**: Publish to JSR, npm, or both. Automatically runs
+`lykn build --dist` first unless `--no-build` is passed.
 
 ```sh
 # Publish to JSR (default)
 lykn publish --jsr
 
-# Build and publish to npm
+# Publish to npm
 lykn publish --npm
 
-# Dry run (check without publishing)
-lykn publish --npm --dry-run
+# Dry run (verify without publishing)
 lykn publish --jsr --dry-run
-```
+lykn publish --npm --dry-run
 
-`--npm` builds the npm package in `dist/npm/` via `build_npm.ts`,
-then publishes. No `package.json` tracked in git — generated at
-publish time.
+# Skip the build step (assume dist/ is already staged)
+lykn publish --jsr --no-build
+```
 
 ---
 

@@ -125,7 +125,8 @@ my-project/
 
 **Conventions**:
 - `project.json` at workspace root — import maps, tasks, workspace members
-- `.lykn` source in `packages/<name>/` (workspace member)
+- `.lykn` source (surface syntax) and `.lyk` source (kernel syntax)
+  in `packages/<name>/` (workspace member)
 - Each package has its own `deno.json` (name, version, exports)
 - Compiled `.js` output in `dist/`
 - Tests in `.js` (they import compiled output)

@@ -475,7 +475,7 @@ constructors and `class` names.
 | Bindings, functions | lisp-case | `get-user-name`, `item-count` |
 | Type constructors | PascalCase | `HttpClient`, `Some`, `None` |
 | Module-level constants | UPPER-lisp-case | `MAX-RETRIES`, `API-BASE-URL` |
-| Module filenames | kebab-case | `date-utils.lykn`, `http-client.lykn` |
+| Module filenames | kebab-case | `date-utils.lykn` (surface), `helpers.lyk` (kernel) |
 | Predicates | `?` suffix | `even?`, `valid?`, `has-items?` |
 | Mutation operations | `!` suffix | `swap!`, `reset!` |
 

@@ -87,7 +87,7 @@ Immutable binding. Compiles to `const`.
 const x = 42;
 ```
 
-Optional type annotation (documentation only, not checked at runtime):
+Type annotation with runtime enforcement (DD-24):
 
 ```lykn
 (bind :number age 42)
@@ -95,6 +95,21 @@ Optional type annotation (documentation only, not checked at runtime):
 ```js
 const age = 42;
 ```
+
+For literal values, the type is verified at compile time (no runtime
+cost). Type-incompatible literals are compile errors. For non-literal
+initializers, a runtime type check is emitted:
+
+```lykn
+(bind :number result (compute-something))
+```
+```js
+const result = computeSomething();
+if (typeof result !== "number" || Number.isNaN(result))
+  throw new TypeError("bind: binding 'result' expected number, ...");
+```
+
+Runtime checks can be stripped with `--strip-assertions`.
 
 `bind` always produces `const`. For mutable state, use `cell`.
 
@@ -1315,13 +1330,43 @@ if (x > 0) {
 
 ### import-macros
 
-Import macros from another file:
+Import macros from a local file or published package. Only the listed
+macros are imported.
+
+**Local file** (relative path, must end with `.lykn` or `.lyk`):
 
 ```lykn
 (import-macros "./lib.lykn" (when unless))
 ```
 
-Only the listed macros are imported. Relative paths only.
+**Published package** via `jsr:` or `npm:` specifier (DD-34):
+
+```lykn
+(import-macros "jsr:@lykn/testing" (test is-equal ok))
+```
+
+**Bare name** resolved via the project import map in `project.json`:
+
+```lykn
+(import-macros "my-macros" (my-form))
+```
+
+Requires a matching entry in `project.json`:
+```json
+{ "imports": { "my-macros": "./packages/my-macros/" } }
+```
+
+Resolution uses a three-tier scheme:
+1. **Scheme-prefixed** (`jsr:`, `npm:`, `file:`, `https:`) — delegated
+   to Deno's module resolver
+2. **Bare names** — looked up in the project import map
+3. **Filesystem paths** (`./`, `../`) — relative to the importing file
+
+The macro entry point in a resolved package is found via:
+1. `deno.json` field `lykn.macroEntry`
+2. Fallback files: `mod.lykn`, `mod.lyk`, `macros.lykn`, `macros.lyk`,
+   `index.lykn`, `index.lyk`
+3. `deno.json` field `exports` if it points to a `.lykn`/`.lyk` file
 
 ### Quasiquote (`` ` ``, `,`, `,@`)
 
