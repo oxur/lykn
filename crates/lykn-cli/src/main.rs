@@ -242,24 +242,27 @@ fn cmd_compile(
 // ---------------------------------------------------------------------------
 
 /// Find the project config path by walking up from the current directory.
-fn find_config() -> String {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut dir = cwd.as_path();
+fn find_config_in(start: &Path, filenames: &[&str]) -> Option<PathBuf> {
+    let mut dir = start;
     loop {
-        if dir.join("project.json").exists() {
-            return dir.join("project.json").to_string_lossy().into_owned();
-        }
-        if dir.join("deno.json").exists() {
-            return dir.join("deno.json").to_string_lossy().into_owned();
+        for name in filenames {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
         }
         match dir.parent() {
             Some(parent) => dir = parent,
-            None => {
-                // Fallback — use project.json in current dir even if it doesn't exist
-                return "project.json".to_string();
-            }
+            None => return None,
         }
     }
+}
+
+fn find_config() -> String {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    find_config_in(&cwd, &["project.json", "deno.json"])
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "project.json".to_string())
 }
 
 /// Execute a deno command, exiting with its status code.
@@ -455,25 +458,28 @@ fn collect_lykn_test_files(dir: &Path, results: &mut Vec<PathBuf>) {
 /// Compile a list of `.lykn` test files to JavaScript.
 ///
 /// Returns the list of compiled `.js` file paths.
+fn compute_compiled_path(lykn_path: &Path, out_dir: Option<&Path>) -> PathBuf {
+    if let Some(od) = out_dir {
+        let relative = lykn_path.strip_prefix(".").unwrap_or(lykn_path);
+        od.join(relative).with_extension("js")
+    } else {
+        lykn_path.with_extension("js")
+    }
+}
+
 fn compile_lykn_test_files(files: &[PathBuf], out_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut compiled = Vec::new();
 
     for lykn_path in files {
-        let js_path = if let Some(od) = out_dir {
-            // Mirror directory structure under out_dir
-            let relative = lykn_path.strip_prefix(".").unwrap_or(lykn_path);
-            let dest = od.join(relative).with_extension("js");
-            if let Some(parent) = dest.parent()
-                && let Err(e) = fs::create_dir_all(parent)
-            {
-                eprintln!("error creating directory {}: {e}", parent.display());
-                process::exit(1);
-            }
-            dest
-        } else {
-            // Write next to the source file
-            lykn_path.with_extension("js")
-        };
+        let js_path = compute_compiled_path(lykn_path, out_dir);
+        if let Some(parent) = js_path.parent()
+            && let Some(od) = out_dir
+            && js_path.starts_with(od)
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            eprintln!("error creating directory {}: {e}", parent.display());
+            process::exit(1);
+        }
 
         // Use the JS compiler via Deno (supports surface-macros, testing DSL, etc.)
         let config = find_config();
@@ -535,10 +541,12 @@ fn cmd_lint(paths: &[String]) {
     exec_deno(&deno_args);
 }
 
+fn resolve_publish_targets(jsr: bool, npm: bool) -> (bool, bool) {
+    (jsr || !npm, npm)
+}
+
 fn cmd_publish(jsr: bool, npm: bool, dry_run: bool, no_build: bool) {
-    // Default to JSR if no flags specified
-    let do_jsr = jsr || !npm;
-    let do_npm = npm;
+    let (do_jsr, do_npm) = resolve_publish_targets(jsr, npm);
 
     // Build dist/ unless --no-build was passed
     if !no_build && (do_jsr || do_npm) {
@@ -624,20 +632,25 @@ fn cmd_publish(jsr: bool, npm: bool, dry_run: bool, no_build: bool) {
 // lykn new — project creation
 // ---------------------------------------------------------------------------
 
-fn validate_project_name(name: &str) {
+fn check_project_name(name: &str) -> Result<(), &'static str> {
     if name.is_empty() {
-        eprintln!("error: project name cannot be empty");
-        process::exit(1);
+        return Err("project name cannot be empty");
     }
     if !name
         .chars()
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
-        eprintln!("error: project name must be kebab-case (lowercase letters, digits, hyphens)");
-        process::exit(1);
+        return Err("project name must be kebab-case (lowercase letters, digits, hyphens)");
     }
     if name.starts_with('-') || name.starts_with(|c: char| c.is_ascii_digit()) {
-        eprintln!("error: project name must start with a letter");
+        return Err("project name must start with a letter");
+    }
+    Ok(())
+}
+
+fn validate_project_name(name: &str) {
+    if let Err(msg) = check_project_name(name) {
+        eprintln!("error: {msg}");
         process::exit(1);
     }
 }
@@ -861,5 +874,174 @@ esbuild.stop();
     if !status.success() {
         eprintln!("Browser build failed");
         process::exit(status.code().unwrap_or(1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- check_project_name --
+
+    #[test]
+    fn valid_project_names() {
+        assert!(check_project_name("my-app").is_ok());
+        assert!(check_project_name("hello").is_ok());
+        assert!(check_project_name("app2").is_ok());
+        assert!(check_project_name("a").is_ok());
+    }
+
+    #[test]
+    fn empty_name_rejected() {
+        assert!(check_project_name("").is_err());
+    }
+
+    #[test]
+    fn uppercase_rejected() {
+        assert!(check_project_name("MyApp").is_err());
+    }
+
+    #[test]
+    fn leading_hyphen_rejected() {
+        assert!(check_project_name("-app").is_err());
+    }
+
+    #[test]
+    fn leading_digit_rejected() {
+        assert!(check_project_name("3app").is_err());
+    }
+
+    #[test]
+    fn special_chars_rejected() {
+        assert!(check_project_name("my_app").is_err());
+        assert!(check_project_name("my.app").is_err());
+        assert!(check_project_name("my app").is_err());
+    }
+
+    // -- resolve_publish_targets --
+
+    #[test]
+    fn publish_defaults_to_jsr() {
+        assert_eq!(resolve_publish_targets(false, false), (true, false));
+    }
+
+    #[test]
+    fn publish_jsr_only() {
+        assert_eq!(resolve_publish_targets(true, false), (true, false));
+    }
+
+    #[test]
+    fn publish_npm_only() {
+        assert_eq!(resolve_publish_targets(false, true), (false, true));
+    }
+
+    #[test]
+    fn publish_both() {
+        assert_eq!(resolve_publish_targets(true, true), (true, true));
+    }
+
+    // -- compute_compiled_path --
+
+    #[test]
+    fn compiled_path_no_out_dir() {
+        let result = compute_compiled_path(Path::new("test/foo_test.lykn"), None);
+        assert_eq!(result, PathBuf::from("test/foo_test.js"));
+    }
+
+    #[test]
+    fn compiled_path_with_out_dir() {
+        let result =
+            compute_compiled_path(Path::new("test/foo_test.lykn"), Some(Path::new("/tmp/out")));
+        assert_eq!(result, PathBuf::from("/tmp/out/test/foo_test.js"));
+    }
+
+    #[test]
+    fn compiled_path_strips_dot_prefix() {
+        let result =
+            compute_compiled_path(Path::new("./test/bar.lykn"), Some(Path::new("/tmp/out")));
+        assert_eq!(result, PathBuf::from("/tmp/out/test/bar.js"));
+    }
+
+    #[test]
+    fn compiled_path_lyk_extension() {
+        let result = compute_compiled_path(Path::new("mod.lyk"), None);
+        assert_eq!(result, PathBuf::from("mod.js"));
+    }
+
+    // -- find_config_in --
+
+    #[test]
+    fn find_config_in_returns_none_for_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(find_config_in(tmp.path(), &["project.json", "deno.json"]).is_none());
+    }
+
+    #[test]
+    fn find_config_in_finds_project_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("project.json"), "{}").unwrap();
+        let result = find_config_in(tmp.path(), &["project.json", "deno.json"]);
+        assert_eq!(result, Some(tmp.path().join("project.json")));
+    }
+
+    #[test]
+    fn find_config_in_prefers_first_filename() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("project.json"), "{}").unwrap();
+        std::fs::write(tmp.path().join("deno.json"), "{}").unwrap();
+        let result = find_config_in(tmp.path(), &["project.json", "deno.json"]);
+        assert_eq!(result, Some(tmp.path().join("project.json")));
+    }
+
+    #[test]
+    fn find_config_in_walks_parents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let child = tmp.path().join("packages/app");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(tmp.path().join("project.json"), "{}").unwrap();
+        let result = find_config_in(&child, &["project.json"]);
+        assert_eq!(result, Some(tmp.path().join("project.json")));
+    }
+
+    // -- is_lykn_test_file --
+
+    #[test]
+    fn test_file_patterns() {
+        assert!(is_lykn_test_file(Path::new("foo_test.lykn")));
+        assert!(is_lykn_test_file(Path::new("foo.test.lykn")));
+        assert!(is_lykn_test_file(Path::new("foo_test.lyk")));
+        assert!(is_lykn_test_file(Path::new("foo.test.lyk")));
+        assert!(!is_lykn_test_file(Path::new("foo.lykn")));
+        assert!(!is_lykn_test_file(Path::new("foo.js")));
+    }
+
+    #[test]
+    fn test_file_in_tests_dir() {
+        assert!(is_lykn_test_file(Path::new("__tests__/anything.lykn")));
+        assert!(is_lykn_test_file(Path::new("__tests__/anything.lyk")));
+        assert!(!is_lykn_test_file(Path::new("__tests__/anything.js")));
+    }
+
+    // -- template functions --
+
+    #[test]
+    fn project_json_template_includes_name() {
+        let tmpl = project_json_template("my-app");
+        assert!(tmpl.contains("./packages/my-app"));
+        assert!(tmpl.contains("\"my-app/\""));
+    }
+
+    #[test]
+    fn deno_json_template_includes_name() {
+        let tmpl = deno_json_template("my-app");
+        assert!(tmpl.contains("@my-app/my-app"));
+        assert!(tmpl.contains("0.1.0"));
+    }
+
+    #[test]
+    fn mod_lykn_template_includes_name() {
+        let tmpl = mod_lykn_template("my-app");
+        assert!(tmpl.contains("my-app"));
+        assert!(tmpl.contains("Hello from"));
     }
 }

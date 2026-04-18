@@ -430,3 +430,205 @@ pub enum SurfaceForm {
         span: Span,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s() -> Span {
+        Span::default()
+    }
+
+    fn tp(name: &str, ty: &str) -> TypedParam {
+        TypedParam {
+            type_ann: TypeAnnotation {
+                name: ty.to_string(),
+                span: s(),
+            },
+            name: name.to_string(),
+            name_span: s(),
+            default_value: None,
+            is_rest: false,
+        }
+    }
+
+    // -- typed_params --
+
+    #[test]
+    fn typed_params_simple() {
+        let shape = ParamShape::Simple(tp("x", "number"));
+        let params = shape.typed_params();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].name, "x");
+    }
+
+    #[test]
+    fn typed_params_destructured_object() {
+        let shape = ParamShape::DestructuredObject {
+            fields: vec![
+                DestructuredField::Simple(tp("host", "string")),
+                DestructuredField::Simple(tp("port", "number")),
+            ],
+            span: s(),
+        };
+        let params = shape.typed_params();
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name, "host");
+        assert_eq!(params[1].name, "port");
+    }
+
+    #[test]
+    fn typed_params_nested_object() {
+        let inner = ParamShape::DestructuredObject {
+            fields: vec![DestructuredField::Simple(tp("street", "string"))],
+            span: s(),
+        };
+        let shape = ParamShape::DestructuredObject {
+            fields: vec![
+                DestructuredField::Simple(tp("name", "string")),
+                DestructuredField::Nested {
+                    alias_name: "addr".to_string(),
+                    alias_name_span: s(),
+                    type_ann: TypeAnnotation {
+                        name: "object".to_string(),
+                        span: s(),
+                    },
+                    pattern: Box::new(inner),
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let params = shape.typed_params();
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name, "name");
+        assert_eq!(params[1].name, "street");
+    }
+
+    #[test]
+    fn typed_params_destructured_array() {
+        let shape = ParamShape::DestructuredArray {
+            elements: vec![
+                ArrayParamElement::Typed(tp("first", "string")),
+                ArrayParamElement::Skip(s()),
+                ArrayParamElement::Rest(tp("tail", "any")),
+            ],
+            span: s(),
+        };
+        let params = shape.typed_params();
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name, "first");
+        assert_eq!(params[1].name, "tail");
+        assert!(params[1].is_rest == false);
+    }
+
+    // -- bound_names --
+
+    #[test]
+    fn bound_names_simple() {
+        let shape = ParamShape::Simple(tp("x", "number"));
+        assert_eq!(shape.bound_names(), vec!["x"]);
+    }
+
+    #[test]
+    fn bound_names_object_with_nested() {
+        let inner = ParamShape::DestructuredObject {
+            fields: vec![DestructuredField::Simple(tp("street", "string"))],
+            span: s(),
+        };
+        let shape = ParamShape::DestructuredObject {
+            fields: vec![
+                DestructuredField::Simple(tp("name", "string")),
+                DestructuredField::Nested {
+                    alias_name: "addr".to_string(),
+                    alias_name_span: s(),
+                    type_ann: TypeAnnotation {
+                        name: "object".to_string(),
+                        span: s(),
+                    },
+                    pattern: Box::new(inner),
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let names = shape.bound_names();
+        assert_eq!(names, vec!["name", "addr", "street"]);
+    }
+
+    #[test]
+    fn bound_names_array_with_skip() {
+        let shape = ParamShape::DestructuredArray {
+            elements: vec![
+                ArrayParamElement::Typed(tp("a", "number")),
+                ArrayParamElement::Skip(s()),
+                ArrayParamElement::Typed(tp("c", "number")),
+            ],
+            span: s(),
+        };
+        let names = shape.bound_names();
+        assert_eq!(names, vec!["a", "c"]);
+    }
+
+    // -- dispatch_type --
+
+    #[test]
+    fn dispatch_type_simple() {
+        assert_eq!(
+            ParamShape::Simple(tp("x", "number")).dispatch_type(),
+            "number"
+        );
+        assert_eq!(
+            ParamShape::Simple(tp("s", "string")).dispatch_type(),
+            "string"
+        );
+    }
+
+    #[test]
+    fn dispatch_type_destructured() {
+        let obj = ParamShape::DestructuredObject {
+            fields: vec![],
+            span: s(),
+        };
+        assert_eq!(obj.dispatch_type(), "object");
+
+        let arr = ParamShape::DestructuredArray {
+            elements: vec![],
+            span: s(),
+        };
+        assert_eq!(arr.dispatch_type(), "array");
+    }
+
+    // -- span --
+
+    #[test]
+    fn span_returns_correct_span() {
+        let custom_span = Span {
+            start: crate::reader::source_loc::SourceLoc { line: 5, column: 3 },
+            end: crate::reader::source_loc::SourceLoc {
+                line: 5,
+                column: 13,
+            },
+        };
+        let shape = ParamShape::Simple(TypedParam {
+            type_ann: TypeAnnotation {
+                name: "number".to_string(),
+                span: s(),
+            },
+            name: "x".to_string(),
+            name_span: custom_span,
+            default_value: None,
+            is_rest: false,
+        });
+        assert_eq!(shape.span(), custom_span);
+    }
+
+    // -- From<TypedParam> --
+
+    #[test]
+    fn from_typed_param() {
+        let param = tp("x", "number");
+        let shape: ParamShape = param.clone().into();
+        assert_eq!(shape, ParamShape::Simple(param));
+    }
+}

@@ -1008,6 +1008,187 @@ mod tests {
         assert!(result.has_errors, "null should fail :number annotation");
     }
 
+    // --- Scope tracking for additional form variants ---
+
+    fn atom(name: &str) -> SExpr {
+        SExpr::Atom {
+            value: name.into(),
+            span: span(),
+        }
+    }
+
+    fn num(n: f64) -> SExpr {
+        SExpr::Number {
+            value: n,
+            span: span(),
+        }
+    }
+
+    fn simple_tp(name: &str) -> ParamShape {
+        ParamShape::Simple(TypedParam {
+            type_ann: TypeAnnotation {
+                name: "number".into(),
+                span: span(),
+            },
+            name: name.into(),
+            name_span: span(),
+            default_value: None,
+            is_rest: false,
+        })
+    }
+
+    #[test]
+    fn test_fn_params_tracked_in_scope() {
+        let forms = vec![
+            SurfaceForm::Bind {
+                name: atom("result"),
+                type_ann: None,
+                value: SExpr::List {
+                    values: vec![],
+                    span: span(),
+                },
+                span: span(),
+            },
+            SurfaceForm::Fn {
+                params: vec![simple_tp("x")],
+                body: vec![atom("x")],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'x'")),
+            "fn param 'x' is used in body"
+        );
+    }
+
+    #[test]
+    fn test_cell_express_swap_reset_track_references() {
+        let forms = vec![
+            SurfaceForm::Bind {
+                name: atom("c"),
+                type_ann: None,
+                value: num(0.0),
+                span: span(),
+            },
+            SurfaceForm::Cell {
+                value: atom("c"),
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'c'")),
+            "'c' is referenced in cell"
+        );
+    }
+
+    #[test]
+    fn test_obj_tracks_value_references() {
+        let forms = vec![
+            SurfaceForm::Bind {
+                name: atom("v"),
+                type_ann: None,
+                value: num(1.0),
+                span: span(),
+            },
+            SurfaceForm::Obj {
+                pairs: vec![("key".into(), atom("v"))],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'v'")),
+            "'v' is referenced in obj"
+        );
+    }
+
+    #[test]
+    fn test_eq_tracks_references() {
+        let forms = vec![
+            SurfaceForm::Bind {
+                name: atom("a"),
+                type_ann: None,
+                value: num(1.0),
+                span: span(),
+            },
+            SurfaceForm::Bind {
+                name: atom("b"),
+                type_ann: None,
+                value: num(2.0),
+                span: span(),
+            },
+            SurfaceForm::Eq {
+                args: vec![atom("a"), atom("b")],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        let unused: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.contains("unused"))
+            .collect();
+        assert!(unused.is_empty(), "a and b are used in eq: {unused:?}");
+    }
+
+    #[test]
+    fn test_threading_tracks_references() {
+        let forms = vec![
+            SurfaceForm::Bind {
+                name: atom("x"),
+                type_ann: None,
+                value: num(5.0),
+                span: span(),
+            },
+            SurfaceForm::ThreadFirst {
+                initial: atom("x"),
+                steps: vec![ThreadingStep::Call(vec![atom("+"), num(3.0)])],
+                span: span(),
+            },
+        ];
+        let result = analyze(&forms);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'x'")),
+            "'x' is referenced in thread-first"
+        );
+    }
+
+    #[test]
+    fn test_if_let_introduces_pattern_bindings() {
+        let forms = vec![SurfaceForm::IfLet {
+            pattern: Pattern::Binding {
+                name: "val".into(),
+                span: span(),
+            },
+            expr: atom("something"),
+            then_body: atom("val"),
+            else_body: None,
+            span: span(),
+        }];
+        let result = analyze(&forms);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unused binding 'val'")),
+            "'val' is used in then_body"
+        );
+    }
+
     #[test]
     fn test_bind_bool_matches_boolean_annotation() {
         let forms = vec![SurfaceForm::Bind {

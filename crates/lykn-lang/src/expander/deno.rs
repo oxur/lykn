@@ -33,39 +33,48 @@ impl std::fmt::Debug for DenoSubprocess {
     }
 }
 
+fn build_evaluator_script() -> String {
+    format!("{}\n{}", env::MACRO_ENV_JS, env::DENO_EVALUATOR_JS)
+}
+
+fn build_deno_command(script: &str, include_config: bool) -> Command {
+    let mut cmd = Command::new("deno");
+    cmd.arg("eval");
+    if include_config {
+        cmd.args(["--config", "project.json"]);
+    }
+    cmd.arg("--ext=js")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    cmd
+}
+
+fn map_spawn_error(e: std::io::Error) -> LyknError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        LyknError::Read {
+            message: "user-defined macros require Deno \u{2014} install from \
+                      https://deno.land"
+                .to_string(),
+            location: SourceLoc::default(),
+        }
+    } else {
+        LyknError::Io(e)
+    }
+}
+
 impl DenoSubprocess {
     /// Spawn a new Deno evaluator subprocess.
     ///
     /// The subprocess runs `deno eval` with the macro API and evaluator script
     /// injected. Returns an error if Deno is not installed or cannot be started.
     pub fn spawn() -> Result<Self, LyknError> {
-        let script = format!("{}\n{}", env::MACRO_ENV_JS, env::DENO_EVALUATOR_JS);
-
-        let mut cmd = Command::new("deno");
-        cmd.arg("eval");
-        // Add --config if project.json exists (may not when running from crate tests)
-        if std::path::Path::new("project.json").exists() {
-            cmd.args(["--config", "project.json"]);
-        }
-        let mut child = cmd
-            .arg("--ext=js")
-            .arg(&script)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+        let script = build_evaluator_script();
+        let has_config = std::path::Path::new("project.json").exists();
+        let mut child = build_deno_command(&script, has_config)
             .spawn()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    LyknError::Read {
-                        message: "user-defined macros require Deno \u{2014} install from \
-                                  https://deno.land"
-                            .to_string(),
-                        location: SourceLoc::default(),
-                    }
-                } else {
-                    LyknError::Io(e)
-                }
-            })?;
+            .map_err(map_spawn_error)?;
 
         let stdin = BufWriter::new(child.stdin.take().expect("stdin was configured as piped"));
         let stdout = BufReader::new(child.stdout.take().expect("stdout was configured as piped"));
@@ -381,6 +390,61 @@ mod tests {
         assert!(
             msg.contains("non-string result"),
             "object should be rejected as non-string, got: {msg}"
+        );
+    }
+
+    // --- Extracted function tests ---
+
+    #[test]
+    fn test_build_evaluator_script_contains_both_parts() {
+        let script = build_evaluator_script();
+        assert!(
+            script.contains("$gensym"),
+            "script should contain macro env ($gensym helper)"
+        );
+        assert!(
+            script.contains("readLine"),
+            "script should contain evaluator loop"
+        );
+    }
+
+    #[test]
+    fn test_build_deno_command_without_config() {
+        let cmd = build_deno_command("console.log(1)", false);
+        let prog = cmd.get_program();
+        assert_eq!(prog, "deno");
+        let args: Vec<_> = cmd.get_args().collect();
+        assert!(args.contains(&std::ffi::OsStr::new("eval")));
+        assert!(!args.contains(&std::ffi::OsStr::new("--config")));
+    }
+
+    #[test]
+    fn test_build_deno_command_with_config() {
+        let cmd = build_deno_command("console.log(1)", true);
+        let args: Vec<_> = cmd.get_args().collect();
+        assert!(args.contains(&std::ffi::OsStr::new("--config")));
+        assert!(args.contains(&std::ffi::OsStr::new("project.json")));
+    }
+
+    #[test]
+    fn test_map_spawn_error_not_found() {
+        let e = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+        let err = map_spawn_error(e);
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Deno"),
+            "NotFound should mention Deno, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_map_spawn_error_other() {
+        let e = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let err = map_spawn_error(e);
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("denied"),
+            "non-NotFound should preserve original error, got: {msg}"
         );
     }
 }
