@@ -167,7 +167,13 @@ fn cmd_fmt(files: &[PathBuf], write: bool) {
             }
         };
 
-        let exprs = lykn_cli::reader::read(&source);
+        let exprs = match lykn_cli::reader::read(&source) {
+            Ok(exprs) => exprs,
+            Err(e) => {
+                eprintln!("{}: {e}", path.display());
+                process::exit(1);
+            }
+        };
         let formatted = lykn_cli::formatter::format_exprs(&exprs, 0);
 
         if write {
@@ -197,18 +203,25 @@ fn cmd_check(files: &[PathBuf]) {
             }
         };
 
-        let exprs = lykn_cli::reader::read(&source);
-        if exprs.is_empty() && !source.trim().is_empty() {
-            eprintln!(
-                "{}: warning: source is non-empty but parsed to zero expressions",
-                path.display()
-            );
-        } else {
-            eprintln!(
-                "{}: ok ({} top-level expressions)",
-                path.display(),
-                exprs.len()
-            );
+        match lykn_cli::reader::read(&source) {
+            Ok(exprs) => {
+                if exprs.is_empty() && !source.trim().is_empty() {
+                    eprintln!(
+                        "{}: warning: source is non-empty but parsed to zero expressions",
+                        path.display()
+                    );
+                } else {
+                    eprintln!(
+                        "{}: ok ({} top-level expressions)",
+                        path.display(),
+                        exprs.len()
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("{}: error: {e}", path.display());
+                process::exit(1);
+            }
         }
     }
 }
