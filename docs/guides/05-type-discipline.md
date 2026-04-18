@@ -36,21 +36,6 @@ keyword. Use `:any` as the explicit opt-out.
 (bind double (fn (:number x) (* x 2)))
 ```
 
-Compiles to:
-
-```js
-function add(a, b) {
-  if (typeof a !== "number" || Number.isNaN(a))
-    throw new TypeError("add: arg 'a' expected number, got " + typeof a);
-  if (typeof b !== "number" || Number.isNaN(b))
-    throw new TypeError("add: arg 'b' expected number, got " + typeof b);
-  const result__gensym0 = a + b;
-  if (typeof result__gensym0 !== "number" || Number.isNaN(result__gensym0))
-    throw new TypeError("add: return value expected number, got " + typeof result__gensym0);
-  return result__gensym0;
-}
-```
-
 **Supported type annotations**:
 
 | Annotation | Runtime check |
@@ -129,20 +114,6 @@ This is lykn's native algebraic data type — no JSDoc `@typedef`, no
 (Circle "no")  ;; TypeError: Circle: field 'radius' expected number
 ```
 
-Compiles to:
-
-```js
-{
-  function Circle(radius) {
-    if (typeof radius !== "number" || Number.isNaN(radius))
-      throw new TypeError("Circle: field 'radius' expected number, got " + typeof radius);
-    return {tag: "Circle", radius: radius};
-  }
-  function Rect(width, height) { /* type checks ... */ }
-  const Triangle = /* ... */;
-}
-```
-
 **Rationale**: `type` replaces the JS pattern of discriminated unions
 with `kind` properties and JSDoc `@typedef`. The constructor validates
 fields, the `tag` property enables `match` dispatch, and the compiler
@@ -172,22 +143,27 @@ dispatch — the compiler throws if no pattern matches.
     ((Triangle b h) (/ (* b h) 2))))
 ```
 
-Compiles to:
+```lykn
+(type Shape
+  (Circle :number radius)
+  (Rect :number width :number height)
+  (Triangle :number base :number height))
 
-```js
-function area(shape) {
-  const result__gensym1 = (() => {
-    const target__gensym0 = shape;
-    if (target__gensym0.tag === "Circle") {
-      const r = target__gensym0.radius;
-      return Math.PI * (r * r);
-    }
-    if (target__gensym0.tag === "Rect") { /* ... */ }
-    if (target__gensym0.tag === "Triangle") { /* ... */ }
-    throw new Error("match: no matching pattern");
-  })();
-  return result__gensym1;
-}
+(func area :args (:any shape) :returns :number :body
+  (match shape
+    ((Circle r) (* Math:PI (* r r)))
+    ((Rect w h) (* w h))
+    ((Triangle b h) (/ (* b h) 2))))
+
+(console:log (area (Circle 5)))
+(console:log (area (Rect 3 4)))
+(console:log (area (Triangle 6 10)))
+```
+
+```
+78.53981633974483
+12
+30
 ```
 
 **Rationale**: `match` replaces JS `switch` on discriminant properties.
@@ -214,21 +190,6 @@ Contracts check domain constraints (positive, non-empty, in range).
   :pre (and (> host:length 0) (>= port 0) (<= port 65535))
   :post (not (= ~ null))
   :body (create-connection host port))
-```
-
-Compiles to:
-
-```js
-function connect(host, port) {
-  if (typeof host !== "string") throw new TypeError(/* ... */);
-  if (typeof port !== "number" || Number.isNaN(port)) throw new TypeError(/* ... */);
-  if (!(host.length > 0 && port >= 0 && port <= 65535))
-    throw new Error("connect: pre-condition failed: ... — caller blame");
-  const result__gensym0 = createConnection(host, port);
-  if (!(result__gensym0 !== null))
-    throw new Error("connect: post-condition failed: ... — callee blame");
-  return result__gensym0;
-}
 ```
 
 **Contract types**:
@@ -373,6 +334,20 @@ operand types. This is a JS fact that lykn inherits.
 ;; Good — precise NaN detection
 (Number:isNaN NaN)        ;; true
 (Number:isNaN "abc")      ;; false — no coercion
+```
+
+```lykn
+(console:log (= NaN NaN))
+(console:log (Number:isNaN NaN))
+(console:log (Number:isNaN "abc"))
+(console:log (Number:isNaN 42))
+```
+
+```
+false
+true
+false
+false
 ```
 
 **Note**: lykn's `:number` type annotation rejects NaN at function
@@ -766,14 +741,6 @@ lykn compile main.lykn --strip-assertions -o main.js
   :returns :number
   :pre (and (>= a 0) (>= b 0))
   :body (+ a b))
-```
-
-With `--strip-assertions`:
-
-```js
-function add(a, b) {
-  return a + b;
-}
 ```
 
 **Rationale**: Type checks and contracts are valuable during
