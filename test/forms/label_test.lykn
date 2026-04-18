@@ -1,0 +1,14 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "label: basic"
+  (bind result (compile "(label my-loop (while true (break my-loop)))"))
+  (includes result "myLoop:")
+  (includes result "break myLoop"))
+
+(test "label: wrong arity throws"
+  (is-thrown (compile "(label foo)") Error))

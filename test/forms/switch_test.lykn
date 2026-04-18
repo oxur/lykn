@@ -1,0 +1,15 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "switch: basic with default"
+  (bind result (compile "(switch x (\"a\" (do-a) (break)) (\"b\" (do-b) (break)) (default (do-default)))"))
+  (includes result "switch")
+  (includes result "case \"a\"")
+  (includes result "default:"))
+
+(test "switch: missing cases throws"
+  (is-thrown (compile "(switch x)") Error))

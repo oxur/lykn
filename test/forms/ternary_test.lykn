@@ -1,0 +1,15 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "ternary: basic"
+  "(? (> x 0) \"yes\" \"no\")" "x > 0 ? \"yes\" : \"no\";")
+
+(test-compiles "ternary: nested in const"
+  "(const result (? flag 1 0))" "const result = flag ? 1 : 0;")
+
+(test "ternary: wrong arity throws"
+  (is-thrown (compile "(? a b)") Error))

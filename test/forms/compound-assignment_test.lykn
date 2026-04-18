@@ -1,0 +1,30 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "+=: basic"
+  "(+= x 1)" "x += 1;")
+
+(test-compiles "-=: basic"
+  "(-= x 1)" "x -= 1;")
+
+(test-compiles "*=: basic"
+  "(*= x 2)" "x *= 2;")
+
+(test-compiles "**=: exponentiation assignment"
+  "(**= x 2)" "x **= 2;")
+
+(test-compiles "&&=: logical and assignment"
+  "(&&= x y)" "x &&= y;")
+
+(test-compiles "||=: logical or assignment"
+  "(||= x y)" "x ||= y;")
+
+(test-compiles "??=: nullish coalescing assignment"
+  "(??= x y)" "x ??= y;")
+
+(test "+=: wrong arity throws"
+  (is-thrown (compile "(+= x)") Error))

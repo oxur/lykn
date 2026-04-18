@@ -1,0 +1,13 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "for-in: basic"
+  (bind result (compile "(for-in key obj (console:log key))"))
+  (includes result "for (const key in obj)"))
+
+(test "for-in: missing args throws"
+  (is-thrown (compile "(for-in key)") Error))

@@ -1,0 +1,27 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "function: basic declaration"
+  "(function add (a b) (return (+ a b)))"
+  "function add(a, b) {\n  return a + b;\n}")
+
+(test-compiles "function: camelCase name"
+  "(function my-handler (req) (return req))"
+  "function myHandler(req) {\n  return req;\n}")
+
+(test-compiles "function: no params"
+  "(function init () (return 42))"
+  "function init() {\n  return 42;\n}")
+
+(test "function: multi-statement body"
+  (bind result (compile "(function setup () (const x 1) (const y 2) (return (+ x y)))"))
+  (includes result "const x = 1;")
+  (includes result "const y = 2;")
+  (includes result "return x + y;"))
+
+(test "function: missing name throws"
+  (is-thrown (compile "(function (a b) (return 1))") Error))

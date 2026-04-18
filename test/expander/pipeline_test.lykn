@@ -1,0 +1,81 @@
+(import-macros "testing" (test is-equal is-thrown))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/compiler.js" (compile))
+
+(func lykn
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (bind raw (compile (expand (read source))))
+  (raw:trim))
+
+(func ex
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (expand (read source)))
+
+;; --- Three-pass pipeline ---
+
+(test "pipeline: pass 0 processes import-macros"
+  ;; import-macros now works -- file not found is the expected error for a bad path
+  (is-thrown (ex "(import-macros \"./nonexistent.lykn\" (bar))") Error "not found"))
+
+(test "pipeline: pass 1 processes macros before pass 2"
+  (bind result (lykn "
+    (macro double (x) `(+ ,x ,x))
+    (double 21)
+  "))
+  (is-equal result "21 + 21;"))
+
+(test "pipeline: macros erased from output"
+  (bind result (ex "
+    (macro noop () `null)
+    (const x 1)
+  "))
+  (is-equal result:length 1))
+
+(test "pipeline: order-independent macro compilation"
+  ;; unless depends on when, but is defined before it
+  (bind result (lykn "
+    (macro unless (test (rest body))
+      `(when (! ,test) ,@body))
+    (macro when (test (rest body))
+      `(if ,test (block ,@body)))
+    (unless false (console:log \"yes\"))
+  "))
+  (is-equal (result:includes "if") true)
+  (is-equal (result:includes "!false") true))
+
+(test "pipeline: circular dependency detected"
+  (is-thrown (ex "
+    (macro a () `(b))
+    (macro b () `(a))
+    (a)
+  ") Error "circular"))
+
+(test "pipeline: duplicate macro name detected"
+  (is-thrown (ex "
+    (macro foo () `null)
+    (macro foo () `null)
+  ") Error "duplicate"))
+
+(test "pipeline: sugar forms expanded in pass 2"
+  (bind result (lykn "(car (cons 1 2))"))
+  (is-equal result "[1, 2][0];"))
+
+(test "pipeline: full end-to-end with all features"
+  (bind result (lykn "
+    (macro when (test (rest body))
+      `(if ,test (block ,@body)))
+
+    (const data (cons 1 (cons 2 null)))
+    (when (car data)
+      (console:log (template \"first: \" (car data))))
+  "))
+  (is-equal (result:includes "if") true)
+  (is-equal (result:includes "data[0]") true)
+  (is-equal (result:includes "`first: ${data[0]}`") true))

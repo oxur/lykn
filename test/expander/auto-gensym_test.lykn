@@ -1,0 +1,65 @@
+(import-macros "testing" (test is-equal ok))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/compiler.js" (compile))
+
+(func lykn
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (bind raw (compile (expand (read source))))
+  (raw:trim))
+
+(func ex
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (expand (read source)))
+
+(test "auto-gensym: temp#gen in let binding"
+  (bind result (lykn "
+    (macro swap (a b)
+      `(block
+        (let temp#gen ,a)
+        (= ,a ,b)
+        (= ,b temp#gen)))
+    (swap x y)
+  "))
+  ;; temp#gen should resolve to temp__gensym0
+  (is-equal (result:includes "temp__gensym0") true))
+
+(test "auto-gensym: same prefix -> same name within template"
+  (bind result (lykn "
+    (macro swap (a b)
+      `(block
+        (let temp#gen ,a)
+        (= ,a ,b)
+        (= ,b temp#gen)))
+    (swap x y)
+  "))
+  ;; All temp#gen occurrences -> same gensym
+  (bind matches (result:match (regex "temp__gensym0" "g")))
+  (is-equal (and (!= matches null) (>= matches:length 2)) true))
+
+(test "auto-gensym: different prefixes -> different names"
+  (bind result (lykn "
+    (macro two-lets (x y)
+      `(block
+        (let a#gen ,x)
+        (let b#gen ,y)))
+    (two-lets 1 2)
+  "))
+  (is-equal (result:includes "a__gensym0") true)
+  (is-equal (result:includes "b__gensym1") true))
+
+(test "auto-gensym: each macro invocation gets fresh gensyms"
+  (bind result (ex "
+    (macro with-temp (val (rest body))
+      `(block (let t#gen ,val) ,@body))
+    (with-temp 1 (console:log t#gen))
+    (with-temp 2 (console:log t#gen))
+  "))
+  ;; Two separate expansions should get different gensyms
+  (is-equal result:length 2))

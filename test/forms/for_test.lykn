@@ -1,0 +1,18 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "for: basic c-style"
+  (bind result (compile "(for (let i 0) (< i 10) (++ i) (console:log i))"))
+  (includes result "for")
+  (includes result "i < 10"))
+
+(test "for: infinite loop with empty slots"
+  (bind result (compile "(for () () () (break))"))
+  (includes result "for (; ; )"))
+
+(test "for: missing body throws"
+  (is-thrown (compile "(for (let i 0) (< i 10))") Error))

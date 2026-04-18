@@ -1,0 +1,16 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "dynamic-import: basic"
+  "(dynamic-import \"./mod.js\")" "import(\"./mod.js\");")
+
+(test-compiles "dynamic-import: with await"
+  "(const mod (await (dynamic-import \"./mod.js\")))"
+  "const mod = await import(\"./mod.js\");")
+
+(test "dynamic-import: wrong arity throws"
+  (is-thrown (compile "(dynamic-import)") Error))

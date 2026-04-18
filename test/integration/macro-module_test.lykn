@@ -1,0 +1,35 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" (compile))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros reset-module-cache))
+(import "../../packages/lang/reader.js" (read))
+(import "node:path" (resolve))
+
+(bind fixtures-dir (resolve import:meta:dirname "../fixtures/macros"))
+
+(func compile-all
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (compile (expand (read source) (obj :file-path (resolve fixtures-dir "test.lykn")))))
+
+(test "integration: import macros from module"
+  (bind result (compile-all "
+    (import-macros \"./basic-control.lykn\" (when unless))
+    (when (> x 0) (console:log \"positive\"))
+    (unless (=== y 0) (console:log \"nonzero\"))
+  "))
+
+  (includes result "if (x > 0)")
+  (includes result "if (!(y === 0))")
+  ;; No import-macros in output
+  (is-equal (result:includes "import") false))
+
+(test "integration: cross-module macro chain"
+  (bind result (compile-all "
+    (import-macros \"./advanced-control.lykn\" (when-not))
+    (when-not false (console:log \"works\"))
+  "))
+  (includes result "if (!false)"))

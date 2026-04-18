@@ -1,0 +1,224 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" (compile))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros reset-module-cache))
+(import "../../packages/lang/reader.js" (read))
+(import "node:path" (resolve))
+
+(bind testing-dir (resolve import:meta:dirname "../../packages/testing"))
+
+(func compile-all
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (compile (expand (read source) (obj :file-path (resolve testing-dir "consumer_test.lykn")))))
+
+(bind import-all "(import-macros \"./mod.lykn\"
+  (test test-async suite step
+   is is-equal is-not-equal is-strict-equal
+   ok is-thrown is-thrown-async
+   matches includes has obj-matches
+   test-compiles))")
+
+;; --- runtime import injection ---
+
+(test "testing: runtime import emitted for @std/assert"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is true))")))
+  (includes result "import {")
+  (includes result "jsr:@std/assert")
+  (includes result "assertEquals")
+  (includes result "assert,"))
+
+;; --- assertion macros ---
+
+(test "testing: is -> assert"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is true))")))
+  (includes result "assert(true)"))
+
+(test "testing: is-equal -> assertEquals"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is-equal (+ 1 2) 3))")))
+  (includes result "assertEquals(1 + 2, 3)"))
+
+(test "testing: is-not-equal -> assertNotEquals"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is-not-equal a b))")))
+  (includes result "assertNotEquals(a, b)"))
+
+(test "testing: is-strict-equal -> assertStrictEquals"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is-strict-equal a b))")))
+  (includes result "assertStrictEquals(a, b)"))
+
+(test "testing: ok -> assertExists"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (ok value))")))
+  (includes result "assertExists(value)"))
+
+(test "testing: is-thrown -> assertThrows"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is-thrown (bad-call)))")))
+  (includes result "assertThrows(() => badCall())"))
+
+(test "testing: is-thrown with error type"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is-thrown (validate nil) TypeError))")))
+  (includes result "assertThrows(")
+  (includes result "TypeError"))
+
+(test "testing: is-thrown with error type and message"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (is-thrown (parse \"{{\") SyntaxError \"unexpected\"))")))
+  (includes result "assertThrows(")
+  (includes result "SyntaxError")
+  (includes result "\"unexpected\""))
+
+(test "testing: is-thrown-async -> assertRejects"
+  (bind result (compile-all (template import-all "
+    (test-async \"x\" (is-thrown-async (fetch-data \"bad\")))")))
+  (includes result "assertRejects(")
+  (includes result "async"))
+
+(test "testing: matches -> assertMatch"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (matches str pattern))")))
+  (includes result "assertMatch(str, pattern)"))
+
+(test "testing: includes -> assertStringIncludes"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (includes str \"hello\"))")))
+  (includes result "assertStringIncludes(str, \"hello\")"))
+
+(test "testing: has -> assertArrayIncludes"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (has arr items))")))
+  (includes result "assertArrayIncludes(arr, items)"))
+
+(test "testing: obj-matches -> assertObjectMatch"
+  (bind result (compile-all (template import-all "
+    (test \"x\" (obj-matches actual expected))")))
+  (includes result "assertObjectMatch(actual, expected)"))
+
+;; --- test form ---
+
+(test "testing: simple test -> Deno.test"
+  (bind result (compile-all (template import-all "
+    (test \"addition works\"
+      (is-equal (+ 1 2) 3)
+      (is-equal (* 3 4) 12))")))
+  (includes result "Deno.test(\"addition works\"")
+  (includes result "assertEquals(1 + 2, 3)")
+  (includes result "assertEquals(3 * 4, 12)"))
+
+(test "testing: test is sync when no await"
+  (bind result (compile-all (template import-all "
+    (test \"sync\" (is true))")))
+  (is-equal (result:includes "async") false))
+
+(test "testing: test auto-detects await -> async"
+  (bind result (compile-all (template import-all "
+    (test \"async auto\"
+      (const result (await (fetch-data)))
+      (is-equal result 42))")))
+  (includes result "async () =>"))
+
+(test "testing: test-async always async"
+  (bind result (compile-all (template import-all "
+    (test-async \"explicit async\"
+      (is-equal 1 1))")))
+  (includes result "async () =>"))
+
+;; --- keyword clauses ---
+
+(test "testing: test with :setup"
+  (bind result (compile-all (template import-all "
+    (test \"with setup\"
+      :setup (const db (create-db))
+      :body (is-equal db 42))")))
+  (includes result "createDb()")
+  (includes result "assertEquals(db, 42)"))
+
+(test "testing: test with :setup and :teardown -> try/finally"
+  (bind result (compile-all (template import-all "
+    (test \"with teardown\"
+      :setup (const db (create-db))
+      :teardown (close db)
+      :body (is-equal (query db) 1))")))
+  (includes result "try")
+  (includes result "finally")
+  (includes result "close(db)"))
+
+(test "testing: test with :teardown only -> try/finally"
+  (bind result (compile-all (template import-all "
+    (test \"teardown only\"
+      :teardown (cleanup)
+      :body (is-equal 1 1))")))
+  (includes result "try")
+  (includes result "finally")
+  (includes result "cleanup()"))
+
+;; --- suite and step ---
+
+(test "testing: suite -> Deno.test with t param"
+  (bind result (compile-all (template import-all "
+    (suite \"math\"
+      (test \"add\" (is-equal (+ 1 2) 3))
+      (test \"mul\" (is-equal (* 2 3) 6)))")))
+  (includes result "Deno.test(\"math\"")
+  (includes result "async t =>")
+  (includes result "await t.step(\"add\"")
+  (includes result "await t.step(\"mul\""))
+
+(test "testing: step -> await t.step"
+  (bind result (compile-all (template import-all "
+    (test \"workflow\"
+      (step \"create\" (is-equal 1 1))
+      (step \"delete\" (is-equal 2 2)))")))
+  (includes result "await t.step(\"create\"")
+  (includes result "await t.step(\"delete\"")
+  (includes result "async t =>"))
+
+(test "testing: step auto-detects async in body"
+  (bind result (compile-all (template import-all "
+    (test \"async steps\"
+      (step \"fetch\" (const r (await (fetch-data))) (is-equal r 1)))")))
+  (includes result "await t.step(\"fetch\", async () =>"))
+
+(test "testing: suite with setup/teardown"
+  (bind result (compile-all (template import-all "
+    (suite \"db tests\"
+      :setup (const db (create-db))
+      :teardown (close db)
+      (test \"query\" (is-equal (query db) 1)))")))
+  (includes result "try")
+  (includes result "finally")
+  (includes result "close(db)"))
+
+;; --- test-compiles ---
+
+(test "testing: test-compiles expands to compile + assertEquals with trim"
+  (bind result (compile-all (template import-all "
+    (test-compiles \"bind\" \"(bind x 1)\" \"const x = 1;\")")))
+  (includes result "Deno.test(\"bind\"")
+  (includes result "compile(\"(bind x 1)\")")
+  (includes result ".trim()")
+  (includes result "\"const x = 1;\""))
+
+;; --- edge cases ---
+
+(test "testing: empty test body -> empty function"
+  (bind result (compile-all (template import-all "
+    (test \"placeholder\")")))
+  (includes result "Deno.test(\"placeholder\""))
+
+(test "testing: test with step and direct assertions coexist"
+  (bind result (compile-all (template import-all "
+    (test \"mixed\"
+      (is-equal 1 1)
+      (step \"sub\" (is-equal 2 2)))")))
+  (includes result "assertEquals(1, 1)")
+  (includes result "await t.step(\"sub\""))

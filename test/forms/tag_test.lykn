@@ -1,0 +1,19 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "tag: basic tagged template"
+  (bind result (compile "(tag html (template \"<div>\" content \"</div>\"))"))
+  (includes result "html`")
+  (includes result "${content}"))
+
+(test "tag: tag is a member expression"
+  (bind result (compile "(tag String:raw (template \"\\n\"))"))
+  (includes result "String.raw")
+  (includes result "`"))
+
+(test "tag: non-template second arg throws"
+  (is-thrown (compile "(tag html \"not a template\")") Error))

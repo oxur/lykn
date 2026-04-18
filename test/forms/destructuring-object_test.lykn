@@ -1,0 +1,40 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "object pattern: shorthand"
+  (bind result (compile "(const (object name age) person)"))
+  (includes result "{name, age}")
+  (includes result "= person"))
+
+(test "object pattern: alias rename"
+  (bind result (compile "(const (object (alias old-name new-name)) obj)"))
+  (includes result "oldName: newName"))
+
+(test "object pattern: default value"
+  (bind result (compile "(const (object (default x 0)) point)"))
+  (includes result "x = 0"))
+
+(test "object pattern: alias with default"
+  (bind result (compile "(const (object (alias name n \"anon\")) obj)"))
+  (includes result "name: n = \"anon\""))
+
+(test "object pattern: rest"
+  (bind result (compile "(const (object a (rest others)) obj)"))
+  (includes result "...others"))
+
+(test "object pattern: rest not last throws"
+  (is-thrown (compile "(const (object (rest others) a) obj)") Error))
+
+(test "object pattern: camelCase"
+  (bind result (compile "(const (object my-name) person)"))
+  (includes result "myName"))
+
+(test "object pattern: mixed"
+  (bind result (compile "(const (object name (alias data items) (default count 0)) resp)"))
+  (includes result "name")
+  (includes result "data: items")
+  (includes result "count = 0"))

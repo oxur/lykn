@@ -1,0 +1,18 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "break: no label"
+  "(break)" "break;")
+
+(test-compiles "break: with label"
+  "(break my-loop)" "break myLoop;")
+
+(test-compiles "continue: no label"
+  "(continue)" "continue;")
+
+(test-compiles "continue: with label"
+  "(continue my-loop)" "continue myLoop;")

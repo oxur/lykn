@@ -1,0 +1,50 @@
+(import-macros "testing" (test is-equal))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros reset-module-cache))
+(import "../../packages/lang/compiler.js" (compile))
+(import "node:path" (resolve))
+
+(bind fixtures-dir (resolve import:meta:dirname "../fixtures/macros"))
+
+(func lykn
+  :args (:string source :string file-path)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (bind raw (compile (expand (read source) (obj :file-path file-path))))
+  (raw:trim))
+
+(test "import-macros: basic import and use"
+  (bind result (lykn
+    "(import-macros \"./basic-control.lykn\" (when))
+     (when true (console:log \"yes\"))"
+    (resolve fixtures-dir "test.lykn")))
+  (is-equal (result:includes "if") true)
+  (is-equal (result:includes "yes") true))
+
+(test "import-macros: multiple bindings"
+  (bind result (lykn
+    "(import-macros \"./basic-control.lykn\" (when unless))
+     (when true (console:log \"a\"))
+     (unless false (console:log \"b\"))"
+    (resolve fixtures-dir "test.lykn")))
+  (is-equal (result:includes "a") true)
+  (is-equal (result:includes "b") true))
+
+(test "import-macros: with as renaming"
+  (bind result (lykn
+    "(import-macros \"./basic-control.lykn\" ((as when my-when)))
+     (my-when true (console:log \"renamed\"))"
+    (resolve fixtures-dir "test.lykn")))
+  (is-equal (result:includes "if") true)
+  (is-equal (result:includes "renamed") true))
+
+(test "import-macros: erased from output"
+  (bind result (lykn
+    "(import-macros \"./basic-control.lykn\" (when))
+     (const x 1)"
+    (resolve fixtures-dir "test.lykn")))
+  ;; No import-macros in output
+  (is-equal (result:includes "import") false)
+  (is-equal result "const x = 1;"))

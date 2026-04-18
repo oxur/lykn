@@ -1,0 +1,33 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "export: declaration"
+  "(export (const x 42))" "export const x = 42;")
+
+(test "export: function declaration"
+  (bind result (compile "(export (function foo () (return 1)))"))
+  (includes result "export function foo"))
+
+(test-compiles "export: default expression"
+  "(export default my-fn)" "export default myFn;")
+
+(test "export: named bindings"
+  (bind result (compile "(export (names a b))"))
+  (includes result "a")
+  (includes result "b"))
+
+(test "export: named with alias"
+  (bind result (compile "(export (names (alias my-func external-name)))"))
+  (includes result "myFunc as externalName"))
+
+(test "export: re-export from module"
+  (bind result (compile "(export \"mod\" (names foo bar))"))
+  (includes result "\"mod\"")
+  (includes result "foo"))
+
+(test "export: no args throws"
+  (is-thrown (compile "(export)") Error))

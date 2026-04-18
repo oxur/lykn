@@ -1,0 +1,45 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" (lykn))
+(import "../../packages/lang/expander.js" (reset-gensym reset-macros reset-module-cache))
+
+(func compile-all
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (lykn source))
+
+(test "integration: cons/list/car/cdr desugaring"
+  (bind result (compile-all "
+    (const pair (cons 1 2))
+    (const my-list (list 10 20 30))
+    (console:log (car pair))
+    (console:log (cdr pair))
+    (console:log (cadr my-list))
+    (console:log (cddr my-list))
+  "))
+
+  (includes result "[1, 2]")
+  (includes result "[10, [20, [30, null]]]")
+  (includes result "pair[0]")
+  (includes result "pair[1]")
+  (includes result "myList[1][0]")
+  (includes result "myList[1][1]"))
+
+(test "integration: radix literals"
+  (bind result (compile-all "
+    (const mask #2r11110000)
+    (const color #16rff8800)
+  "))
+  (includes result "240")
+  (includes result "16746496"))
+
+(test "integration: #a and #o data literals"
+  (bind result (compile-all "
+    (const nums #a(1 2 3))
+    (const person #o((name \"Duncan\") (age 42)))
+  "))
+  (includes result "[1, 2, 3]")
+  (includes result "Duncan"))

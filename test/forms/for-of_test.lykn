@@ -1,0 +1,13 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "for-of: basic"
+  (bind result (compile "(for-of item items (console:log item))"))
+  (includes result "for (const item of items)"))
+
+(test "for-of: missing args throws"
+  (is-thrown (compile "(for-of item)") Error))

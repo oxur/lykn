@@ -1,0 +1,23 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "try: catch only"
+  (bind result (compile "(try (do-something) (catch e (handle e)))"))
+  (includes result "try")
+  (includes result "catch"))
+
+(test "try: finally only"
+  (bind result (compile "(try (do-something) (finally (cleanup)))"))
+  (includes result "finally"))
+
+(test "try: catch + finally"
+  (bind result (compile "(try (do-something) (catch e (handle e)) (finally (cleanup)))"))
+  (includes result "catch")
+  (includes result "finally"))
+
+(test "try: no catch or finally throws"
+  (is-thrown (compile "(try (do-something))") Error))

@@ -1,0 +1,27 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "async: wraps function declaration"
+  (bind result (compile "(async (function fetch-data () (return 1)))"))
+  (includes result "async function fetchData"))
+
+(test "async: wraps lambda"
+  (bind result (compile "(const f (async (lambda () (return 1))))"))
+  (includes result "async function"))
+
+(test "async: wraps arrow"
+  (bind result (compile "(const f (async (=> () 1)))"))
+  (includes result "async"))
+
+(test "async: rejects non-function"
+  (is-thrown (compile "(async 42)") Error))
+
+(test-compiles "await: basic"
+  "(const data (await (fetch url)))" "const data = await fetch(url);")
+
+(test "await: wrong arity throws"
+  (is-thrown (compile "(await a b)") Error))

@@ -1,0 +1,32 @@
+(import-macros "testing" (test is-thrown))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+
+(func ex
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (expand (read source)))
+
+(test "macro error: duplicate definition throws"
+  (is-thrown (ex "
+    (macro foo () `null)
+    (macro foo () `null)
+  ") Error "duplicate"))
+
+(test "macro error: macro form in pass 2 throws"
+  ;; A macro that expands to a macro definition should error
+  ;; (This tests the register-macro sentinel in the dispatch table)
+  (is-thrown (ex "
+    (macro bad () `(macro inner () `null))
+    (bad)
+  ") Error))
+
+(test "macro error: circular dependency throws"
+  ;; Two macros that reference each other in their bodies
+  (is-thrown (ex "
+    (macro a () `(b))
+    (macro b () `(a))
+    (a)
+  ") Error "circular"))

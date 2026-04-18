@@ -1,0 +1,56 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "colon: simple member access"
+  "console:log" "console.log;")
+
+(test-compiles "colon: method call"
+  "(console:log \"hi\")" "console.log(\"hi\");")
+
+(test-compiles "colon: three-segment chain"
+  "process:argv:length" "process.argv.length;")
+
+(test-compiles "colon: this member access"
+  "this:name" "this.name;")
+
+(test-compiles "colon: this with camelCase"
+  "this:my-name" "this.myName;")
+
+(test-compiles "colon: super member access"
+  "super:constructor" "super.constructor;")
+
+(test-compiles "colon: camelCase each segment independently"
+  "my-obj:get-value" "myObj.getValue;")
+
+(test-compiles "colon: Math:PI no camelCase effect"
+  "Math:PI" "Math.PI;")
+
+(test-compiles "colon: bare this"
+  "(return this)" "return this;")
+
+(test-compiles "colon: bare super"
+  "super" "super;")
+
+;; Keywords (leading colon)
+
+(test-compiles "colon: keyword compiles to string literal"
+  ":foo" "\"foo\";")
+
+(test-compiles "colon: keyword with kebab-case compiles to camelCase string"
+  ":first-name" "\"firstName\";")
+
+(test "colon: trailing colon throws"
+  (is-thrown (compile "foo:") Error))
+
+(test "colon: numeric segment throws"
+  (is-thrown (compile "obj:0") Error "get"))
+
+(test "colon: consecutive colons throws"
+  (is-thrown (compile "foo::bar") Error "Empty segment"))
+
+(test "colon: bare colon throws"
+  (is-thrown (compile ":") Error))

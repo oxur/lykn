@@ -1,0 +1,22 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "assignment: object destructuring"
+  (bind result (compile "(= (object a b) obj)"))
+  (includes result "a")
+  (includes result "= obj"))
+
+(test "assignment: array destructuring"
+  (bind result (compile "(= (array x y) pair)"))
+  (includes result "[x, y]"))
+
+(test-compiles "assignment: regular (non-destructuring) still works"
+  "(= x 5)" "x = 5;")
+
+(test "assignment: member expression still works"
+  (bind result (compile "(= this:count 0)"))
+  (includes result "this.count = 0"))

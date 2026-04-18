@@ -1,0 +1,48 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "params: object destructuring in arrow"
+  (bind result (compile "(const f (=> ((object name age)) (console:log name)))"))
+  (includes result "{name, age}")
+  (includes result "=>"))
+
+(test "params: object destructuring in function"
+  (bind result (compile "(function greet ((object name)) (return name))"))
+  (includes result "{name}")
+  (includes result "function greet"))
+
+(test "params: mixed regular and destructured"
+  (bind result (compile "(function handle (req (object data)) (return data))"))
+  (includes result "req")
+  (includes result "data"))
+
+(test "params: default + destructuring"
+  (bind result (compile "(=> ((default x 0) (object name)) (+ x name))"))
+  (includes result "x = 0")
+  (includes result "name"))
+
+(test "params: rest parameter"
+  (bind result (compile "(function f (a b (rest args)) (return args))"))
+  (includes result "...args"))
+
+(test "params: array destructuring in for-of"
+  (bind result (compile "(for-of (array key value) entries (console:log key))"))
+  (includes result "[key, value]"))
+
+(test-compiles "backward compat: const with plain binding"
+  "(const x 42)" "const x = 42;")
+
+(test-compiles "backward compat: let with plain binding"
+  "(const my-var 42)" "const myVar = 42;")
+
+(test "backward compat: function with plain params"
+  (bind result (compile "(function add (a b) (return (+ a b)))"))
+  (includes result "function add(a, b)"))
+
+(test "backward compat: arrow with plain params"
+  (bind result (compile "(const f (=> (x) (* x 2)))"))
+  (includes result "x"))

@@ -1,0 +1,30 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "class field: with value"
+  (bind result (compile "(class C () (field name \"default\"))"))
+  (includes result "name = \"default\""))
+
+(test "class field: without value"
+  (bind result (compile "(class C () (field items))"))
+  (includes result "items"))
+
+(test "class field: private"
+  (bind result (compile "(class C () (field -count 0))"))
+  (includes result "#_count"))
+
+(test "class field: private access via this"
+  (bind result (compile "(class C () (constructor () (= this:-count 0)))"))
+  (includes result "this.#_count"))
+
+(test "class method: private method"
+  (bind result (compile "(class C () (-helper () (return 42)))"))
+  (includes result "#_helper"))
+
+(test "class field: private method reference via this"
+  (bind result (compile "(class C () (run () (this:-helper)))"))
+  (includes result "this.#_helper"))

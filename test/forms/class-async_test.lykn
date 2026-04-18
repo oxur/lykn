@@ -1,0 +1,21 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "class async: async method"
+  (bind result (compile "(class C () (async (fetch-data () (return (await (get-it))))))"))
+  (includes result "async")
+  (includes result "fetchData"))
+
+(test "class async: static async"
+  (bind result (compile "(class C () (static (async (load () (return 1)))))"))
+  (includes result "static")
+  (includes result "async"))
+
+(test "class async: async private method"
+  (bind result (compile "(class C () (async (-do-work () (return 1))))"))
+  (includes result "async")
+  (includes result "#_doWork"))

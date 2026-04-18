@@ -1,0 +1,25 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "nested: object inside object via alias"
+  (bind result (compile "(const (object (alias data (object name age))) response)"))
+  (includes result "data:")
+  (includes result "name"))
+
+(test "nested: array inside object via alias"
+  (bind result (compile "(const (object (alias items (array first second))) response)"))
+  (includes result "items:")
+  (includes result "[first, second]"))
+
+(test "nested: array of arrays"
+  (bind result (compile "(const (array (array a b) (array c d)) matrix)"))
+  (includes result "[["))
+
+(test "nested: deep object"
+  (bind result (compile "(const (object (alias config (object (alias server (object host port))))) app)"))
+  (includes result "host")
+  (includes result "port"))

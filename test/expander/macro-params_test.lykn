@@ -1,0 +1,36 @@
+(import-macros "testing" (test is-equal))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/compiler.js" (compile))
+
+(func lykn
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (bind raw (compile (expand (read source))))
+  (raw:trim))
+
+(test "macro params: rest captures remaining"
+  (bind result (lykn "
+    (macro when (test (rest body))
+      `(if ,test (block ,@body)))
+    (when true (console:log \"a\") (console:log \"b\"))
+  "))
+  (is-equal (result:includes "a") true)
+  (is-equal (result:includes "b") true))
+
+(test "macro params: single param"
+  (bind result (lykn "
+    (macro not-null (x) `(!== ,x null))
+    (not-null y)
+  "))
+  (is-equal (result:includes "!==") true)
+  (is-equal (result:includes "null") true))
+
+(test "macro params: skip with unused param"
+  (bind result (lykn "
+    (macro second (unused x) x)
+    (second foo bar)
+  "))
+  (is-equal result "bar;"))

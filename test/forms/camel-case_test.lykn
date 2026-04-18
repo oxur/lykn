@@ -1,0 +1,58 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+;; Conversion table
+
+(test-compiles "camelCase: my-function -> myFunction"
+  "my-function" "myFunction;")
+
+(test-compiles "camelCase: get-x -> getX"
+  "get-x" "getX;")
+
+(test-compiles "camelCase: get-HTTP-response -> getHTTPResponse"
+  "get-HTTP-response" "getHTTPResponse;")
+
+(test-compiles "camelCase: leading hyphen -> underscore"
+  "-foo" "_foo;")
+
+(test-compiles "camelCase: double leading hyphens -> double underscore"
+  "--foo" "__foo;")
+
+(test-compiles "camelCase: trailing hyphen -> trailing underscore"
+  "foo-" "foo_;")
+
+(test-compiles "camelCase: consecutive mid hyphens -> single boundary"
+  "foo--bar" "fooBar;")
+
+(test-compiles "camelCase: all-caps no hyphens -> unchanged"
+  "JSON" "JSON;")
+
+(test-compiles "camelCase: existing underscore -> unchanged"
+  "_private" "_private;")
+
+(test-compiles "camelCase: multiple segments"
+  "my-var-name" "myVarName;")
+
+(test-compiles "camelCase: single char no hyphens"
+  "x" "x;")
+
+(test-compiles "camelCase: all single-letter segments"
+  "a-b-c" "aBC;")
+
+(test-compiles "camelCase: get-element-by-id real-world"
+  "get-element-by-id" "getElementById;")
+
+(test-compiles "camelCase: inner-HTML preserves existing uppercase"
+  "inner-HTML" "innerHTML;")
+
+;; In context
+
+(test-compiles "camelCase: in variable declaration"
+  "(const my-var 42)" "const myVar = 42;")
+
+(test-compiles "camelCase: in function call arguments"
+  "(foo my-arg)" "foo(myArg);")

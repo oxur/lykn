@@ -1,0 +1,39 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "import: side-effect"
+  "(import \"mod\")" "import \"mod\";")
+
+(test-compiles "import: default"
+  "(import \"express\" express)" "import express from \"express\";")
+
+(test "import: named"
+  (bind result (compile "(import \"fs\" (read-file write-file))"))
+  (includes result "readFile")
+  (includes result "writeFile")
+  (includes result "\"fs\""))
+
+(test "import: named with alias"
+  (bind result (compile "(import \"mod\" ((alias foo bar)))"))
+  (includes result "foo as bar"))
+
+(test "import: default + named"
+  (bind result (compile "(import \"react\" React (use-state use-effect))"))
+  (includes result "React")
+  (includes result "useState")
+  (includes result "useEffect"))
+
+(test "import: camelCase on names not paths"
+  (bind result (compile "(import \"node:fs\" (read-file-sync))"))
+  (includes result "readFileSync")
+  (includes result "\"node:fs\""))
+
+(test "import: no args throws"
+  (is-thrown (compile "(import)") Error))
+
+(test "import: non-string path throws"
+  (is-thrown (compile "(import foo)") Error))

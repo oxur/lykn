@@ -1,0 +1,15 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "spread: in array"
+  "(array 1 2 (spread rest))" "[1, 2, ...rest];")
+
+(test-compiles "spread: in function call"
+  "(foo (spread args))" "foo(...args);")
+
+(test-compiles "spread: in array at start"
+  "(array (spread first) 4 5)" "[...first, 4, 5];")

@@ -1,0 +1,35 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" (lykn))
+(import "../../packages/lang/expander.js" (reset-gensym reset-macros reset-module-cache))
+
+(func compile-all
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (lykn source))
+
+(test "integration: control flow macros (when, unless)"
+  (bind result (compile-all "
+    (macro when (test (rest body))
+      `(if ,test (block ,@body)))
+
+    (macro unless (test (rest body))
+      `(if (! ,test) (block ,@body)))
+
+    (const x 10)
+    (when (> x 0)
+      (console:log \"positive\")
+      (console:log x))
+
+    (unless (=== x 0)
+      (console:log \"nonzero\"))
+  "))
+
+  (includes result "const x = 10")
+  (includes result "if (x > 0)")
+  (includes result "\"positive\"")
+  (includes result "!(x === 0)")
+  (includes result "\"nonzero\""))

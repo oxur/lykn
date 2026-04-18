@@ -1,0 +1,19 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "default: in arrow params"
+  (bind result (compile "(const f (=> ((default x 0)) x))"))
+  (includes result "x = 0"))
+
+(test "default: in function params"
+  (bind result (compile "(function greet ((default name \"world\")) (return name))"))
+  (includes result "name = \"world\""))
+
+(test "default: multiple defaults"
+  (bind result (compile "(=> ((default x 0) (default y 0)) (+ x y))"))
+  (includes result "x = 0")
+  (includes result "y = 0"))

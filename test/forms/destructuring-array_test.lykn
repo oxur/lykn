@@ -1,0 +1,30 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "array pattern: basic"
+  (bind result (compile "(const (array first second) arr)"))
+  (includes result "[first, second]"))
+
+(test "array pattern: skip with _"
+  (bind result (compile "(const (array _ second) pair)"))
+  (includes result "[, second]"))
+
+(test "array pattern: multiple skips"
+  (bind result (compile "(const (array _ _ third) arr)"))
+  (includes result "[, , third]"))
+
+(test "array pattern: default"
+  (bind result (compile "(const (array (default x 0) (default y 0)) point)"))
+  (includes result "x = 0")
+  (includes result "y = 0"))
+
+(test "array pattern: rest"
+  (bind result (compile "(const (array head (rest tail)) list)"))
+  (includes result "...tail"))
+
+(test "array pattern: rest not last throws"
+  (is-thrown (compile "(const (array (rest head) tail) list)") Error))

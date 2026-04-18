@@ -1,0 +1,48 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/mod.js" (lykn))
+(import "../../packages/lang/expander.js" (reset-gensym reset-macros reset-module-cache))
+
+(func compile-all
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (lykn source))
+
+(test "integration: swap macro with auto-gensym"
+  (bind result (compile-all "
+    (macro swap-log (a b)
+      `(block
+        (let temp#gen ,a)
+        (console:log temp#gen ,b)))
+    (swap-log x y)
+  "))
+  (includes result "temp__gensym0")
+  (includes result "let temp__gensym0 = x")
+  (includes result "console.log(temp__gensym0, y)"))
+
+(test "integration: full end-to-end with macros + classes + destructuring"
+  (bind result (compile-all "
+    (macro when (test (rest body))
+      `(if ,test (block ,@body)))
+
+    (class Handler ()
+      (field -count 0)
+      (handle (req)
+        (++ this:-count)
+        (when req
+          (console:log (template \"handled #\" this:-count)))))
+
+    (const (object name (default age 0)) (get-user))
+    (const items (list 1 2 3))
+    (console:log (car items))
+  "))
+
+  (includes result "class Handler")
+  (includes result "#_count")
+  (includes result "if (req)")
+  (includes result "{name, age = 0}")
+  (includes result "[1, [2, [3, null]]]")
+  (includes result "items[0]"))

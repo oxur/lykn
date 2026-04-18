@@ -1,0 +1,15 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "++: prefix increment"
+  "(++ x)" "++x;")
+
+(test-compiles "--: prefix decrement"
+  "(-- x)" "--x;")
+
+(test "++: wrong arity throws"
+  (is-thrown (compile "(++ x y)") Error))

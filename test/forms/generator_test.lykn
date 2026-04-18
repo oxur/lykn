@@ -1,0 +1,71 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+
+;; --- function* ---
+
+(test "function*: basic generator"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(function* gen () (yield 1) (yield 2) (yield 3))"))
+  (includes result "function* gen()")
+  (includes result "yield 1")
+  (includes result "yield 2")
+  (includes result "yield 3"))
+
+(test "function*: with params"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(function* range (start end) (for (let i start) (< i end) (+= i 1) (yield i)))"))
+  (includes result "function* range(start, end)")
+  (includes result "yield i"))
+
+;; --- yield ---
+
+(test "yield: with argument"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(function* f () (yield 42))"))
+  (includes result "yield 42"))
+
+(test "yield: no argument"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(function* f () (yield))"))
+  (includes result "yield;"))
+
+;; --- yield* ---
+
+(test "yield*: delegation"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(function* f () (yield* other))"))
+  (includes result "yield* other"))
+
+(test "yield*: delegation to array"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(function* f () (yield* #a(1 2 3)))"))
+  (includes result "yield* [1, 2, 3]"))
+
+;; --- for-await-of ---
+
+(test "for-await-of: basic"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(async (function process () (for-await-of item stream (console:log item))))"))
+  (includes result "for await (const item of stream)")
+  (includes result "console.log(item)"))
+
+;; --- async generator ---
+
+(test "async function*: basic"
+  (reset-macros)
+  (reset-gensym)
+  (bind result (compile "(async (function* fetch-pages (url) (yield 1) (yield 2)))"))
+  (includes result "async function* fetchPages(url)")
+  (includes result "yield 1"))

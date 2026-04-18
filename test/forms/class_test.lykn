@@ -1,0 +1,24 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "class: basic no extends"
+  (bind result (compile "(class Foo () (constructor () (return)))"))
+  (includes result "class Foo")
+  (includes result "constructor"))
+
+(test "class: with extends"
+  (bind result (compile "(class Dog (Animal) (constructor (name) (super name)))"))
+  (includes result "extends Animal")
+  (includes result "super(name)"))
+
+(test "class: empty body"
+  (bind result (compile "(class Empty ())"))
+  (includes result "class Empty"))
+
+(test "class: method with this"
+  (bind result (compile "(class Greeter () (greet () (return this:name)))"))
+  (includes result "this.name"))

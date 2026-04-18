@@ -1,0 +1,40 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "template: string only"
+  "(template \"hello\")" "`hello`;")
+
+(test-compiles "template: expression only"
+  "(template name)" "`${name}`;")
+
+(test-compiles "template: string-expr-string"
+  "(template \"Hello, \" name \"!\")" "`Hello, ${name}!`;")
+
+(test-compiles "template: two adjacent expressions"
+  "(template a b)" "`${a}${b}`;")
+
+(test-compiles "template: expression at start"
+  "(template name \" is here\")" "`${name} is here`;")
+
+(test-compiles "template: expression at end"
+  "(template \"value: \" x)" "`value: ${x}`;")
+
+(test-compiles "template: multiple expressions with strings"
+  "(template \"a=\" a \", b=\" b)" "`a=${a}, b=${b}`;")
+
+(test-compiles "template: three adjacent expressions"
+  "(template a b c)" "`${a}${b}${c}`;")
+
+(test-compiles "template: empty"
+  "(template)" "``;")
+
+(test-compiles "template: expression is a call"
+  "(template \"Result: \" (compute x))" "`Result: ${compute(x)}`;")
+
+(test "template: nested template"
+  (bind result (compile "(template \"outer \" (template \"inner \" x) \" end\")"))
+  (includes result "`outer ${`inner ${x}`} end`"))

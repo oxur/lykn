@@ -1,0 +1,25 @@
+(import-macros "testing" (test is-equal))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros))
+(import "../../packages/lang/compiler.js" (compile))
+
+(func lykn
+  :args (:string source)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (bind raw (compile (expand (read source))))
+  (raw:trim))
+
+(test "sym escape: creates exact named symbol"
+  (bind result (lykn "
+    (macro aif (test then else-branch)
+      `(block
+        (let it#gen ,test)
+        (if it#gen ,then ,else-branch)))
+    (aif (find-user id)
+      (console:log \"found\")
+      (console:log \"not found\"))
+  "))
+  (is-equal (result:includes "if") true)
+  (is-equal (result:includes "findUser") true))

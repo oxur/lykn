@@ -1,0 +1,18 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test-compiles "regex: pattern only"
+  "(regex \"^hello\")" "/^hello/;")
+
+(test-compiles "regex: pattern + flags"
+  "(regex \"^hello\" \"gi\")" "/^hello/gi;")
+
+(test "regex: wrong arity throws"
+  (is-thrown (compile "(regex)") Error))
+
+(test "regex: non-string pattern throws"
+  (is-thrown (compile "(regex foo)") Error))

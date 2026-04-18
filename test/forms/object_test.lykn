@@ -1,0 +1,45 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "object: grouped pairs"
+  (bind result (compile "(object (name \"Duncan\") (age 42))"))
+  (includes result "name")
+  (includes result "\"Duncan\"")
+  (includes result "age")
+  (includes result "42"))
+
+(test "object: shorthand"
+  (bind result (compile "(object name age)"))
+  (includes result "name")
+  (includes result "age"))
+
+(test "object: spread"
+  (bind result (compile "(object (name \"x\") (spread defaults))"))
+  (includes result "...defaults"))
+
+(test "object: camelCase keys"
+  (bind result (compile "(object (my-name \"Duncan\"))"))
+  (includes result "myName"))
+
+(test-compiles "object: empty"
+  "(object)" "({});")
+
+(test "object: single-element sub-list throws"
+  (is-thrown (compile "(object (name))") Error))
+
+(test "object: computed key"
+  (bind result (compile "(object ((computed key) \"value\"))"))
+  (includes result "[key]"))
+
+(test "object: string key"
+  (bind result (compile "(object (\"content-type\" \"text/plain\"))"))
+  (includes result "\"content-type\""))
+
+(test "object: mixed shorthand and pairs"
+  (bind result (compile "(object (name \"Duncan\") age)"))
+  (includes result "\"Duncan\"")
+  (includes result "age"))

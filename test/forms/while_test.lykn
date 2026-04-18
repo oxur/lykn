@@ -1,0 +1,14 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "while: basic"
+  (bind result (compile "(while (> x 0) (-= x 1))"))
+  (includes result "while")
+  (includes result "x > 0"))
+
+(test "while: missing body throws"
+  (is-thrown (compile "(while true)") Error))

@@ -1,0 +1,33 @@
+(import-macros "testing"
+  (test test-compiles is-equal is-thrown includes))
+(import "../../packages/lang/compiler.js" ((alias compile raw-compile)))
+(import "../../packages/lang/reader.js" (read))
+
+(func compile :args (:string source) :body (bind r (raw-compile (read source))) (r:trim))
+
+(test "class method: constructor"
+  (bind result (compile "(class Foo () (constructor (x) (= this:x x)))"))
+  (includes result "constructor(x)")
+  (includes result "this.x = x"))
+
+(test "class method: getter"
+  (bind result (compile "(class C () (get area () (return 42)))"))
+  (includes result "get area"))
+
+(test "class method: setter"
+  (bind result (compile "(class C () (set radius (r) (= this:r r)))"))
+  (includes result "set radius"))
+
+(test "class method: static method"
+  (bind result (compile "(class C () (static (create () (return (new C)))))"))
+  (includes result "static")
+  (includes result "create"))
+
+(test "class method: static field"
+  (bind result (compile "(class C () (static (field count 0)))"))
+  (includes result "static")
+  (includes result "count"))
+
+(test "class method: camelCase method name"
+  (bind result (compile "(class C () (get-data () (return 1)))"))
+  (includes result "getData"))

@@ -1,0 +1,25 @@
+(import-macros "testing" (test is-equal))
+(import "../../packages/lang/reader.js" (read))
+(import "../../packages/lang/expander.js" (expand reset-gensym reset-macros reset-module-cache))
+(import "../../packages/lang/compiler.js" (compile))
+(import "node:path" (resolve))
+
+(bind fixtures-dir (resolve import:meta:dirname "../fixtures/macros"))
+
+(func lykn
+  :args (:string source :string file-path)
+  :body
+  (reset-macros)
+  (reset-gensym)
+  (reset-module-cache)
+  (bind raw (compile (expand (read source) (obj :file-path file-path))))
+  (raw:trim))
+
+(test "macro-module-chain: A imports from B which imports from C"
+  ;; advanced-control imports from basic-control
+  (bind result (lykn
+    "(import-macros \"./advanced-control.lykn\" (when-not))
+     (when-not false (console:log \"chain works\"))"
+    (resolve fixtures-dir "test.lykn")))
+  (is-equal (result:includes "if") true)
+  (is-equal (result:includes "chain works") true))
