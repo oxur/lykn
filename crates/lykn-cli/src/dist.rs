@@ -387,8 +387,9 @@ pub fn build_dist(project_root: &Path) -> Result<Vec<BuiltPackage>, DistError> {
         return Err(DistError::EmptyWorkspace);
     }
 
-    // Ensure dist/ exists
+    // Clean and recreate dist/ to remove stale artifacts
     let dist_root = project_root.join("dist");
+    let _ = fs::remove_dir_all(&dist_root);
     fs::create_dir_all(&dist_root).map_err(|e| DistError::Io {
         path: dist_root.clone(),
         source: e,
