@@ -84,15 +84,15 @@
   (bind clean (dissoc user :password))
   (is-equal clean:name "Duncan")
   (is-equal clean:age 42)
-  (is-equal clean:password null))
+  (is-equal clean:password undefined))
 
 (test
   "dissoc runtime: removes multiple keys"
   (bind data (obj :a 1 :b 2 :c 3))
   (bind result (dissoc data :a :b))
   (is-equal result:c 3)
-  (is-equal result:a null)
-  (is-equal result:b null))
+  (is-equal result:a undefined)
+  (is-equal result:b undefined))
 
 (test
   "conj runtime: appends to array"

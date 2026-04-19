@@ -11,7 +11,6 @@
 import { read } from "lang/reader.js";
 import { compile as rawCompile } from "lang/compiler.js";
 import {
-  expand,
   resetGensym,
   resetMacros,
   resetModuleCache,
