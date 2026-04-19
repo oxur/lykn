@@ -1,76 +1,89 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; --- Zero-arg shorthand ---
+(test-compiles
+  "func: zero-arg shorthand"
+  "(func make-ts (Date:now))"
+  "function makeTs() {\n  return Date.now();\n}")
 
-(test-compiles "func: zero-arg shorthand"
-  "(func make-ts (Date:now))" "function makeTs() {\n  return Date.now();\n}")
-
-(test "func: zero-arg multi-expression"
+(test
+  "func: zero-arg multi-expression"
   (bind result (compile "(func init (console:log \"start\") 42)"))
   (includes result "console.log(\"start\")")
   (includes result "return 42"))
 
-;; --- Single clause ---
-
-(test "func: single clause with typed args"
-  (bind result (compile "(func add :args (:number a :number b) :returns :number :body (+ a b))"))
+(test
+  "func: single clause with typed args"
+  (bind
+    result
+    (compile
+      "(func add :args (:number a :number b) :returns :number :body (+ a b))"))
   (includes result "function add(a, b)")
   (includes result "typeof a !== \"number\"")
   (includes result "typeof b !== \"number\"")
   (includes result "return"))
 
-;; negative typeof assertion skipped (no excludes macro)
-(test "func: single clause with :any args"
+(test
+  "func: single clause with :any args"
   (bind result (compile "(func identity :args (:any x) :returns :any :body x)"))
   (includes result "function identity(x)")
   (includes result "return x"))
 
-(test "func: pre-condition"
-  (bind result (compile "(func positive :args (:number x) :returns :number :pre (> x 0) :body x)"))
+(test
+  "func: pre-condition"
+  (bind
+    result
+    (compile
+      "(func positive :args (:number x) :returns :number :pre (> x 0) :body x)"))
   (includes result "pre-condition failed")
   (includes result "caller blame")
   (includes result "(> x 0)"))
 
-(test "func: post-condition with tilde"
-  (bind result (compile "(func abs :args (:number x) :returns :number :post (>= ~ 0) :body (if (< x 0) (- 0 x) x))"))
+(test
+  "func: post-condition with tilde"
+  (bind
+    result
+    (compile
+      "(func abs :args (:number x) :returns :number :post (>= ~ 0) :body (if (< x 0) (- 0 x) x))"))
   (includes result "post-condition failed")
   (includes result "callee blame")
   (includes result "(>= ~ 0)"))
 
-;; negative return assertion skipped (no excludes macro)
-(test "func: void return (no return statement)"
-  (bind result (compile "(func log-it :args (:any msg) :returns :void :body (console:log msg))"))
+(test
+  "func: void return (no return statement)"
+  (bind
+    result
+    (compile
+      "(func log-it :args (:any msg) :returns :void :body (console:log msg))"))
   (includes result "console.log(msg)"))
 
-;; --- Multi-clause ---
-
-(test "func: multi-clause dispatch"
-  (bind result (compile "(func greet
-    (:args (:string name)
-     :returns :string
-     :body (+ \"Hello, \" name))
-    (:args (:string greeting :string name)
-     :returns :string
-     :body (+ greeting \", \" name)))"))
+(test
+  "func: multi-clause dispatch"
+  (bind
+    result
+    (compile
+      "(func greet\n    (:args (:string name)\n     :returns :string\n     :body (+ \"Hello, \" name))\n    (:args (:string greeting :string name)\n     :returns :string\n     :body (+ greeting \", \" name)))"))
   (includes result "...")
   (includes result ".length === 1")
   (includes result ".length === 2")
   (includes result "no matching clause"))
 
-;; ordering check (idx2 < idx1) simplified to presence check
-(test "func: multi-clause ordering (longer arity first)"
-  (bind result (compile "(func f
-    (:args (:any a) :returns :any :body a)
-    (:args (:any a :any b) :returns :any :body (+ a b)))"))
+(test
+  "func: multi-clause ordering (longer arity first)"
+  (bind
+    result
+    (compile
+      "(func f\n    (:args (:any a) :returns :any :body a)\n    (:args (:any a :any b) :returns :any :body (+ a b)))"))
   (includes result ".length === 2")
   (includes result ".length === 1"))
 
-(test "func: multi-clause with type dispatch"
-  (bind result (compile "(func describe
-    (:args (:number n) :returns :string :body (+ \"number: \" n))
-    (:args (:string s) :returns :string :body (+ \"string: \" s)))"))
+(test
+  "func: multi-clause with type dispatch"
+  (bind
+    result
+    (compile
+      "(func describe\n    (:args (:number n) :returns :string :body (+ \"number: \" n))\n    (:args (:string s) :returns :string :body (+ \"string: \" s)))"))
   (includes result "typeof")
   (includes result "\"number\"")
   (includes result "\"string\""))

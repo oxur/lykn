@@ -1,43 +1,45 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile read expand reset-gensym reset-macros))
 
-;; --- cell ---
+(test-compiles "cell: create cell with number" "(cell 0)" "({\n  value: 0\n});")
 
-(test-compiles "cell: create cell with number"
-  "(cell 0)" "({\n  value: 0\n});")
+(test-compiles
+  "cell: create cell with string"
+  "(cell \"hello\")"
+  "({\n  value: \"hello\"\n});")
 
-(test-compiles "cell: create cell with string"
-  "(cell \"hello\")" "({\n  value: \"hello\"\n});")
+(test-compiles "express: read cell value" "(express counter)" "counter.value;")
 
-;; --- express ---
+(test-compiles
+  "swap!: simple function"
+  "(swap! counter inc)"
+  "counter.value = inc(counter.value);")
 
-(test-compiles "express: read cell value"
-  "(express counter)" "counter.value;")
+(test-compiles
+  "swap!: with extra args"
+  "(swap! counter add 5)"
+  "counter.value = add(counter.value, 5);")
 
-;; --- swap! ---
+(test-compiles
+  "swap!: with multiple extra args"
+  "(swap! counter f a b)"
+  "counter.value = f(counter.value, a, b);")
 
-(test-compiles "swap!: simple function"
-  "(swap! counter inc)" "counter.value = inc(counter.value);")
+(test-compiles
+  "swap!: with lambda"
+  "(swap! counter (=> (n) (+ n 1)))"
+  "counter.value = (n => n + 1)(counter.value);")
 
-(test-compiles "swap!: with extra args"
-  "(swap! counter add 5)" "counter.value = add(counter.value, 5);")
+(test-compiles "reset!: simple value" "(reset! counter 0)" "counter.value = 0;")
 
-(test-compiles "swap!: with multiple extra args"
-  "(swap! counter f a b)" "counter.value = f(counter.value, a, b);")
+(test-compiles
+  "reset!: expression value"
+  "(reset! counter (+ a b))"
+  "counter.value = a + b;")
 
-(test-compiles "swap!: with lambda"
-  "(swap! counter (=> (n) (+ n 1)))" "counter.value = (n => n + 1)(counter.value);")
-
-;; --- reset! ---
-
-(test-compiles "reset!: simple value"
-  "(reset! counter 0)" "counter.value = 0;")
-
-(test-compiles "reset!: expression value"
-  "(reset! counter (+ a b))" "counter.value = a + b;")
-
-(test "cell: expansion produces object form"
+(test
+  "cell: expansion produces object form"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(cell 0)")))
@@ -50,7 +52,8 @@
   (is-equal pair-key:value "value")
   (is-equal pair-val:value 0))
 
-(test "express: expansion produces colon syntax"
+(test
+  "express: expansion produces colon syntax"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(express c)")))
@@ -58,7 +61,8 @@
   (is-equal node:type "atom")
   (is-equal node:value "c:value"))
 
-(test "swap!: expansion produces assignment"
+(test
+  "swap!: expansion produces assignment"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(swap! c f)")))
@@ -73,7 +77,8 @@
   (is-equal call-fn:value "f")
   (is-equal call-arg:value "c:value"))
 
-(test "reset!: expansion produces assignment"
+(test
+  "reset!: expansion produces assignment"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(reset! c 42)")))

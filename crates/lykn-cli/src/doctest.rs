@@ -192,7 +192,9 @@ fn look_ahead_for_expected_block(lines: &[&str], start: usize) -> Option<Expecte
         }
 
         // If we hit another fenced block type, stop looking
-        if line.starts_with("```") && line != "```" && !line.starts_with("```js")
+        if line.starts_with("```")
+            && line != "```"
+            && !line.starts_with("```js")
             && !line.starts_with("```text")
         {
             return None;
@@ -1032,14 +1034,14 @@ Some prose here.
                 annotation: Annotation::Skip,
                 source: "(partial)".to_string(),
                 expected_js: None,
-            expected_output: None,
+                expected_output: None,
             },
             CodeBlock {
                 number: 2,
                 annotation: Annotation::Fragment,
                 source: "(also partial)".to_string(),
                 expected_js: None,
-            expected_output: None,
+                expected_output: None,
             },
         ];
         let md = "```lykn,skip\n(partial)\n```\n\n```lykn,fragment\n(also partial)\n```";

@@ -1,74 +1,83 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-(test "fn: typed params with type checks"
+(test
+  "fn: typed params with type checks"
   (bind result (compile "(fn (:number x) (+ x 1))"))
   (includes result "typeof x !== \"number\"")
   (includes result "Number.isNaN(x)")
   (includes result "return x + 1"))
 
-;; fn: :any params skip type check — negative typeof assertion skipped (no excludes macro)
-(test-compiles "fn: :any params skip type check"
-  "(fn (:any x) x)" "(x => x);")
+(test-compiles "fn: :any params skip type check" "(fn (:any x) x)" "(x => x);")
 
-(test-compiles "fn: zero params"
-  "(fn () (Date:now))" "(() => Date.now());")
+(test-compiles "fn: zero params" "(fn () (Date:now))" "(() => Date.now());")
 
-(test "fn: multi-expression body"
+(test
+  "fn: multi-expression body"
   (bind result (compile "(fn (:number x) (console:log x) (+ x 1))"))
   (includes result "console.log(x)")
   (includes result "return x + 1"))
 
-(test "fn: string type check"
+(test
+  "fn: string type check"
   (bind result (compile "(fn (:string s) s)"))
   (includes result "typeof s !== \"string\"")
   (includes result "return s"))
 
-(test "fn: array type check"
+(test
+  "fn: array type check"
   (bind result (compile "(fn (:array a) a)"))
   (includes result "Array.isArray(a)")
   (includes result "return a"))
 
-(test "fn: object type check"
+(test
+  "fn: object type check"
   (bind result (compile "(fn (:object o) o)"))
   (includes result "typeof o !== \"object\"")
   (includes result "o === null")
   (includes result "return o"))
 
-(test "lambda: alias for fn"
+(test
+  "lambda: alias for fn"
   (bind result (compile "(lambda (:number x) (+ x 1))"))
   (includes result "typeof x !== \"number\"")
   (includes result "return x + 1"))
 
-(test "fn: multiple typed params"
+(test
+  "fn: multiple typed params"
   (bind result (compile "(fn (:number x :string y) (+ x y))"))
   (includes result "typeof x !== \"number\"")
   (includes result "typeof y !== \"string\"")
   (includes result "return x + y"))
 
-(test "fn: typed fn returns last expression"
+(test
+  "fn: typed fn returns last expression"
   (bind result (compile "(bind f (fn (:number x) (* x 2)))"))
   (includes result "return x * 2"))
 
-(test "fn: multi-expression typed fn returns last"
+(test
+  "fn: multi-expression typed fn returns last"
   (bind result (compile "(bind f (fn (:number x) (bind y (+ x 1)) (* y 2)))"))
   (includes result "return y * 2")
   (includes result "const y = x + 1"))
 
-(test-compiles "fn: :any fn still uses concise arrow"
-  "(bind f (fn (:any x) x))" "const f = x => x;")
+(test-compiles
+  "fn: :any fn still uses concise arrow"
+  "(bind f (fn (:any x) x))"
+  "const f = x => x;")
 
-;; _ as a parameter name (not a destructuring skip)
-
-(test "fn: _ as parameter name compiles"
+(test
+  "fn: _ as parameter name compiles"
   (bind result (compile "(fn (:any _) 42)"))
   (includes result "_ => 42"))
 
-(test "fn: _ with other typed params"
+(test
+  "fn: _ with other typed params"
   (bind result (compile "(fn (:any _ :number i) (+ i 1))"))
   (includes result "(_, i)"))
 
-(test "fn: _ as parameter at runtime"
+(test
+  "fn: _ as parameter at runtime"
   (bind f (fn (:any _ :number i) (* i 10)))
   (is-equal (f "ignored" 3) 30))

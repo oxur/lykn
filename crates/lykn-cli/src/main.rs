@@ -121,7 +121,11 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Fmt { files, write, check } => cmd_fmt(&files, write, check),
+        Commands::Fmt {
+            files,
+            write,
+            check,
+        } => cmd_fmt(&files, write, check),
         Commands::Check { files } => cmd_check(&files),
         Commands::Compile {
             file,

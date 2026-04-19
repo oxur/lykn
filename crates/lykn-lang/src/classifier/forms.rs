@@ -2202,8 +2202,7 @@ mod tests {
 
     #[test]
     fn test_classify_set_symbol_valid() {
-        let result =
-            form("set-symbol!", vec![atom("obj"), atom("key"), num(42.0)]).unwrap();
+        let result = form("set-symbol!", vec![atom("obj"), atom("key"), num(42.0)]).unwrap();
         match result {
             SurfaceForm::SetSymbol {
                 obj, key, value, ..

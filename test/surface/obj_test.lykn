@@ -1,41 +1,52 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile read expand reset-gensym reset-macros))
 
-(test-compiles "obj: simple object"
-  "(obj :name \"Duncan\" :age 42)" "({\n  name: \"Duncan\",\n  age: 42\n});")
+(test-compiles
+  "obj: simple object"
+  "(obj :name \"Duncan\" :age 42)"
+  "({\n  name: \"Duncan\",\n  age: 42\n});")
 
-(test-compiles "obj: single property"
-  "(obj :active true)" "({\n  active: true\n});")
+(test-compiles
+  "obj: single property"
+  "(obj :active true)"
+  "({\n  active: true\n});")
 
-(test-compiles "obj: kebab-case key"
-  "(obj :first-name \"Duncan\")" "({\n  firstName: \"Duncan\"\n});")
+(test-compiles
+  "obj: kebab-case key"
+  "(obj :first-name \"Duncan\")"
+  "({\n  firstName: \"Duncan\"\n});")
 
-(test-compiles "obj: computed value"
-  "(obj :score (* base multiplier))" "({\n  score: base * multiplier\n});")
+(test-compiles
+  "obj: computed value"
+  "(obj :score (* base multiplier))"
+  "({\n  score: base * multiplier\n});")
 
-(test-compiles "obj: empty object"
-  "(obj)" "({});")
+(test-compiles "obj: empty object" "(obj)" "({});")
 
-(test-compiles "obj: variable value"
-  "(obj :name user-name)" "({\n  name: userName\n});")
+(test-compiles
+  "obj: variable value"
+  "(obj :name user-name)"
+  "({\n  name: userName\n});")
 
-;; Keywords that collide with surface macro names must not be
-;; intercepted by the expander (e.g., :type, :fn, :match).
-(test "obj: keyword :type does not collide with type macro"
+(test
+  "obj: keyword :type does not collide with type macro"
   (bind result (compile "(obj :type \"module\")"))
   (includes result "type: \"module\""))
 
-(test "obj: keyword :fn does not collide with fn macro"
+(test
+  "obj: keyword :fn does not collide with fn macro"
   (bind result (compile "(obj :fn \"value\")"))
   (includes result "fn: \"value\""))
 
-(test "obj: runtime with :type keyword"
+(test
+  "obj: runtime with :type keyword"
   (bind o (obj :type "module" :name "test"))
   (is-equal o:type "module")
   (is-equal o:name "test"))
 
-(test "obj: expansion produces object form"
+(test
+  "obj: expansion produces object form"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(obj :name \"Duncan\")")))

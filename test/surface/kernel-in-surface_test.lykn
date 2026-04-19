@@ -1,173 +1,135 @@
-(import-macros "testing"
-  (test test-compiles is-equal ok is is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal ok is is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; Tests for kernel forms used inside surface contexts (func, class, etc.).
-;; These go through the full surface expander, unlike test/forms/ which
-;; bypasses it via compile-kernel. The constructor prototype-pollution bug
-;; showed that surface expansion of kernel form bodies was completely
-;; untested — this file fills that gap.
-
-;; ---------------------------------------------------------------------------
-;; for-of inside func
-;; ---------------------------------------------------------------------------
-
-(test "for-of in func: compiles"
-  (bind result (compile "(func sum-all
-    :args (:any items)
-    :body
-    (bind total (cell 0))
-    (for-of item items
-      (swap! total (=> (t) (+ t item))))
-    (express total))"))
+(test
+  "for-of in func: compiles"
+  (bind
+    result
+    (compile
+      "(func sum-all\n    :args (:any items)\n    :body\n    (bind total (cell 0))\n    (for-of item items\n      (swap! total (=> (t) (+ t item))))\n    (express total))"))
   (includes result "for (const item of items)"))
 
-(test "for-of in func: runs"
-  (func sum-all
-    :args (:any items)
+(test
+  "for-of in func: runs"
+  (func
+    sum-all
+    :args
+    (:any items)
     :body
     (bind total (cell 0))
-    (for-of item items
-      (swap! total (=> (t) (+ t item))))
+    (for-of item items (swap! total (=> (t) (+ t item))))
     (express total))
-  (is-equal (sum-all #a(1 2 3 4)) 10))
+  (is-equal (sum-all (array 1 2 3 4)) 10))
 
-;; ---------------------------------------------------------------------------
-;; while inside func
-;; ---------------------------------------------------------------------------
-
-(test "while in func: compiles"
-  (bind result (compile "(func count-down
-    :args (:number n)
-    :body
-    (bind result (cell n))
-    (while (> (express result) 0)
-      (swap! result (=> (x) (- x 1))))
-    (express result))"))
+(test
+  "while in func: compiles"
+  (bind
+    result
+    (compile
+      "(func count-down\n    :args (:number n)\n    :body\n    (bind result (cell n))\n    (while (> (express result) 0)\n      (swap! result (=> (x) (- x 1))))\n    (express result))"))
   (includes result "while"))
 
-(test "while in func: runs"
-  (func count-down
-    :args (:number n)
+(test
+  "while in func: runs"
+  (func
+    count-down
+    :args
+    (:number n)
     :body
     (bind result (cell n))
-    (while (> (express result) 0)
-      (swap! result (=> (x) (- x 1))))
+    (while (> (express result) 0) (swap! result (=> (x) (- x 1))))
     (express result))
   (is-equal (count-down 5) 0))
 
-;; ---------------------------------------------------------------------------
-;; for inside func
-;; ---------------------------------------------------------------------------
-
-(test "for in func: compiles"
-  (bind result (compile "(func factorial
-    :args (:number n)
-    :body
-    (bind acc (cell 1))
-    (for (let i 1) (<= i n) (+= i 1)
-      (swap! acc (=> (a) (* a i))))
-    (express acc))"))
+(test
+  "for in func: compiles"
+  (bind
+    result
+    (compile
+      "(func factorial\n    :args (:number n)\n    :body\n    (bind acc (cell 1))\n    (for (let i 1) (<= i n) (+= i 1)\n      (swap! acc (=> (a) (* a i))))\n    (express acc))"))
   (includes result "for (let i = 1;"))
 
-(test "for in func: runs"
-  (func factorial
-    :args (:number n)
+(test
+  "for in func: runs"
+  (func
+    factorial
+    :args
+    (:number n)
     :body
     (bind acc (cell 1))
-    (for (let i 1) (<= i n) (+= i 1)
-      (swap! acc (=> (a) (* a i))))
+    (for (let i 1) (<= i n) (+= i 1) (swap! acc (=> (a) (* a i))))
     (express acc))
   (is-equal (factorial 5) 120))
 
-;; ---------------------------------------------------------------------------
-;; try/catch inside func
-;; ---------------------------------------------------------------------------
-
-(test "try/catch in func: compiles"
-  (bind result (compile "(func safe-parse
-    :args (:string s)
-    :body
-    (bind result (cell null))
-    (try
-      (reset! result (JSON:parse s))
-      (catch e (reset! result null)))
-    (express result))"))
+(test
+  "try/catch in func: compiles"
+  (bind
+    result
+    (compile
+      "(func safe-parse\n    :args (:string s)\n    :body\n    (bind result (cell null))\n    (try\n      (reset! result (JSON:parse s))\n      (catch e (reset! result null)))\n    (express result))"))
   (includes result "try")
   (includes result "catch"))
 
-(test "try/catch in func: runs"
-  (func safe-parse
-    :args (:string s)
+(test
+  "try/catch in func: runs"
+  (func
+    safe-parse
+    :args
+    (:string s)
     :body
     (bind result (cell null))
-    (try
-      (reset! result (JSON:parse s))
-      (catch e (reset! result null)))
+    (try (reset! result (JSON:parse s)) (catch e (reset! result null)))
     (express result))
   (bind parsed (safe-parse "{\"a\":1}"))
   (is-equal parsed:a 1)
   (is-equal (safe-parse "not json") null))
 
-;; ---------------------------------------------------------------------------
-;; template inside func
-;; ---------------------------------------------------------------------------
-
-(test "template in func: compiles"
-  (bind result (compile "(func greet
-    :args (:string name)
-    :body
-    (template \"Hello, \" name \"!\"))"))
+(test
+  "template in func: compiles"
+  (bind
+    result
+    (compile
+      "(func greet\n    :args (:string name)\n    :body\n    (template \"Hello, \" name \"!\"))"))
   (includes result "Hello, ${name}!"))
 
-(test "template in func: runs"
-  (func greet
-    :args (:string name)
-    :body
-    (template "Hello, " name "!"))
+(test
+  "template in func: runs"
+  (func greet :args (:string name) :body (template "Hello, " name "!"))
   (is-equal (greet "world") "Hello, world!"))
 
-;; ---------------------------------------------------------------------------
-;; ternary inside func
-;; ---------------------------------------------------------------------------
-
-(test "ternary in func: compiles"
-  (bind result (compile "(func abs-val
-    :args (:number x)
-    :body
-    (? (< x 0) (- 0 x) x))"))
+(test
+  "ternary in func: compiles"
+  (bind
+    result
+    (compile
+      "(func abs-val\n    :args (:number x)\n    :body\n    (? (< x 0) (- 0 x) x))"))
   (includes result "?"))
 
-(test "ternary in func: runs"
-  (func abs-val
-    :args (:number x)
-    :body
-    (? (< x 0) (- 0 x) x))
+(test
+  "ternary in func: runs"
+  (func abs-val :args (:number x) :body (? (< x 0) (- 0 x) x))
   (is-equal (abs-val -5) 5)
   (is-equal (abs-val 3) 3))
 
-;; ---------------------------------------------------------------------------
-;; switch inside func
-;; ---------------------------------------------------------------------------
-
-(test "switch in func: compiles"
-  (bind result (compile "(func describe
-    :args (:any code)
-    :body
-    (bind result (cell \"\"))
-    (switch code
-      (200 (reset! result \"ok\") (break))
-      (404 (reset! result \"not found\") (break))
-      (default (reset! result \"unknown\")))
-    (express result))"))
+(test
+  "switch in func: compiles"
+  (bind
+    result
+    (compile
+      "(func describe\n    :args (:any code)\n    :body\n    (bind result (cell \"\"))\n    (switch code\n      (200 (reset! result \"ok\") (break))\n      (404 (reset! result \"not found\") (break))\n      (default (reset! result \"unknown\")))\n    (express result))"))
   (includes result "switch"))
 
-(test "switch in func: runs"
-  (func describe
-    :args (:any code)
+(test
+  "switch in func: runs"
+  (func
+    describe
+    :args
+    (:any code)
     :body
     (bind result (cell ""))
-    (switch code
+    (switch
+      code
       (200 (reset! result "ok") (break))
       (404 (reset! result "not found") (break))
       (default (reset! result "unknown")))
@@ -176,154 +138,134 @@
   (is-equal (describe 404) "not found")
   (is-equal (describe 500) "unknown"))
 
-;; ---------------------------------------------------------------------------
-;; throw inside func
-;; ---------------------------------------------------------------------------
-
-(test "throw in func: compiles"
-  (bind result (compile "(func require-positive
-    :args (:number x)
-    :body
-    (if (< x 0) (throw (new Error \"negative\")))
-    x)"))
+(test
+  "throw in func: compiles"
+  (bind
+    result
+    (compile
+      "(func require-positive\n    :args (:number x)\n    :body\n    (if (< x 0) (throw (new Error \"negative\")))\n    x)"))
   (includes result "throw"))
 
-(test "throw in func: runs"
-  (func require-positive
-    :args (:number x)
+(test
+  "throw in func: runs"
+  (func
+    require-positive
+    :args
+    (:number x)
     :body
     (if (< x 0) (throw (new Error "negative")))
     x)
   (is-equal (require-positive 5) 5)
   (is-thrown (require-positive -1)))
 
-;; ---------------------------------------------------------------------------
-;; get (computed access) inside func
-;; ---------------------------------------------------------------------------
-
-(test "get in func: compiles"
-  (bind result (compile "(func nth
-    :args (:any arr :number i)
-    :body
-    (get arr i))"))
+(test
+  "get in func: compiles"
+  (bind
+    result
+    (compile
+      "(func nth\n    :args (:any arr :number i)\n    :body\n    (get arr i))"))
   (includes result "arr[i]"))
 
-(test "get in func: runs"
-  (func nth
-    :args (:any arr :number i)
-    :body
-    (get arr i))
-  (is-equal (nth #a(10 20 30) 1) 20))
+(test
+  "get in func: runs"
+  (func nth :args (:any arr :number i) :body (get arr i))
+  (is-equal (nth (array 10 20 30) 1) 20))
 
-;; ---------------------------------------------------------------------------
-;; spread inside func
-;; ---------------------------------------------------------------------------
-
-(test "spread in func: compiles"
-  (bind result (compile "(func prepend
-    :args (:any item :any arr)
-    :body
-    (array item (spread arr)))"))
+(test
+  "spread in func: compiles"
+  (bind
+    result
+    (compile
+      "(func prepend\n    :args (:any item :any arr)\n    :body\n    (array item (spread arr)))"))
   (includes result "...arr"))
 
-(test "spread in func: runs"
-  (func prepend
-    :args (:any item :any arr)
-    :body
-    (array item (spread arr)))
-  (is-equal (prepend 0 #a(1 2 3)) #a(0 1 2 3)))
+(test
+  "spread in func: runs"
+  (func prepend :args (:any item :any arr) :body (array item (spread arr)))
+  (is-equal (prepend 0 (array 1 2 3)) (array 0 1 2 3)))
 
-;; ---------------------------------------------------------------------------
-;; async/await inside func
-;; ---------------------------------------------------------------------------
-
-(test "async func: compiles"
-  (bind result (compile "(async (function fetch-data (url)
-    (bind response (await (fetch url)))
-    (return (await (response:json)))))"))
+(test
+  "async func: compiles"
+  (bind
+    result
+    (compile
+      "(async (function fetch-data (url)\n    (bind response (await (fetch url)))\n    (return (await (response:json)))))"))
   (includes result "async")
   (includes result "await"))
 
-;; ---------------------------------------------------------------------------
-;; do-while inside func
-;; ---------------------------------------------------------------------------
-
-(test "do-while in func: compiles"
-  (bind result (compile "(func find-first-positive
-    :args (:any items)
-    :body
-    (bind i (cell 0))
-    (do-while (< (express i) items:length)
-      (if (> (get items (express i)) 0)
-        (return (get items (express i))))
-      (swap! i (=> (x) (+ x 1))))
-    -1)"))
+(test
+  "do-while in func: compiles"
+  (bind
+    result
+    (compile
+      "(func find-first-positive\n    :args (:any items)\n    :body\n    (bind i (cell 0))\n    (do-while (< (express i) items:length)\n      (if (> (get items (express i)) 0)\n        (return (get items (express i))))\n      (swap! i (=> (x) (+ x 1))))\n    -1)"))
   (includes result "do {"))
 
-;; ---------------------------------------------------------------------------
-;; Kernel forms inside class methods (surface expansion of class bodies)
-;; ---------------------------------------------------------------------------
-
-(class Stack ()
-  (constructor ()
-    (assign this:items (array)))
-  (push (item)
-    (this:items:push item))
-  (pop ()
-    (if (=== this:items:length 0)
-      (throw (new Error "stack underflow")))
+(class
+  Stack
+  ()
+  (constructor () (assign this:items (array)))
+  (push (item) (this:items:push item))
+  (pop
+    ()
+    (if (=== this:items:length 0) (throw (new Error "stack underflow")))
     (return (this:items:pop)))
-  (peek ()
+  (peek
+    ()
     (bind len this:items:length)
     (return (? (=== len 0) null (get this:items (- len 1)))))
-  (to-array ()
-    (return (array (spread this:items)))))
+  (to-array () (return (array (spread this:items)))))
 
-(test "class with kernel forms: push and pop"
+(test
+  "class with kernel forms: push and pop"
   (bind s (new Stack))
   (s:push 1)
   (s:push 2)
   (is-equal (s:pop) 2)
   (is-equal (s:pop) 1))
 
-(test "class with kernel forms: peek"
+(test
+  "class with kernel forms: peek"
   (bind s (new Stack))
   (is-equal (s:peek) null)
   (s:push 42)
   (is-equal (s:peek) 42))
 
-(test "class with kernel forms: throw on empty pop"
+(test
+  "class with kernel forms: throw on empty pop"
   (bind s (new Stack))
   (is-thrown (s:pop)))
 
-(test "class with kernel forms: spread in method"
+(test
+  "class with kernel forms: spread in method"
   (bind s (new Stack))
   (s:push 1)
   (s:push 2)
-  (is-equal (s:to-array) #a(1 2)))
+  (is-equal (s:to-array) (array 1 2)))
 
-(class Iterator ()
-  (constructor (items)
-    (assign this:items items)
-    (assign this:index 0))
-  (has-next ()
-    (return (< this:index this:items:length)))
-  (next ()
-    (if (not (this:has-next))
-      (throw (new Error "no more elements")))
+(class
+  Iterator
+  ()
+  (constructor (items) (assign this:items items) (assign this:index 0))
+  (has-next () (return (< this:index this:items:length)))
+  (next
+    ()
+    (if (not (this:has-next)) (throw (new Error "no more elements")))
     (bind val (get this:items this:index))
     (assign this:index (+ this:index 1))
     (return val)))
 
-(test "class with kernel forms: iterator pattern"
-  (bind it (new Iterator #a(10 20 30)))
+(test
+  "class with kernel forms: iterator pattern"
+  (bind it (new Iterator (array 10 20 30)))
   (is (it:has-next))
   (is-equal (it:next) 10)
   (is-equal (it:next) 20)
   (is-equal (it:next) 30)
   (is (not (it:has-next))))
 
-(test "class with kernel forms: iterator throws on exhaustion"
-  (bind it (new Iterator #a(1)))
+(test
+  "class with kernel forms: iterator throws on exhaustion"
+  (bind it (new Iterator (array 1)))
   (it:next)
   (is-thrown (it:next)))

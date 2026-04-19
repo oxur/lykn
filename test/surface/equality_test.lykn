@@ -1,101 +1,83 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; --- = (strict equality) ---
+(test-compiles "=: binary strict equality" "(= a b)" "a === b;")
 
-(test-compiles "=: binary strict equality"
-  "(= a b)" "a === b;")
+(test-compiles "=: variadic pairwise chain" "(= a b c)" "a === b && b === c;")
 
-(test-compiles "=: variadic pairwise chain"
-  "(= a b c)" "a === b && b === c;")
+(test-compiles
+  "=: four-way pairwise chain"
+  "(= a b c d)"
+  "a === b && b === c && c === d;")
 
-(test-compiles "=: four-way pairwise chain"
-  "(= a b c d)" "a === b && b === c && c === d;")
+(test-compiles "=: with literals" "(= x 42)" "x === 42;")
 
-(test-compiles "=: with literals"
-  "(= x 42)" "x === 42;")
+(test-compiles "=: with null" "(= x null)" "x === null;")
 
-(test-compiles "=: with null"
-  "(= x null)" "x === null;")
+(test-compiles "=: with expressions" "(= (+ a 1) (+ b 2))" "a + 1 === b + 2;")
 
-(test-compiles "=: with expressions"
-  "(= (+ a 1) (+ b 2))" "a + 1 === b + 2;")
+(test "=: error on single arg" (is-thrown (compile "(= x)") Error))
 
-(test "=: error on single arg"
-  (is-thrown (compile "(= x)") Error))
+(test-compiles "!=: binary strict inequality" "(!= a b)" "a !== b;")
 
-;; --- != (strict inequality) ---
+(test-compiles "!=: with literals" "(!= x \"hello\")" "x !== \"hello\";")
 
-(test-compiles "!=: binary strict inequality"
-  "(!= a b)" "a !== b;")
+(test "!=: error on wrong arity" (is-thrown (compile "(!= a)") Error))
 
-(test-compiles "!=: with literals"
-  "(!= x \"hello\")" "x !== \"hello\";")
+(test-compiles "and: binary" "(and x y)" "x && y;")
 
-(test "!=: error on wrong arity"
-  (is-thrown (compile "(!= a)") Error))
+(test-compiles "and: variadic" "(and a b c d)" "a && b && c && d;")
 
-;; --- and (logical AND) ---
+(test-compiles
+  "and: with expressions"
+  "(and (> x 0) (< x 10))"
+  "x > 0 && x < 10;")
 
-(test-compiles "and: binary"
-  "(and x y)" "x && y;")
+(test "and: error on single arg" (is-thrown (compile "(and x)") Error))
 
-(test-compiles "and: variadic"
-  "(and a b c d)" "a && b && c && d;")
+(test-compiles "or: binary" "(or x y)" "x || y;")
 
-(test-compiles "and: with expressions"
-  "(and (> x 0) (< x 10))" "x > 0 && x < 10;")
+(test-compiles "or: variadic" "(or a b c d)" "a || b || c || d;")
 
-(test "and: error on single arg"
-  (is-thrown (compile "(and x)") Error))
+(test-compiles
+  "or: with expressions"
+  "(or (= x 0) (= x 1))"
+  "x === 0 || x === 1;")
 
-;; --- or (logical OR) ---
+(test "or: error on single arg" (is-thrown (compile "(or x)") Error))
 
-(test-compiles "or: binary"
-  "(or x y)" "x || y;")
+(test-compiles "not: unary" "(not x)" "!x;")
 
-(test-compiles "or: variadic"
-  "(or a b c d)" "a || b || c || d;")
+(test-compiles "not: double negation" "(not (not x))" "!!x;")
 
-(test-compiles "or: with expressions"
-  "(or (= x 0) (= x 1))" "x === 0 || x === 1;")
+(test-compiles "not: with expression" "(not (= a b))" "!(a === b);")
 
-(test "or: error on single arg"
-  (is-thrown (compile "(or x)") Error))
+(test "not: error on multiple args" (is-thrown (compile "(not x y)") Error))
 
-;; --- not (logical NOT) ---
+(test-compiles
+  "regression: reset! still emits assignment"
+  "(bind c (cell 0))\n(reset! c 42)"
+  "const c = {\n  value: 0\n};\nc.value = 42;")
 
-(test-compiles "not: unary"
-  "(not x)" "!x;")
+(test-compiles
+  "regression: swap! still emits assignment"
+  "(bind c (cell 0))\n(swap! c f)"
+  "const c = {\n  value: 0\n};\nc.value = f(c.value);")
 
-(test-compiles "not: double negation"
-  "(not (not x))" "!!x;")
+(test-compiles "=: inside bind" "(bind result (= a b))" "const result = a === b;")
 
-(test-compiles "not: with expression"
-  "(not (= a b))" "!(a === b);")
+(test-compiles
+  "and: inside bind"
+  "(bind result (and x y))"
+  "const result = x && y;")
 
-(test "not: error on multiple args"
-  (is-thrown (compile "(not x y)") Error))
+(test-compiles
+  "or: inside if"
+  "(if (or a b) (console:log 1))"
+  "if (a || b) console.log(1);")
 
-;; --- Regression: surface macros that emit kernel = ---
-
-(test-compiles "regression: reset! still emits assignment"
-  "(bind c (cell 0))\n(reset! c 42)" "const c = {\n  value: 0\n};\nc.value = 42;")
-
-(test-compiles "regression: swap! still emits assignment"
-  "(bind c (cell 0))\n(swap! c f)" "const c = {\n  value: 0\n};\nc.value = f(c.value);")
-
-;; --- Composition: = inside other surface forms ---
-
-(test-compiles "=: inside bind"
-  "(bind result (= a b))" "const result = a === b;")
-
-(test-compiles "and: inside bind"
-  "(bind result (and x y))" "const result = x && y;")
-
-(test-compiles "or: inside if"
-  "(if (or a b) (console:log 1))" "if (a || b) console.log(1);")
-
-(test-compiles "=: inside match"
-  "(bind result (= 1 1))" "const result = 1 === 1;")
+(test-compiles
+  "=: inside match"
+  "(bind result (= 1 1))"
+  "const result = 1 === 1;")

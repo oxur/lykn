@@ -1,62 +1,75 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; --- if-let: simple binding ---
-
-(test "if-let: simple binding with else"
-  (bind result (compile "(if-let (user (find-user id)) (greet user) (console:log \"not found\"))"))
+(test
+  "if-let: simple binding with else"
+  (bind
+    result
+    (compile
+      "(if-let (user (find-user id)) (greet user) (console:log \"not found\"))"))
   (includes result "!= null")
   (includes result "const user")
   (includes result "greet(user)")
   (includes result "not found"))
 
-(test "if-let: simple binding without else"
+(test
+  "if-let: simple binding without else"
   (bind result (compile "(if-let (user (find-user id)) (greet user))"))
   (includes result "!= null")
   (includes result "greet(user)"))
 
-;; --- if-let: ADT pattern ---
-
-(test "if-let: ADT constructor pattern"
-  (bind result (compile "(type Option (Some :any value) None)\n    (if-let ((Some v) (find-user id)) (greet v) (console:log \"none\"))"))
+(test
+  "if-let: ADT constructor pattern"
+  (bind
+    result
+    (compile
+      "(type Option (Some :any value) None)\n    (if-let ((Some v) (find-user id)) (greet v) (console:log \"none\"))"))
   (includes result ".tag === \"Some\"")
   (includes result ".value")
   (includes result "greet(v)"))
 
-;; --- if-let: structural obj pattern ---
-
-(test "if-let: structural obj pattern"
-  (bind result (compile "(if-let ((obj :name n :age a) data) (console:log n a) (console:log \"bad\"))"))
+(test
+  "if-let: structural obj pattern"
+  (bind
+    result
+    (compile
+      "(if-let ((obj :name n :age a) data) (console:log n a) (console:log \"bad\"))"))
   (includes result "\"name\" in")
   (includes result "\"age\" in")
   (includes result "const n")
   (includes result "const a"))
 
-;; --- if-let: IIFE ---
-
-(test "if-let: always produces IIFE"
+(test
+  "if-let: always produces IIFE"
   (bind result (compile "(if-let (x (get-val)) x 0)"))
   (includes result "(() =>")
   (includes result "return"))
 
-;; --- when-let ---
-
-(test "when-let: simple binding"
+(test
+  "when-let: simple binding"
   (bind result (compile "(when-let (user (find-user id)) (greet user))"))
   (includes result "!= null")
   (includes result "greet(user)"))
 
-(test "when-let: ADT pattern"
-  (bind result (compile "(type Option (Some :any value) None)\n    (when-let ((Some v) (find-user id)) (greet v))"))
+(test
+  "when-let: ADT pattern"
+  (bind
+    result
+    (compile
+      "(type Option (Some :any value) None)\n    (when-let ((Some v) (find-user id)) (greet v))"))
   (includes result ".tag === \"Some\"")
   (includes result "greet(v)"))
 
-(test "when-let: multiple body expressions"
-  (bind result (compile "(when-let (user (find-user id)) (console:log user) (greet user))"))
+(test
+  "when-let: multiple body expressions"
+  (bind
+    result
+    (compile "(when-let (user (find-user id)) (console:log user) (greet user))"))
   (includes result "console.log(user)")
   (includes result "greet(user)"))
 
-(test "when-let: produces IIFE"
+(test
+  "when-let: produces IIFE"
   (bind result (compile "(when-let (x (get-val)) x)"))
   (includes result "(() =>"))

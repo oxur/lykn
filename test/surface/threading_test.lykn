@@ -1,42 +1,32 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile read expand reset-gensym reset-macros))
 
-;; --- -> (thread-first) ---
+(test-compiles "->: bare symbols" "(-> x f g)" "g(f(x));")
 
-(test-compiles "->: bare symbols"
-  "(-> x f g)" "g(f(x));")
+(test-compiles "->: list forms" "(-> x (f a) (g b))" "g(f(x, a), b);")
 
-(test-compiles "->: list forms"
-  "(-> x (f a) (g b))" "g(f(x, a), b);")
+(test-compiles "->: mixed bare and list" "(-> x f (g a))" "g(f(x), a);")
 
-(test-compiles "->: mixed bare and list"
-  "(-> x f (g a))" "g(f(x), a);")
+(test-compiles "->: single step" "(-> x f)" "f(x);")
 
-(test-compiles "->: single step"
-  "(-> x f)" "f(x);")
+(test-compiles "->: three steps" "(-> x f g h)" "h(g(f(x)));")
 
-(test-compiles "->: three steps"
-  "(-> x f g h)" "h(g(f(x)));")
+(test-compiles "->>: bare symbols" "(->> x f g)" "g(f(x));")
 
-;; --- ->> (thread-last) ---
+(test-compiles "->>: list forms" "(->> x (f a) (g b))" "g(b, f(a, x));")
 
-(test-compiles "->>: bare symbols"
-  "(->> x f g)" "g(f(x));")
+(test-compiles "->>: mixed bare and list" "(->> x f (g a))" "g(a, f(x));")
 
-(test-compiles "->>: list forms"
-  "(->> x (f a) (g b))" "g(b, f(a, x));")
+(test-compiles "->>: single step" "(->> x f)" "f(x);")
 
-(test-compiles "->>: mixed bare and list"
-  "(->> x f (g a))" "g(a, f(x));")
+(test-compiles
+  "->>: three steps with args"
+  "(->> items (filter pred) (map f) (reduce g init))"
+  "reduce(g, init, map(f, filter(pred, items)));")
 
-(test-compiles "->>: single step"
-  "(->> x f)" "f(x);")
-
-(test-compiles "->>: three steps with args"
-  "(->> items (filter pred) (map f) (reduce g init))" "reduce(g, init, map(f, filter(pred, items)));")
-
-(test "->: expansion nests correctly"
+(test
+  "->: expansion nests correctly"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(-> x f g)")))
@@ -49,7 +39,8 @@
   (is-equal inner-fn:value "f")
   (is-equal inner-arg:value "x"))
 
-(test "->>: expansion nests correctly"
+(test
+  "->>: expansion nests correctly"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(->> x (f a))")))

@@ -1,62 +1,78 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; --- genfunc ---
-
-(test "genfunc: basic with :yields :number"
-  (bind result (compile "(genfunc range :args (:number start :number end) :yields :number :body (for (let i start) (< i end) (+= i 1) (yield i)))"))
+(test
+  "genfunc: basic with :yields :number"
+  (bind
+    result
+    (compile
+      "(genfunc range :args (:number start :number end) :yields :number :body (for (let i start) (< i end) (+= i 1) (yield i)))"))
   (includes result "function* range(start, end)")
   (includes result "typeof start !== \"number\"")
   (includes result "yield (() =>"))
 
-(test "genfunc: :yields :any — no yield check"
+(test
+  "genfunc: :yields :any — no yield check"
   (bind result (compile "(genfunc gen :yields :any :body (yield 1) (yield 2))"))
   (includes result "function* gen()")
   (includes result "yield 1")
   (includes result "yield 2"))
 
-(test "genfunc: no :yields — no yield check"
+(test
+  "genfunc: no :yields — no yield check"
   (bind result (compile "(genfunc gen :body (yield 1))"))
   (includes result "function* gen()")
   (includes result "yield 1"))
 
-(test "genfunc: yield* not instrumented"
+(test
+  "genfunc: yield* not instrumented"
   (bind result (compile "(genfunc gen :yields :number :body (yield* other))"))
   (includes result "yield* other"))
 
-(test "genfunc: with pre-condition"
-  (bind result (compile "(genfunc range :args (:number n) :yields :number :pre (> n 0) :body (for (let i 0) (< i n) (+= i 1) (yield i)))"))
+(test
+  "genfunc: with pre-condition"
+  (bind
+    result
+    (compile
+      "(genfunc range :args (:number n) :yields :number :pre (> n 0) :body (for (let i 0) (< i n) (+= i 1) (yield i)))"))
   (includes result "pre-condition failed")
   (includes result "function* range(n)"))
 
-;; --- genfn ---
-
-(test "genfn: anonymous with :yields"
-  (bind result (compile "(bind gen (genfn (:number start :number end) :yields :number (for (let i start) (< i end) (+= i 1) (yield i))))"))
+(test
+  "genfn: anonymous with :yields"
+  (bind
+    result
+    (compile
+      "(bind gen (genfn (:number start :number end) :yields :number (for (let i start) (< i end) (+= i 1) (yield i))))"))
   (includes result "function*")
   (includes result "typeof start !== \"number\"")
   (includes result "yield (() =>"))
 
-(test "genfn: no :yields"
+(test
+  "genfn: no :yields"
   (bind result (compile "(bind gen (genfn () (yield 1) (yield 2)))"))
   (includes result "function*")
   (includes result "yield 1"))
 
-(test "genfn: :yields :any — no check"
+(test
+  "genfn: :yields :any — no check"
   (bind result (compile "(bind gen (genfn () :yields :any (yield 1)))"))
   (includes result "function*")
   (includes result "yield 1"))
 
-;; --- composition ---
-
-(test "export genfunc"
-  (bind result (compile "(export (genfunc gen :yields :number :body (yield 42)))"))
+(test
+  "export genfunc"
+  (bind
+    result
+    (compile "(export (genfunc gen :yields :number :body (yield 42)))"))
   (includes result "export function* gen()"))
 
-(test "async genfunc"
+(test
+  "async genfunc"
   (bind result (compile "(async (genfunc fetch-pages :body (yield 1)))"))
   (includes result "async function* fetchPages()"))
 
-(test "genfunc: error on missing :body"
+(test
+  "genfunc: error on missing :body"
   (is-thrown (compile "(genfunc gen :yields :number)") Error ":body is required"))

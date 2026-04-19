@@ -1,79 +1,78 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; --- js:call ---
+(test-compiles
+  "js:call: method dispatch"
+  "(js:call console:log \"hello\")"
+  "console.log(\"hello\");")
 
-(test-compiles "js:call: method dispatch"
-  "(js:call console:log \"hello\")" "console.log(\"hello\");")
+(test-compiles
+  "js:call: with multiple args"
+  "(js:call Math:max 1 2 3)"
+  "Math.max(1, 2, 3);")
 
-(test-compiles "js:call: with multiple args"
-  "(js:call Math:max 1 2 3)" "Math.max(1, 2, 3);")
+(test-compiles
+  "js:call: strips js:call head"
+  "(js:call arr:push 42)"
+  "arr.push(42);")
 
-(test-compiles "js:call: strips js:call head"
-  "(js:call arr:push 42)" "arr.push(42);")
+(test-compiles
+  "js:bind: method binding"
+  "(js:bind obj:method obj)"
+  "obj.method.bind(obj);")
 
-;; --- js:bind ---
+(test-compiles
+  "js:bind: nested method"
+  "(js:bind el:addEventListener el)"
+  "el.addEventListener.bind(el);")
 
-(test-compiles "js:bind: method binding"
-  "(js:bind obj:method obj)" "obj.method.bind(obj);")
+(test-compiles "js:eval: simple eval" "(js:eval \"1 + 2\")" "eval(\"1 + 2\");")
 
-(test-compiles "js:bind: nested method"
-  "(js:bind el:addEventListener el)" "el.addEventListener.bind(el);")
+(test-compiles "js:eval: with variable" "(js:eval code)" "eval(code);")
 
-;; --- js:eval ---
+(test-compiles "js:eq: loose equality" "(js:eq a b)" "a == b;")
 
-(test-compiles "js:eval: simple eval"
-  "(js:eval \"1 + 2\")" "eval(\"1 + 2\");")
+(test-compiles "js:eq: with null" "(js:eq x null)" "x == null;")
 
-(test-compiles "js:eval: with variable"
-  "(js:eval code)" "eval(code);")
+(test-compiles "js:typeof: typeof operator" "(js:typeof x)" "typeof x;")
 
-;; --- js:eq ---
+(test-compiles
+  "js:eq: nested in bind"
+  "(bind is-nil (js:eq x null))"
+  "const isNil = x == null;")
 
-(test-compiles "js:eq: loose equality"
-  "(js:eq a b)" "a == b;")
+(test-compiles
+  "js:typeof: nested in bind"
+  "(bind t (js:typeof x))"
+  "const t = typeof x;")
 
-(test-compiles "js:eq: with null"
-  "(js:eq x null)" "x == null;")
-
-;; --- js:typeof ---
-
-(test-compiles "js:typeof: typeof operator"
-  "(js:typeof x)" "typeof x;")
-
-;; --- Nested in bind ---
-
-(test-compiles "js:eq: nested in bind"
-  "(bind is-nil (js:eq x null))" "const isNil = x == null;")
-
-(test-compiles "js:typeof: nested in bind"
-  "(bind t (js:typeof x))" "const t = typeof x;")
-
-;; --- set-symbol! ---
-
-(test "set-symbol!: compiles to bracket assignment"
+(test
+  "set-symbol!: compiles to bracket assignment"
   (bind result (compile "(set-symbol! obj key 42)"))
   (includes result "obj[key] = 42"))
 
-(test "set-symbol!: runtime — set and get Symbol-keyed property"
+(test
+  "set-symbol!: runtime — set and get Symbol-keyed property"
   (bind META (Symbol "test-meta"))
   (bind item (obj :name "widget"))
   (set-symbol! item META (obj :version 1))
-  (is-equal (Object:keys item) #a("name"))
+  (is-equal (Object:keys item) (array "name"))
   (bind meta-val (get item META))
   (is-equal meta-val:version 1))
 
-(test "set-symbol!: wrong arg count throws"
+(test
+  "set-symbol!: wrong arg count throws"
   (is-thrown (compile "(set-symbol! obj key)") Error "3 arguments"))
 
-;; --- Error cases ---
-
-(test "js:call: no args throws"
+(test
+  "js:call: no args throws"
   (is-thrown (compile "(js:call)") Error "at least a method"))
 
-(test "js:bind: wrong arg count throws"
+(test
+  "js:bind: wrong arg count throws"
   (is-thrown (compile "(js:bind obj:method)") Error "2 arguments"))
 
-(test "js:eq: wrong arg count throws"
+(test
+  "js:eq: wrong arg count throws"
   (is-thrown (compile "(js:eq a)") Error "2 arguments"))

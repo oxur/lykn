@@ -6,6 +6,8 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0047 | DD-37: JS Surface Compiler Architecture | Draft | 2026-04-18 |
+| 0046 | DD-36: Kernel / Surface Compiler Split | Draft | 2026-04-18 |
 | 0045 | DD-35: Testing Strategy for the Publishing Pipeline | Active | 2026-04-17 |
 | 0044 | DD-34: Cross-Package `import-macros` Resolution | Final | 2026-04-17 |
 | 0043 | DD-33: Package Publishing and the `dist/` Boundary | Final | 2026-04-17 |
@@ -56,6 +58,8 @@ This index is automatically generated. Do not edit manually.
 
 ### Draft
 
+- [0047 - DD-37: JS Surface Compiler Architecture](01-draft/0047-dd-37-js-surface-compiler-architecture.md)
+- [0046 - DD-36: Kernel / Surface Compiler Split](01-draft/0046-dd-36-kernel-surface-compiler-split.md)
 - [0028 - Fix `lykn compile` Rust CLI Bugs](01-draft/0028-fix-lykn-compile-rust-cli-bugs.md)
 
 ### Active

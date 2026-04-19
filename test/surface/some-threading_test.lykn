@@ -1,40 +1,43 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile))
 
-;; --- some-> ---
-
-(test "some->: basic nil-safe threading"
+(test
+  "some->: basic nil-safe threading"
   (bind result (compile "(some-> x f g)"))
   (includes result "== null")
   (includes result "f(")
   (includes result "g(")
   (includes result "return"))
 
-(test "some->: with list forms (thread-first)"
+(test
+  "some->: with list forms (thread-first)"
   (bind result (compile "(some-> x (f a) (g b))"))
   (includes result "== null")
   (includes result "return"))
 
-(test "some->: produces IIFE"
+(test
+  "some->: produces IIFE"
   (bind result (compile "(some-> x f)"))
   (includes result "(() =>"))
 
-(test "some->: uses loose equality for null check"
+(test
+  "some->: uses loose equality for null check"
   (bind result (compile "(some-> x f g)"))
   (includes result "== null"))
 
-;; --- some->> ---
-
-(test "some->>: basic nil-safe threading"
+(test
+  "some->>: basic nil-safe threading"
   (bind result (compile "(some->> x f g)"))
   (includes result "== null")
   (includes result "return"))
 
-(test "some->>: with list forms (thread-last)"
+(test
+  "some->>: with list forms (thread-last)"
   (bind result (compile "(some->> x (f a) (g b))"))
   (includes result "== null"))
 
-(test "some->>: produces IIFE"
+(test
+  "some->>: produces IIFE"
   (bind result (compile "(some->> x f)"))
   (includes result "(() =>"))

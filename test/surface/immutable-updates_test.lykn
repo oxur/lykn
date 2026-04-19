@@ -1,46 +1,48 @@
-(import-macros "testing"
-  (test test-compiles is-equal is-thrown includes))
+(import-macros "testing" (test test-compiles is-equal is-thrown includes))
+
 (import "testing/helpers.js" (compile read expand reset-gensym reset-macros))
 
-;; --- assoc ---
+(test-compiles
+  "assoc: single key-value"
+  "(assoc obj :age 43)"
+  "({\n  ...obj,\n  age: 43\n});")
 
-(test-compiles "assoc: single key-value"
-  "(assoc obj :age 43)" "({\n  ...obj,\n  age: 43\n});")
+(test-compiles
+  "assoc: multiple key-values"
+  "(assoc obj :a 1 :b 2)"
+  "({\n  ...obj,\n  a: 1,\n  b: 2\n});")
 
-(test-compiles "assoc: multiple key-values"
-  "(assoc obj :a 1 :b 2)" "({\n  ...obj,\n  a: 1,\n  b: 2\n});")
+(test-compiles
+  "assoc: kebab-case key"
+  "(assoc obj :first-name \"Duncan\")"
+  "({\n  ...obj,\n  firstName: \"Duncan\"\n});")
 
-(test-compiles "assoc: kebab-case key"
-  "(assoc obj :first-name \"Duncan\")" "({\n  ...obj,\n  firstName: \"Duncan\"\n});")
+(test-compiles
+  "assoc: expression value"
+  "(assoc obj :score (+ base bonus))"
+  "({\n  ...obj,\n  score: base + bonus\n});")
 
-(test-compiles "assoc: expression value"
-  "(assoc obj :score (+ base bonus))" "({\n  ...obj,\n  score: base + bonus\n});")
-
-
-
-;; --- dissoc ---
-
-(test "dissoc: single key"
+(test
+  "dissoc: single key"
   (bind result (compile "(dissoc obj :key)"))
   (includes result "...")
   (includes result "obj"))
 
-(test "dissoc: multiple keys"
+(test
+  "dissoc: multiple keys"
   (bind result (compile "(dissoc obj :a :b)"))
   (includes result "...")
   (includes result "obj"))
 
+(test-compiles "conj: append to array" "(conj arr 42)" "[...arr, 42];")
 
+(test-compiles
+  "conj: append expression"
+  "(conj items (+ 1 2))"
+  "[...items, 1 + 2];")
 
-;; --- conj ---
-
-(test-compiles "conj: append to array"
-  "(conj arr 42)" "[...arr, 42];")
-
-(test-compiles "conj: append expression"
-  "(conj items (+ 1 2))" "[...items, 1 + 2];")
-
-(test "assoc: expansion produces object with spread"
+(test
+  "assoc: expansion produces object with spread"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(assoc obj :age 43)")))
@@ -58,7 +60,8 @@
   (is-equal kv-key:value "age")
   (is-equal kv-val:value 43))
 
-(test "dissoc: expansion produces IIFE"
+(test
+  "dissoc: expansion produces IIFE"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(dissoc obj :key)")))
@@ -68,35 +71,38 @@
   (bind arrow-head (get arrow:values 0))
   (is-equal arrow-head:value "=>"))
 
-;; --- Runtime tests ---
-
-(test "assoc runtime: returns new object with updated field"
+(test
+  "assoc runtime: returns new object with updated field"
   (bind user (obj :name "Duncan" :age 42))
   (bind updated (assoc user :age 43))
   (is-equal updated:age 43)
   (is-equal user:age 42))
 
-(test "dissoc runtime: returns object without removed key"
+(test
+  "dissoc runtime: returns object without removed key"
   (bind user (obj :name "Duncan" :age 42 :password "secret"))
   (bind clean (dissoc user :password))
   (is-equal clean:name "Duncan")
   (is-equal clean:age 42)
-  (is-equal clean:password undefined))
+  (is-equal clean:password null))
 
-(test "dissoc runtime: removes multiple keys"
+(test
+  "dissoc runtime: removes multiple keys"
   (bind data (obj :a 1 :b 2 :c 3))
   (bind result (dissoc data :a :b))
   (is-equal result:c 3)
-  (is-equal result:a undefined)
-  (is-equal result:b undefined))
+  (is-equal result:a null)
+  (is-equal result:b null))
 
-(test "conj runtime: appends to array"
-  (bind items #a(1 2 3))
+(test
+  "conj runtime: appends to array"
+  (bind items (array 1 2 3))
   (bind result (conj items 4))
-  (is-equal result #a(1 2 3 4))
-  (is-equal items #a(1 2 3)))
+  (is-equal result (array 1 2 3 4))
+  (is-equal items (array 1 2 3)))
 
-(test "conj: expansion produces array with spread"
+(test
+  "conj: expansion produces array with spread"
   (reset-macros)
   (reset-gensym)
   (bind result (expand (read "(conj arr val)")))
