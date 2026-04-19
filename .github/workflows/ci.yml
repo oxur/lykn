@@ -76,6 +76,7 @@ jobs:
       - run: mkdir -p bin && cp target/debug/lykn bin/lykn
       - run: make test-docs-readme
       - run: make test-docs-guides
+      - run: make test-docs-examples
 
   lint:
     name: Lint
