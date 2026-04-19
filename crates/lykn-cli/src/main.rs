@@ -25,6 +25,9 @@ enum Commands {
         /// Write formatted output back to file
         #[arg(short, long)]
         write: bool,
+        /// Check formatting without writing (exit 1 if unformatted)
+        #[arg(short, long)]
+        check: bool,
     },
     /// Check .lykn syntax
     Check {
@@ -118,7 +121,7 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Fmt { files, write } => cmd_fmt(&files, write),
+        Commands::Fmt { files, write, check } => cmd_fmt(&files, write, check),
         Commands::Check { files } => cmd_check(&files),
         Commands::Compile {
             file,
@@ -152,11 +155,13 @@ fn main() {
     }
 }
 
-fn cmd_fmt(files: &[PathBuf], write: bool) {
+fn cmd_fmt(files: &[PathBuf], write: bool, check: bool) {
     if files.is_empty() {
         eprintln!("Usage: lykn fmt <file.lykn>");
         process::exit(1);
     }
+
+    let mut unformatted = 0;
 
     for path in files {
         let source = match std::fs::read_to_string(path) {
@@ -176,7 +181,12 @@ fn cmd_fmt(files: &[PathBuf], write: bool) {
         };
         let formatted = lykn_cli::formatter::format_exprs(&exprs, 0);
 
-        if write {
+        if check {
+            if source != formatted {
+                eprintln!("{}: not formatted", path.display());
+                unformatted += 1;
+            }
+        } else if write {
             if let Err(e) = std::fs::write(path, &formatted) {
                 eprintln!("error writing {}: {e}", path.display());
                 process::exit(1);
@@ -185,6 +195,11 @@ fn cmd_fmt(files: &[PathBuf], write: bool) {
         } else {
             print!("{formatted}");
         }
+    }
+
+    if check && unformatted > 0 {
+        eprintln!("{unformatted} file(s) not formatted");
+        process::exit(1);
     }
 }
 

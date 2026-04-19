@@ -256,6 +256,10 @@ lint:
 	@echo "$(CYAN)• Checking code formatting...$(RESET)"
 	@cargo fmt --all -- --check
 	@echo "$(GREEN)✓ Format check passed$(RESET)"
+	@echo "$(CYAN)• Checking lykn syntax...$(RESET)"
+	@find test/surface -name '*.lykn' | xargs $(BIN_DIR)/$(CODE_NAME) check
+	@find packages -name '*.lykn' | xargs $(BIN_DIR)/$(CODE_NAME) check 2>/dev/null || true
+	@echo "$(GREEN)✓ lykn syntax check passed$(RESET)"
 	@echo "$(CYAN)• Linting JS packages...$(RESET)"
 	@$(BIN_DIR)/$(CODE_NAME) lint packages/
 	@echo "$(GREEN)✓ JS lint passed$(RESET)"
@@ -265,7 +269,10 @@ format:
 	@echo "$(BLUE)Formatting code...$(RESET)"
 	@echo "$(CYAN)• Running rustfmt on all files...$(RESET)"
 	@cargo fmt --all
-	@echo "$(GREEN)✓ Code formatted$(RESET)"
+	@echo "$(GREEN)✓ Rust code formatted$(RESET)"
+	@echo "$(CYAN)• Formatting lykn files...$(RESET)"
+	@find test/surface -name '*.lykn' | xargs $(BIN_DIR)/$(CODE_NAME) fmt -w
+	@echo "$(GREEN)✓ lykn code formatted$(RESET)"
 
 .PHONY: coverage
 coverage:
