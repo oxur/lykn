@@ -1028,6 +1028,290 @@ not exhaustive (unless the last pattern is `_` or a binding).
 
 ---
 
+## ID-31: Intermediate `bind` When Chaining on `express`
+
+**Strength**: MUST
+
+**Summary**: Method calls cannot be chained directly on `(express cell)`.
+Bind the expressed value first, then call the method on the binding.
+
+```lykn
+;; Bad — compiles to listeners.value("push", fn) (function call, not method)
+((express listeners):push fn)
+
+;; Good — bind first, then call
+(bind ls (express listeners))
+(ls:push fn)
+```
+
+**Rationale**: The surface compiler treats `(expr:method arg)` as a
+method call on `expr`, but `(express cell)` is a special form that
+the compiler doesn't recognize as a chainable expression target.
+The intermediate `bind` gives the compiler a named value to chain on.
+
+---
+
+## ID-32: Implicit Return in `fn` — Type Annotations Required
+
+**Strength**: MUST
+
+**Summary**: Multi-statement `fn` (arrow function) only gets implicit
+return when type annotations are present on the parameters. Without
+type annotations, the last expression becomes a bare statement.
+Never combine explicit `(return ...)` with typed `fn` parameters —
+the compiler adds its own `return`, producing `return return expr`.
+
+```lykn
+;; Bad — explicit return + typed params → double return in compiled output
+(bind make-link (fn (:string url :string text)
+  (bind display (text:substring 0 30))
+  (return (+ "<a>" display "</a>"))))  ;; compiles to: return return "<a>...";
+
+;; Good — typed fn with implicit return (compiler adds return)
+(bind make-link (fn (:string url :string text)
+  (bind display (text:substring 0 30))
+  (+ "<a>" display "</a>")))
+
+;; Good — single-expression fn (implicit return via JS arrow syntax)
+(bind double (fn (:number x) (* x 2)))
+
+;; Good — func always implicitly returns the last expression
+(func make-link :args (:string url :string text) :returns :string
+  :body
+  (bind display (text:substring 0 30))
+  (+ "<a>" display "</a>"))
+```
+
+**Rationale**: When type annotations are present, the compiler wraps the
+`fn` body in a block with type assertions and adds `return` before
+the final expression. Without annotations and with `--strip-assertions`,
+this implicit return is lost. Always add type annotations to `fn`
+parameters when the function needs to return a value from a
+multi-statement body.
+
+---
+
+## ID-33: Use Literal Unicode Characters, Not Escape Sequences
+
+**Strength**: MUST
+
+**Summary**: Lykn strings do not process `\uNNNN` escape sequences.
+Use the literal Unicode character directly in the source.
+
+```lykn
+;; Bad — \u2026 compiles to literal string "u2026"
+(bind ellipsis "\u2026")
+
+;; Good — use the actual character
+(bind ellipsis "…")
+```
+
+**Rationale**: The Lykn reader treats `\u` as two ordinary characters
+in a string literal, not as a Unicode escape. Since Lykn source files
+are UTF-8, embed the character directly.
+
+---
+
+## ID-35: Escape Forward Slashes in `regex` Patterns
+
+**Strength**: MUST
+
+**Summary**: The `(regex "pattern" "flags")` form wraps the pattern
+in `/pattern/flags`. Forward slashes inside the pattern must be
+escaped as `\\/` (written `\\\\/` in the Lykn string) to avoid
+prematurely terminating the regex literal.
+
+```lykn
+;; Bad — unescaped // terminates the regex early
+(regex "https?://test" "gi")
+;; Compiles to: /https?://test/gi  (syntax error)
+
+;; Good — escaped forward slashes
+(regex "https?:\\/\\/test" "gi")
+;; Compiles to: /https?:\/\/test/gi
+```
+
+**Rationale**: The Lykn `regex` form emits a JS regex literal
+(`/.../flags`). Inside a regex literal, `/` must be escaped as `\/`
+to avoid being parsed as the closing delimiter. Since Lykn strings
+do process `\\` → `\`, use `\\/` in the Lykn string to produce `\/`
+in the output.
+
+---
+
+## ID-37: `:object` Excludes Functions — Use `:any` for "Any Object-Like"
+
+**Strength**: MUST
+
+**Summary**: Lykn's `:object` type annotation compiles to
+`typeof x !== "object"`, which rejects functions (since
+`typeof fn === "function"`). In JavaScript, functions ARE objects
+(they have properties, can be stamped, etc.), but `:object` doesn't
+accept them. Use `:any` when a parameter accepts both plain objects
+and functions.
+
+```lykn
+;; Bad — rejects functions even though they're valid JS objects
+(func stamp :args (:object obj) :returns :number :body ...)
+;; throws: "stamp: arg 'obj' expected object, got function"
+
+;; Good — accepts any value that can have properties
+(func stamp :args (:any obj) :returns :number :body ...)
+```
+
+**Rationale**: JavaScript's `typeof` has a well-known quirk:
+`typeof null === "object"` and `typeof fn === "function"`, even
+though functions are objects. Lykn's `:object` follows `typeof`
+semantics, so it excludes functions. When migrating JS code that
+accepts "anything with properties," use `:any`.
+
+---
+
+## ID-38: Kernel `=` Is Top-Level Equality, Block-Level Assignment
+
+**Strength**: MUST
+
+**Summary**: In kernel (`.lyk`) files, `(= x 5)` at module top
+level compiles to `x === 5` (equality), but inside function bodies,
+`for` loops, `if` blocks, and `(block ...)` wrappers it compiles to
+`x = 5` (assignment). Wrap top-level assignments in `(block ...)`.
+
+```lykn
+;; Bad — top-level = is equality
+(let x 0)
+(= x 42)          ;; x === 42 (no-op comparison)
+
+;; Good — wrap in block for assignment
+(let x 0)
+(block (= x 42))  ;; { x = 42; }
+
+;; Good — = is assignment inside function bodies
+(function init ()
+  (= x 42))       ;; x = 42
+```
+
+**Rationale**: The kernel compiler's top-level context treats `=` as
+equality to match the surface compiler's behavior. Assignment only
+activates inside statement-level contexts (function bodies, loops,
+conditionals, blocks).
+
+---
+
+## ID-39: Kernel Object Methods Need Separated Function Definitions
+
+**Strength**: SHOULD
+
+**Summary**: The kernel `(object ...)` form doesn't support inline
+method definitions. Define methods as standalone `function`
+declarations, then reference them by name in the object literal.
+
+```lykn
+;; Bad — inline function in object doesn't parse correctly
+(const mixin (object
+  (show (function (x) ...))))
+
+;; Good — separate functions, assemble object
+(function _show (x) ...)
+(function _hide () ...)
+(const mixin (object (show _show) (hide _hide)))
+```
+
+**Rationale**: The kernel `(object (key value) ...)` form expects
+simple key-value pairs. Inline function expressions are not
+recognized as values — they're parsed as nested s-expressions.
+
+---
+
+## ID-40: Kernel Prototype Methods Need Named Function Expressions
+
+**Strength**: MUST
+
+**Summary**: When assigning methods to prototypes in kernel, use
+named function expressions (not anonymous). The kernel compiler
+treats the first symbol after `function` as the name.
+
+```lykn
+;; Bad — anonymous function expression
+(block (= Foo:prototype:bar (function (x) (return x))))
+;; Produces: function x()(return, x) — broken
+
+;; Good — named function expression
+(block (= Foo:prototype:bar (function _bar (x) (return x))))
+;; Produces: function _bar(x) { return x; }
+```
+
+---
+
+## ID-41: Intermediate Binding for Method Calls on `(get ...)`
+
+**Strength**: MUST
+
+**Summary**: Method calls cannot be chained directly on `(get ...)`
+results in kernel. `(get obj key):method` compiles to
+`obj[key]("method")` (function call with string arg), not
+`obj[key].method()`. Use an intermediate `const` binding.
+
+```lykn
+;; Bad — method call on (get ...) result
+((get obj key):push 4)      ;; obj[key]("push", 4) — wrong
+
+;; Good — intermediate binding
+(const arr (get obj key))
+(arr:push 4)                ;; arr.push(4) — correct
+```
+
+---
+
+## ID-42: Threading Macros Are Surface-Only
+
+**Strength**: MUST
+
+**Summary**: The threading macros `->`, `->>`, and `some->` are
+surface forms and do NOT work in kernel (`.lyk`) files. In kernel
+files, use intermediate `const` bindings for method chaining.
+
+```lykn
+;; Bad — threading macro in .lyk file compiles to _>(expr, ...)
+(-> str (:replace re1 "") (:replace re2 ""))
+
+;; Good — intermediate bindings in .lyk file
+(const step1 (str:replace re1 ""))
+(const step2 (step1:replace re2 ""))
+```
+
+**Rationale**: Surface macros are expanded by the surface compiler
+before reaching the kernel. Kernel files bypass the surface pipeline
+entirely, so threading macros are passed through as-is and produce
+invalid JS.
+
+---
+
+## ID-38: Use `.lyk` (Kernel) for Dynamic Property Assignment
+
+**Strength**: SHOULD
+
+**Summary**: Surface `set!` requires a static property path (e.g.,
+`obj:prop`). When you need computed/dynamic property assignment
+(`obj[key] = value`), use a `.lyk` kernel file where `(= ...)` is
+assignment, not equality.
+
+```lykn
+;; Bad — set! does not accept (get obj key)
+;; This is in a .lykn file (surface syntax)
+(set! (get obj key) value)  ;; compile error
+
+;; Good — use kernel syntax in a .lyk file
+;; This is in a .lyk file (kernel syntax)
+(= (get target:prototype name) (get source:prototype name))
+```
+
+**Rationale**: Surface lykn intentionally limits mutation to named
+paths for auditability. Kernel files give full JS assignment
+semantics when needed. Use `.lyk` sparingly for modules that
+genuinely require dynamic property manipulation.
+
+---
+
 ## Related Guidelines
 
 - **API Design**: See `02-api-design.md` for `func` contracts, keyword
