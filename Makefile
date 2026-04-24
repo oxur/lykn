@@ -69,6 +69,7 @@ help:
 	@echo "$(GREEN)Utilities:$(RESET)"
 	@echo "  $(YELLOW)make push$(RESET)             - Pushes to Codeberg and Github"
 	@echo "  $(YELLOW)make publish$(RESET)          - Publish to JSR, npm, and crates.io"
+	@echo "  $(YELLOW)make install-local$(RESET)    - Install lykn CLI from local repo"
 	@echo "  $(YELLOW)make tracked-files$(RESET)    - Save list of tracked files"
 	@echo ""
 	@echo "$(GREEN)Information:$(RESET)"
@@ -352,6 +353,12 @@ docs:
 	@echo
 
 # Utility targets
+.PHONY: install-local
+install-local:
+	@echo "$(BLUE)Installing lykn CLI from local repo...$(RESET)"
+	@cargo install --path crates/lykn-cli
+	@echo "$(GREEN)✓ lykn installed to ~/.cargo/bin/$(RESET)"
+
 .PHONY: tracked-files
 tracked-files:
 	@echo "$(BLUE)Saving tracked files list...$(RESET)"
