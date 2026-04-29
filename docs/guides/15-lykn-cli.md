@@ -278,8 +278,7 @@ lykn publish --jsr --no-build
 
 ### Note: `dist/` and the JSR publishing flow
 
-JSR's `deno publish` operates on git-tracked files; gitignored files
-are excluded from the published package. This can create tension:
+JSR's `deno publish` operates on git-tracked files — gitignored files are excluded from the published package. This can create tension:
 a developer may want compiled `.js` artifacts gitignored to keep
 `git status` clean, but JSR needs them tracked.
 
