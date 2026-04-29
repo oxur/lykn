@@ -677,7 +677,11 @@ fn project_json_template(name: &str) -> String {
         r#"{{
     "workspace": ["./packages/{name}"],
     "imports": {{
-        "{name}/": "./packages/{name}/"
+        "{name}/": "./packages/{name}/",
+        "lang/": "jsr:@lykn/lang/",
+        "testing": "jsr:@lykn/testing",
+        "testing/": "jsr:@lykn/testing/",
+        "astring": "npm:astring@^1.9.0"
     }},
     "lint": {{
         "rules": {{
@@ -692,6 +696,8 @@ fn project_json_template(name: &str) -> String {
     )
 }
 
+// JSR accepts a LICENSE file in lieu of a `license` field in deno.json.
+// The scaffold generates a LICENSE file (Apache-2.0), so the field is omitted.
 fn deno_json_template(name: &str) -> String {
     format!(
         r#"{{
