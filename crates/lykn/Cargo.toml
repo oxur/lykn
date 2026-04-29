@@ -4,7 +4,7 @@ version = "0.5.1"
 edition = "2024"
 description = "S-expression syntax for JavaScript"
 license = "Apache-2.0"
-repository = "https://github.com/oxur/lykn"
+repository = "https://github.com/lykn-lang/lykn"
 keywords = ["lisp", "javascript", "s-expression", "compiler", "formatter"]
 categories = ["compilers", "development-tools"]
 

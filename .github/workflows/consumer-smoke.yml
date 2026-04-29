@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: oxur/lykn-consumer-tests
+          repository: lykn-lang/lykn-consumer-tests
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: denoland/setup-deno@v2
@@ -22,7 +22,7 @@ jobs:
 
       - name: Install lykn from source
         run: |
-          git clone --depth 1 https://github.com/oxur/lykn.git /tmp/lykn-build
+          git clone --depth 1 https://github.com/lykn-lang/lykn.git /tmp/lykn-build
           cd /tmp/lykn-build
           cargo build --release
           sudo cp target/release/lykn /usr/local/bin/lykn

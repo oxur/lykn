@@ -342,7 +342,7 @@ fn write_package_json(
         "license": "Apache-2.0",
         "repository": {
             "type": "git",
-            "url": "git+https://github.com/oxur/lykn.git"
+            "url": "git+https://github.com/lykn-lang/lykn.git"
         },
         "publishConfig": {
             "access": "public"

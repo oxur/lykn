@@ -515,11 +515,11 @@ Apache-2.0
 
 [logo]: assets/images/logo/v1-y250.png
 [logo-large]: assets/images/logo/v1.png
-[build]: https://github.com/oxur/lykn/actions/workflows/ci.yml
-[build-badge]: https://github.com/oxur/lykn/actions/workflows/ci.yml/badge.svg
+[build]: https://github.com/lykn-lang/lykn/actions/workflows/ci.yml
+[build-badge]: https://github.com/lykn-lang/lykn/actions/workflows/ci.yml/badge.svg
 [crate]: https://crates.io/crates/lykn
 [crate-badge]: https://img.shields.io/crates/v/lykn.svg
 [docs]: https://docs.rs/lykn/
 [docs-badge]: https://img.shields.io/badge/rust-documentation-blue.svg
-[tag-badge]: https://img.shields.io/github/tag/oxur/lykn.svg
-[tag]: https://github.com/oxur/lykn/tags
+[tag-badge]: https://img.shields.io/github/tag/lykn-lang/lykn.svg
+[tag]: https://github.com/lykn-lang/lykn/tags

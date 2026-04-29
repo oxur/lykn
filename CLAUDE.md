@@ -92,6 +92,62 @@ Never auto-accept snapshots — review each change to verify it is
 intentional. See DD-35 (`workbench/dd-35-testing-strategy-publishing-pipeline.md`)
 for the full testing strategy.
 
+## Lykn CLI safety gates
+
+The Lykn CLI wraps underlying tools (deno, cargo, npm, git). Wrapping
+must not weaken those tools' safety guarantees. Specifically:
+
+**Never auto-pass safety-bypass flags to underlying tools.** The
+Lykn CLI must NOT silently inject `--allow-dirty`, `--force`,
+`--no-verify`, `--unsafe`, `--skip-checks`, or any equivalent
+skip-gate flag when invoking deno, cargo, npm, or git. Safety gates
+from underlying tools are part of the user's expected experience; the
+Lykn CLI does not own the authority to bypass them on the user's
+behalf.
+
+**When an underlying gate fires, the resolution is to satisfy the
+gate's condition.** If `cargo publish` rejects a dirty working tree,
+the answer is `git commit` or `git stash`, not auto-passing
+`--allow-dirty`. If `deno publish` rejects untracked files, the
+answer is to track or remove them, not to add a wrapper flag that
+silently includes `--allow-dirty`. The user retains the choice; the
+Lykn CLI surfaces the gate honestly.
+
+**If a gate's default behaviour is genuinely wrong for the project's
+use case, that is a methodology question, not a wrapper patch.**
+Raise it as a design discussion in the philosophy doc or as a DD,
+not as a quiet behavioural change in the CLI. The 0.6.0 direction
+(per `docs/philosophy.md` §Decided design questions #4) is to *more
+strongly* enforce the uncommitted-changes check, not less — adding
+an opt-in `--allow-dirty` flag at the lykn level for users who
+explicitly accept the risk, with the default being a hard fail.
+
+**Examples of operations this rule covers:**
+
+- `lykn publish` (any subcommand) must not auto-pass `--allow-dirty`
+  to deno/cargo/npm.
+- `lykn publish` must not auto-pass `--no-verify` (which would skip
+  signing / signature checks).
+- `lykn run` / `lykn test` must not auto-pass deno permission flags
+  (`--allow-all`, `--allow-net`, etc.) the user didn't request.
+- `lykn build --dist` must not silently overwrite tracked files in
+  ways the user can't undo with `git checkout`.
+- Any future Lykn CLI subcommand wrapping a tool with safety gates
+  must respect them by default.
+
+Origin: this rule was crystallized after a M3.5 incident where the
+Lykn CLI was patched to auto-pass `--allow-dirty` to `deno publish`
+during dry-runs (commit `64bb301`, subsequently reverted). The
+reasoning at the time ("dry-runs are verification, not publication —
+untracked files should not block publishability checks") was
+rhetorically clean but operationally wrong: dry-runs against an
+uncommitted tree don't tell the user what would actually publish, so
+weakening the gate defeats the purpose.
+
+See also: `docs/philosophy.md` Principle 2 (Lykn-only tooling); the
+"Snapshot testing (insta)" rule above; LEDGER_DISCIPLINE.md (the
+discipline of not silently rewriting safety-relevant defaults).
+
 ### Makefile
 
 `make help` lists all targets. Key ones: `make build`, `make build-release`, `make test`, `make lint`, `make format`, `make check` (build+lint+test), `make push` (pushes to all remotes).
