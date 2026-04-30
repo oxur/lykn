@@ -29,17 +29,6 @@ For the design principles that govern Lykn's user experience, see
 The name means *good luck* in Norwegian, *luck* in Swedish, and — if you
 squint at the Icelandic — *closure*.
 
-## Status
-
-**v0.5.0** — Workspace toolchain, testing DSL, and publishing pipeline.
-`lykn` is now a unified CLI wrapping Deno: `lykn new`, `lykn run`,
-`lykn test`, `lykn build --dist`, `lykn publish`. The language gains typed
-bindings, destructured parameters, generator functions, surface forms in
-class bodies, and cross-package macro resolution via `jsr:` / `npm:`
-specifiers. Three published packages: `@lykn/lang`, `@lykn/browser`,
-`@lykn/testing`. Both `.lykn` (surface) and `.lyk` (kernel) file extensions
-are supported.
-
 ## Quick Start
 
 ```sh

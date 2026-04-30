@@ -243,7 +243,7 @@ Example package `deno.json` with lykn metadata:
 ```json
 {
     "name": "@lykn/testing",
-    "version": "0.5.1",
+    "version": "0.5.2",
     "exports": "./mod.lykn",
     "lykn": {
         "kind": "macro-module",

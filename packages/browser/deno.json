@@ -1,6 +1,6 @@
 {
     "name": "@lykn/browser",
-    "version": "0.5.1",
+    "version": "0.5.2",
     "description": "Lykn in the browser — 73KB bundle with <script type=\"text/lykn\"> support",
     "exports": "./mod.js",
     "lykn": {
