@@ -228,15 +228,15 @@ fn generate_dts_stubs(dist_dir: &Path) -> Result<(), DistError> {
     })?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().is_some_and(|e| e == "js") {
-            if let Some(stem) = path.file_stem() {
-                let dts_name = format!("{}.d.ts", stem.to_string_lossy());
-                let js_name = path.file_name().unwrap().to_string_lossy();
-                write_text(
-                    &dist_dir.join(&dts_name),
-                    &format!("export * from \"./{js_name}\";\n"),
-                )?;
-            }
+        if path.extension().is_some_and(|e| e == "js")
+            && let Some(stem) = path.file_stem()
+        {
+            let dts_name = format!("{}.d.ts", stem.to_string_lossy());
+            let js_name = path.file_name().unwrap().to_string_lossy();
+            write_text(
+                &dist_dir.join(&dts_name),
+                &format!("export * from \"./{js_name}\";\n"),
+            )?;
         }
     }
     Ok(())

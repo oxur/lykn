@@ -1205,14 +1205,16 @@ conditionals, blocks).
 method definitions. Define methods as standalone `function`
 declarations, then reference them by name in the object literal.
 
-```lykn
+```lykn,compile-fail
 ;; Bad — inline function in object doesn't parse correctly
 (const mixin (object
   (show (function (x) ...))))
+```
 
+```lykn
 ;; Good — separate functions, assemble object
-(function _show (x) ...)
-(function _hide () ...)
+(function _show (x) (return x))
+(function _hide () (return null))
 (const mixin (object (show _show) (hide _hide)))
 ```
 
@@ -1230,11 +1232,13 @@ recognized as values — they're parsed as nested s-expressions.
 named function expressions (not anonymous). The kernel compiler
 treats the first symbol after `function` as the name.
 
-```lykn
+```lykn,compile-fail
 ;; Bad — anonymous function expression
 (block (= Foo:prototype:bar (function (x) (return x))))
 ;; Produces: function x()(return, x) — broken
+```
 
+```lykn
 ;; Good — named function expression
 (block (= Foo:prototype:bar (function _bar (x) (return x))))
 ;; Produces: function _bar(x) { return x; }
@@ -1295,14 +1299,16 @@ invalid JS.
 (`obj[key] = value`), use a `.lyk` kernel file where `(= ...)` is
 assignment, not equality.
 
-```lykn
+```lykn,compile-fail
 ;; Bad — set! does not accept (get obj key)
 ;; This is in a .lykn file (surface syntax)
 (set! (get obj key) value)  ;; compile error
+```
 
+```lykn,skip
 ;; Good — use kernel syntax in a .lyk file
 ;; This is in a .lyk file (kernel syntax)
-(= (get target:prototype name) (get source:prototype name))
+(block (= (get target:prototype name) (get source:prototype name)))
 ```
 
 **Rationale**: Surface lykn intentionally limits mutation to named

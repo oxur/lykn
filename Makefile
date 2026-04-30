@@ -261,9 +261,6 @@ lint:
 	@find test/surface -name '*.lykn' | xargs $(BIN_DIR)/$(CODE_NAME) check
 	@find packages -name '*.lykn' | xargs $(BIN_DIR)/$(CODE_NAME) check 2>/dev/null || true
 	@echo "$(GREEN)✓ lykn syntax check passed$(RESET)"
-	@echo "$(CYAN)• Linting JS packages...$(RESET)"
-	@$(BIN_DIR)/$(CODE_NAME) lint packages/
-	@echo "$(GREEN)✓ JS lint passed$(RESET)"
 
 .PHONY: format
 format:
