@@ -579,7 +579,10 @@ fn validate_dist_exports() {
         };
         let exports_files: Vec<String> = match &parsed["exports"] {
             serde_json::Value::String(s) => vec![s.clone()],
-            serde_json::Value::Object(map) => map.values().filter_map(|v| v.as_str().map(String::from)).collect(),
+            serde_json::Value::Object(map) => map
+                .values()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
             _ => continue,
         };
         for export_path in &exports_files {
@@ -590,8 +593,10 @@ fn validate_dist_exports() {
                     "lykn publish: dist/{}/{} not found.\n\
                      Did `lykn build --dist` complete successfully? The exports field\n\
                      in {}'s deno.json points to {} but no such file was staged.",
-                    pkg_name, export_path.trim_start_matches("./"),
-                    pkg_name, export_path,
+                    pkg_name,
+                    export_path.trim_start_matches("./"),
+                    pkg_name,
+                    export_path,
                 );
                 process::exit(1);
             }

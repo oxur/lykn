@@ -173,9 +173,7 @@ fn compile_lykn_sources(pkg_path: &Path) -> Result<(), DistError> {
             let needs_compile = !js_path.exists()
                 || fs::metadata(&path)
                     .and_then(|src| fs::metadata(&js_path).map(|dst| (src, dst)))
-                    .and_then(|(src, dst)| {
-                        Ok(src.modified()? > dst.modified()?)
-                    })
+                    .and_then(|(src, dst)| Ok(src.modified()? > dst.modified()?))
                     .unwrap_or(true);
 
             if needs_compile {
@@ -193,7 +191,11 @@ fn compile_lykn_sources(pkg_path: &Path) -> Result<(), DistError> {
                         source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
                     })?;
                 let classified = lykn_lang::classifier::classify(&expanded).map_err(|diags| {
-                    let msg = diags.iter().map(|d| format!("{d}")).collect::<Vec<_>>().join("\n");
+                    let msg = diags
+                        .iter()
+                        .map(|d| format!("{d}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     DistError::Io {
                         path: path.clone(),
                         source: std::io::Error::new(std::io::ErrorKind::InvalidData, msg),
@@ -201,19 +203,20 @@ fn compile_lykn_sources(pkg_path: &Path) -> Result<(), DistError> {
                 })?;
                 let analysis_result = lykn_lang::analysis::analyze(&classified);
                 if analysis_result.has_errors {
-                    let msg = analysis_result.diagnostics.iter()
+                    let msg = analysis_result
+                        .diagnostics
+                        .iter()
                         .filter(|d| d.severity == lykn_lang::diagnostics::Severity::Error)
-                        .map(|d| format!("{d}")).collect::<Vec<_>>().join("\n");
+                        .map(|d| format!("{d}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     return Err(DistError::Io {
                         path: path.clone(),
                         source: std::io::Error::new(std::io::ErrorKind::InvalidData, msg),
                     });
                 }
-                let kernel = lykn_lang::emitter::emit(
-                    &classified,
-                    &analysis_result.type_registry,
-                    false,
-                );
+                let kernel =
+                    lykn_lang::emitter::emit(&classified, &analysis_result.type_registry, false);
                 let js = lykn_lang::codegen::emit_module_js(&kernel);
                 fs::write(&js_path, js).map_err(|e| DistError::Io {
                     path: js_path,
