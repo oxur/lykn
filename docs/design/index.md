@@ -6,6 +6,7 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0048 | Import-Macros JSR/npm Cache Resolution (V-08 fix) | Active | 2026-04-30 |
 | 0047 | DD-37: JS Surface Compiler Architecture | Draft | 2026-04-18 |
 | 0046 | DD-36: Kernel / Surface Compiler Split | Draft | 2026-04-18 |
 | 0045 | DD-35: Testing Strategy for the Publishing Pipeline | Active | 2026-04-17 |
@@ -64,6 +65,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
+- [0048 - Import-Macros JSR/npm Cache Resolution (V-08 fix)](05-active/0048-import-macros-jsrnpm-cache-resolution-v-08-fix.md)
 - [0045 - DD-35: Testing Strategy for the Publishing Pipeline](05-active/0045-dd-35-testing-strategy-for-the-publishing-pipeline.md)
 - [0042 - DD-32: Test Suite Migration — JS Tests to lykn](05-active/0042-dd-32-test-suite-migration-js-tests-to-lykn.md)
 - [0041 - DD-31: Test Runner CLI and Markdown/Literate Testing](05-active/0041-dd-31-test-runner-cli-and-markdownliterate-testing.md)
