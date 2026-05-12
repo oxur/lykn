@@ -4,6 +4,7 @@
     "description": "JavaScript implementation of the Lykn language compiler",
     "exports": {
         ".": "./mod.js",
+        "./mod.js": "./mod.js",
         "./reader.js": "./reader.js",
         "./compiler.js": "./compiler.js",
         "./expander.js": "./expander.js",

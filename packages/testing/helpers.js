@@ -11,11 +11,18 @@
 import { read } from "lang/reader.js";
 import { compile as rawCompile } from "lang/compiler.js";
 import {
+  expand,
   resetGensym,
   resetMacros,
   resetModuleCache,
 } from "lang/expander.js";
-import { lykn } from "lang/mod.js";
+
+// Local `lykn(source)` — same definition as @lykn/lang's mod.js.
+// Reconstructed here to decouple from the @lykn/lang sub-path exports
+// (Finding D — see workbench/finding-d-lang-exports-gap-2026-05-12.md).
+function lykn(source) {
+  return rawCompile(expand(read(source)));
+}
 
 /**
  * Compile lykn surface source to JavaScript (trimmed).
