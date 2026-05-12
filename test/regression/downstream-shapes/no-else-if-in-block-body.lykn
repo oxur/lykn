@@ -1,0 +1,16 @@
+;; DD-50.7 regression fixture: no-else if in block inside func body
+;; Mirrors mycelium render-element shape: mid-body if wrapping a block
+;; that contains a no-else if with throw and a return.
+
+(func process-element
+  :args (:array el)
+  :returns :string
+  :body
+  (bind tag (get el 0))
+  (bind children (el:slice 1))
+  (if (= tag "br")
+    (block
+      (if (> children:length 0)
+        (throw (new Error (template "void element " tag " cannot have children"))))
+      (return (template "<" tag ">"))))
+  (template "<" tag ">" (children:join "") "</" tag ">"))

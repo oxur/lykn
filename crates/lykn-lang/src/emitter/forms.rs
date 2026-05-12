@@ -1249,7 +1249,11 @@ fn emit_fn_expr(
 
     // When type checks are present, the arrow gets a block body, so we must
     // wrap the last body expression in (return ...) to preserve the return value.
+    // DD-50.7: fn body children are statements, not expressions
+    let saved_body_ctx = ctx.expr_context;
+    ctx.expr_context = ExprContext::Statement;
     let emitted_body = emit_body(body, ctx, registry);
+    ctx.expr_context = saved_body_ctx;
     if has_type_checks && !emitted_body.is_empty() {
         items.extend(emitted_body[..emitted_body.len() - 1].iter().cloned());
         let last = emitted_body.last().unwrap().clone();
@@ -1310,7 +1314,11 @@ fn emit_func_single(
         items.push(emit_pre_check(name, pre, clause.span));
     }
 
+    // DD-50.7: func body children are statements, not expressions
+    let saved_body_ctx = ctx.expr_context;
+    ctx.expr_context = ExprContext::Statement;
     let body = emit_body(&clause.body, ctx, registry);
+    ctx.expr_context = saved_body_ctx;
 
     // Determine return handling
     let has_post = clause.post.is_some();
@@ -1526,8 +1534,11 @@ fn emit_func_multi(
             block_items.push(emit_pre_check(name, pre, clause.span));
         }
 
-        // Body with return handling
+        // DD-50.7: func body children are statements, not expressions
+        let saved_body_ctx = ctx.expr_context;
+        ctx.expr_context = ExprContext::Statement;
         let body = emit_body(&clause.body, ctx, registry);
+        ctx.expr_context = saved_body_ctx;
         let has_post = clause.post.is_some();
 
         if has_post && !ctx.strip_assertions {
@@ -1699,8 +1710,11 @@ fn emit_genfunc_single(
         items.push(emit_pre_check(name, pre, clause.span));
     }
 
-    // Instrument yields in the body if :yields type is specified and not :any
+    // DD-50.7: genfunc body children are statements, not expressions
+    let saved_body_ctx = ctx.expr_context;
+    ctx.expr_context = ExprContext::Statement;
     let raw_body = emit_body(&clause.body, ctx, registry);
+    ctx.expr_context = saved_body_ctx;
     let body = if !ctx.strip_assertions {
         if let Some(ref yields_ann) = clause.yields {
             if yields_ann.name != "any" {
@@ -1741,8 +1755,11 @@ fn emit_genfn_expr(
         }
     }
 
-    // Instrument yields in the body if :yields type is specified and not :any
+    // DD-50.7: genfn body children are statements, not expressions
+    let saved_body_ctx = ctx.expr_context;
+    ctx.expr_context = ExprContext::Statement;
     let raw_body = emit_body(body, ctx, registry);
+    ctx.expr_context = saved_body_ctx;
     let emitted_body = if !ctx.strip_assertions {
         if let Some(yields_ann) = yields {
             if yields_ann.name != "any" {
@@ -1859,7 +1876,11 @@ fn emit_match_statement(
 
     for clause in clauses {
         let (condition, bindings) = compile_pattern(&clause.pattern, &target_var, registry);
+        // DD-50.7: match clause bodies are statement sequences
+        let saved_body_ctx = ctx.expr_context;
+        ctx.expr_context = ExprContext::Statement;
         let clause_body = emit_body(&clause.body, ctx, registry);
+        ctx.expr_context = saved_body_ctx;
 
         let mut block_items = vec![atom("block")];
         block_items.extend(bindings);
@@ -1943,7 +1964,11 @@ fn emit_match_iife(
 
     for clause in clauses {
         let (condition, bindings) = compile_pattern(&clause.pattern, &target_var, registry);
+        // DD-50.7: match clause bodies are statement sequences
+        let saved_body_ctx = ctx.expr_context;
+        ctx.expr_context = ExprContext::Statement;
         let clause_body = emit_body(&clause.body, ctx, registry);
+        ctx.expr_context = saved_body_ctx;
 
         let mut block_items = vec![atom("block")];
         block_items.extend(bindings);
@@ -2254,7 +2279,11 @@ fn emit_when_let_statement(
 
     let mut then_block = vec![atom("block")];
     then_block.extend(bindings);
+    // DD-50.7: when-let body is a statement sequence
+    let saved_body_ctx = ctx.expr_context;
+    ctx.expr_context = ExprContext::Statement;
     then_block.extend(emit_body(body_exprs, ctx, registry));
+    ctx.expr_context = saved_body_ctx;
 
     list(vec![
         atom("block"),
@@ -2300,7 +2329,11 @@ fn emit_when_let_iife(
     let mut then_block = vec![atom("block")];
     then_block.extend(bindings);
 
+    // DD-50.7: when-let body is a statement sequence
+    let saved_body_ctx = ctx.expr_context;
+    ctx.expr_context = ExprContext::Statement;
     let emitted = emit_body(body_exprs, ctx, registry);
+    ctx.expr_context = saved_body_ctx;
     for (i, expr) in emitted.iter().enumerate() {
         if i == emitted.len() - 1 {
             then_block.push(list(vec![atom("return"), expr.clone()]));
@@ -2588,10 +2621,25 @@ fn emit_if_expression(
 }
 
 fn emit_if_iife(cond: SExpr, then_branch: SExpr, else_branch: SExpr) -> SExpr {
-    let then_block = list(vec![atom("block"), list(vec![atom("return"), then_branch])]);
-    let else_block = list(vec![atom("block"), list(vec![atom("return"), else_branch])]);
+    // DD-50.7 extension: conditional return-wrap per branch.
+    // Statement branches (throw, return, etc.) stay as-is; value branches get (return ...).
+    let then_inner = if is_statement_form(&then_branch) {
+        then_branch
+    } else {
+        list(vec![atom("return"), then_branch])
+    };
+    let else_inner = if is_statement_form(&else_branch) {
+        else_branch
+    } else {
+        list(vec![atom("return"), else_branch])
+    };
+
+    let then_block = list(vec![atom("block"), then_inner]);
+    let else_block = list(vec![atom("block"), else_inner]);
     let if_stmt = list(vec![atom("if"), cond, then_block, else_block]);
-    let arrow = list(vec![atom("=>"), list(vec![]), if_stmt]);
+    // Wrap in (block ...) so arrow codegen emits { if (...) {...} else {...} }
+    let arrow_body = list(vec![atom("block"), if_stmt]);
+    let arrow = list(vec![atom("=>"), list(vec![]), arrow_body]);
     // ((() => { ... })())
     list(vec![arrow])
 }
@@ -2687,14 +2735,15 @@ fn kernel_child_profile(head: &str) -> KernelChildProfile {
         "do-while" => KernelChildProfile::Positional(&[S, V]),
         // for: init=Value, test=Value, update=Value, body=Statement
         "for" => KernelChildProfile::Positional(&[V, V, V, S]),
-        // for-of/for-in/for-await-of: binding=Statement, iterable=Value, body=Statement
-        "for-of" | "for-in" | "for-await-of" => KernelChildProfile::Positional(&[S, V, S]),
+        // for-of/for-in/for-await-of: binding=Statement, iterable=Value, body...=Statement
+        "for-of" | "for-in" | "for-await-of" => KernelChildProfile::PositionalThenStatement(&[S, V]),
         // try: body=Statement, catch-clause=Statement, finally=Statement
         "try" => KernelChildProfile::AllParent,
         // switch: discriminant=Value, then variable-length case sub-lists=Statement
         "switch" => KernelChildProfile::PositionalThenStatement(&[V]),
-        // if: already specially handled at line 375; include for completeness
-        "if" => KernelChildProfile::AllValue,
+        // if: condition=Value, consequent=Statement, alternate=Statement
+        // (Value/Tail context is intercepted at line 375 for expression-position emit)
+        "if" => KernelChildProfile::Positional(&[V, S, S]),
 
         // Category C: declarations — name=Statement (binding), initializer=Value
         "const" | "let" | "var" => KernelChildProfile::Positional(&[S, V]),

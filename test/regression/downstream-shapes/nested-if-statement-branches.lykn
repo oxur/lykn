@@ -1,0 +1,20 @@
+;; DD-50.7 regression fixture: nested if chain in for-of body
+;; Mirrors mycelium render-attrs shape: nested if with statement branches
+;; (swap!, throw) in the last position of a multi-body for-of.
+
+(func process-attrs
+  :args (:object attrs)
+  :returns :string
+  :body
+  (bind parts (cell #a()))
+  (for-of (array name value) (Object:entries attrs)
+    (validate name)
+    (if (= value true)
+      (swap! parts (fn (:array p) (conj p name)))
+      (if (or (= value false) (js:eq value null))
+        undefined
+        (if (or (= (js:typeof value) "string") (= (js:typeof value) "number"))
+          (swap! parts (fn (:array p) (conj p (template name "=" value))))
+          (throw (new Error (template "bad value for " name)))))))
+  (bind result (express parts))
+  (result:join " "))

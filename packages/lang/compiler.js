@@ -1282,6 +1282,11 @@ function isExpressionNode(node) {
 }
 
 function buildIfIIFE(test, consequent, alternate) {
+  // DD-50.7 extension: conditional return-wrap per branch.
+  // Statement branches (throw, return, etc.) stay as-is; value branches get ReturnStatement.
+  const wrapBranch = (node) => isExpressionNode(node)
+    ? { type: 'ReturnStatement', argument: node }
+    : toStatement(node);
   return {
     type: 'CallExpression',
     callee: {
@@ -1292,12 +1297,8 @@ function buildIfIIFE(test, consequent, alternate) {
         body: [{
           type: 'IfStatement',
           test,
-          consequent: { type: 'BlockStatement', body: [
-            { type: 'ReturnStatement', argument: consequent },
-          ]},
-          alternate: { type: 'BlockStatement', body: [
-            { type: 'ReturnStatement', argument: alternate },
-          ]},
+          consequent: { type: 'BlockStatement', body: [wrapBranch(consequent)] },
+          alternate: { type: 'BlockStatement', body: [wrapBranch(alternate)] },
         }],
       },
       expression: false,
