@@ -145,16 +145,21 @@ fn resolve_specifier(
         {
             return Ok(path);
         }
-        // Fetch macro source text via the Deno subprocess protocol
-        let source = deno.resolve_macro_source(module_path)?;
+        // DD-53: fetch macro source + siblings via the Deno subprocess protocol
         let cache_dir = macro_cache_dir();
         let _ = std::fs::create_dir_all(&cache_dir);
         let cache_key = module_path.replace(
             |c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != '_' && c != '@',
             "_",
         );
-        let cache_path = cache_dir.join(format!("{cache_key}.lykn"));
-        std::fs::write(&cache_path, &source).map_err(LyknError::Io)?;
+        let resolved = deno.resolve_macro_source(module_path, &cache_dir, &cache_key)?;
+        // For JSR: subprocess already wrote mod.lykn + siblings to cache_dir/cache_key/
+        // For npm: module_dir points to Deno's npm cache (siblings already present)
+        let cache_path = resolved.module_dir.join("mod.lykn");
+        if !cache_path.exists() {
+            // npm path: source wasn't cached by subprocess; write it ourselves
+            std::fs::write(&cache_path, &resolved.source).map_err(LyknError::Io)?;
+        }
         return Ok(cache_path);
     }
 

@@ -174,6 +174,7 @@ while (true) {
                 }
                 const info = JSON.parse(new TextDecoder().decode(proc.stdout));
                 let source = null;
+                let moduleDir = null;
 
                 if (spec.startsWith("jsr:")) {
                     const redirectUrl = (info.redirects || {})[spec];
@@ -196,6 +197,36 @@ while (true) {
                         continue;
                     }
                     source = await srcResp.text();
+
+                    // DD-53: parse source, fetch surface-macros siblings, cache in per-package dir
+                    const { read: readLykn } = await import("./packages/lang/reader.js");
+                    const cacheDir = request.cacheDir;
+                    const cacheKey = request.cacheKey;
+                    const pkgDir = cacheDir + "/" + cacheKey;
+                    try { Deno.mkdirSync(pkgDir, { recursive: true }); } catch {}
+                    Deno.writeTextFileSync(pkgDir + "/mod.lykn", source);
+
+                    // Find and fetch surface-macros siblings
+                    try {
+                        const forms = readLykn(source);
+                        for (const form of forms) {
+                            if (form.type === "list" && form.values.length === 2 &&
+                                form.values[0].type === "atom" && form.values[0].value === "surface-macros" &&
+                                form.values[1].type === "string") {
+                                const sibPath = form.values[1].value;
+                                if (sibPath.startsWith("/")) throw new Error("surface-macros: absolute paths not allowed: " + sibPath);
+                                if (sibPath.split("/").some(s => s === ".." || s === "")) throw new Error("surface-macros: '..' and empty segments not allowed: " + sibPath);
+                                const sibResp = await fetch(baseUrl + sibPath);
+                                if (!sibResp.ok) throw new Error("surface-macros: sibling fetch failed: " + sibPath + " (" + sibResp.status + " from " + baseUrl + sibPath + ")");
+                                const sibText = await sibResp.text();
+                                Deno.writeTextFileSync(pkgDir + "/" + sibPath, sibText);
+                            }
+                        }
+                    } catch (parseErr) {
+                        writeLine(JSON.stringify({ ok: false, error: "surface-macros sibling fetch: " + parseErr.message }));
+                        continue;
+                    }
+                    moduleDir = pkgDir;
                 } else if (spec.startsWith("npm:")) {
                     const modules = info.modules || [];
                     let localDir = null;
@@ -219,10 +250,11 @@ while (true) {
                         writeLine(JSON.stringify({ ok: false, error: "macro module '" + spec + "' has no .lykn files. Verify it was published with `lykn build --dist`." }));
                         continue;
                     }
+                    moduleDir = localDir;
                 }
 
                 if (source) {
-                    writeLine(JSON.stringify({ ok: true, result: source }));
+                    writeLine(JSON.stringify({ ok: true, result: { source, moduleDir } }));
                 } else {
                     writeLine(JSON.stringify({ ok: false, error: "unsupported specifier scheme for '" + spec + "'." }));
                 }

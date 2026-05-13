@@ -15,6 +15,13 @@ use crate::reader::source_loc::SourceLoc;
 
 use super::env;
 
+/// Result of resolving a macro module via the Deno subprocess.
+#[derive(Debug)]
+pub struct ResolvedMacroModule {
+    pub source: String,
+    pub module_dir: PathBuf,
+}
+
 /// A managed Deno subprocess that compiles and evaluates lykn macros.
 ///
 /// The subprocess is spawned once and reused for all macro operations during
@@ -227,16 +234,36 @@ impl DenoSubprocess {
             .collect()
     }
 
-    pub fn resolve_macro_source(&mut self, specifier: &str) -> Result<String, LyknError> {
-        let req = serde_json::json!({ "action": "resolve-macro-source", "specifier": specifier });
+    pub fn resolve_macro_source(
+        &mut self,
+        specifier: &str,
+        cache_dir: &std::path::Path,
+        cache_key: &str,
+    ) -> Result<ResolvedMacroModule, LyknError> {
+        let req = serde_json::json!({
+            "action": "resolve-macro-source",
+            "specifier": specifier,
+            "cacheDir": cache_dir.to_string_lossy(),
+            "cacheKey": cache_key,
+        });
         let result = self.request(req)?;
-        result
+        let source = result["source"]
             .as_str()
-            .map(|s| s.to_string())
             .ok_or_else(|| LyknError::Read {
-                message: format!("resolve-macro-source returned non-string for {specifier}"),
+                message: format!("resolve-macro-source: missing 'source' field for {specifier}"),
                 location: SourceLoc::default(),
-            })
+            })?
+            .to_string();
+        let module_dir = result["moduleDir"]
+            .as_str()
+            .map(PathBuf::from)
+            .ok_or_else(|| LyknError::Read {
+                message: format!(
+                    "resolve-macro-source: missing 'moduleDir' field for {specifier}"
+                ),
+                location: SourceLoc::default(),
+            })?;
+        Ok(ResolvedMacroModule { source, module_dir })
     }
 }
 
