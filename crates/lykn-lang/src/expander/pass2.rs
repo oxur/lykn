@@ -107,7 +107,12 @@ fn expand_expr(
                             && let Some(macro_def) = env.get(name.as_str())
                         {
                             let args = &cv[1..];
-                            current = deno.eval_macro(&macro_def.js_body, args)?;
+                            // DD-52: surface macros use eval-surface-macro action
+                            current = if macro_def.js_body.starts_with("__surface_macro__") {
+                                deno.eval_surface_macro(name, args)?
+                            } else {
+                                deno.eval_macro(&macro_def.js_body, args)?
+                            };
                             count += 1;
                             if count > MAX_EXPAND_ITERATIONS {
                                 return Err(LyknError::Read {

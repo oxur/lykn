@@ -1,0 +1,2 @@
+;; DD-52 test fixture: happy-path surface macros
+(surface-macros "macros.js")

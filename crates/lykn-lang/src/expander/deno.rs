@@ -175,6 +175,58 @@ impl DenoSubprocess {
         Ok(PathBuf::from(path_str))
     }
 
+    /// Evaluate a surface macro (loaded via `load_surface_macros`) by name.
+    pub fn eval_surface_macro(
+        &mut self,
+        name: &str,
+        args: &[SExpr],
+    ) -> Result<SExpr, LyknError> {
+        let args_json: Vec<serde_json::Value> =
+            args.iter().map(env::sexpr_to_protocol_json).collect();
+        let req = serde_json::json!({
+            "action": "eval-surface-macro",
+            "name": name,
+            "args": args_json,
+        });
+        let result = self.request(req)?;
+        env::protocol_json_to_sexpr(&result)
+    }
+
+    /// Load surface macros from a JS file relative to a macro module directory.
+    ///
+    /// Returns the list of macro names newly registered in `macroEnv` by the
+    /// JS file's execution.
+    pub fn load_surface_macros(
+        &mut self,
+        module_dir: &std::path::Path,
+        js_rel_path: &str,
+    ) -> Result<Vec<String>, LyknError> {
+        let req = serde_json::json!({
+            "action": "load-surface-macros",
+            "moduleDir": module_dir.to_string_lossy(),
+            "jsRelPath": js_rel_path,
+        });
+        let result = self.request(req)?;
+        let names = result["registeredNames"]
+            .as_array()
+            .ok_or_else(|| LyknError::Read {
+                message: "load-surface-macros: response missing registeredNames array".to_string(),
+                location: SourceLoc::default(),
+            })?;
+        names
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| LyknError::Read {
+                        message: "load-surface-macros: registeredNames entry is not a string"
+                            .to_string(),
+                        location: SourceLoc::default(),
+                    })
+            })
+            .collect()
+    }
+
     pub fn resolve_macro_source(&mut self, specifier: &str) -> Result<String, LyknError> {
         let req = serde_json::json!({ "action": "resolve-macro-source", "specifier": specifier });
         let result = self.request(req)?;

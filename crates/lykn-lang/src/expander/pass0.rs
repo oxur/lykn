@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::sexpr::SExpr;
 use crate::error::LyknError;
-use crate::reader::source_loc::SourceLoc;
+use crate::reader::source_loc::{SourceLoc, Span};
 
 use super::MacroEnv;
 use super::cache::ModuleCache;
@@ -60,6 +60,23 @@ pub fn process_import_macros(
     }
 
     Ok(remaining)
+}
+
+/// Extract a `(surface-macros "path.js")` directive's path and span.
+///
+/// Returns `Some((js_rel_path, span))` if the form is a valid surface-macros
+/// directive, `None` otherwise.
+fn extract_surface_macros_directive(form: &SExpr) -> Option<(String, Span)> {
+    if let SExpr::List { values, span } = form
+        && values.len() == 2
+        && let Some(SExpr::Atom { value: head, .. }) = values.first()
+        && head == "surface-macros"
+        && let Some(SExpr::String { value: path, .. }) = values.get(1)
+    {
+        Some((path.clone(), *span))
+    } else {
+        None
+    }
 }
 
 /// Check whether a form is an `(import-macros ...)` directive.
@@ -356,7 +373,43 @@ fn process_single_import(
         &mut module_env,
         imports,
     )?;
-    let _remaining = super::pass1::compile_local_macros(module_forms, deno, &mut module_env)?;
+    // DD-52: process (surface-macros "path.js") directives before compiling
+    // local macros. Surface-macros-registered names become available to both
+    // local macros and the caller.
+    let module_dir = resolved.parent().unwrap_or(Path::new("."));
+    let mut non_surface_forms = Vec::new();
+    for form in &module_forms {
+        if let Some((js_rel_path, span)) = extract_surface_macros_directive(form) {
+            let registered_names =
+                deno.load_surface_macros(module_dir, &js_rel_path)
+                    .map_err(|e| {
+                        LyknError::Read {
+                            message: format!(
+                                "{}\n  at {}:{}:{}",
+                                e,
+                                resolved.display(),
+                                span.start.line,
+                                span.start.column,
+                            ),
+                            location: span.start,
+                        }
+                    })?;
+            for name in registered_names {
+                module_env.insert(
+                    name.clone(),
+                    super::CompiledMacro {
+                        name: name.clone(),
+                        js_body: format!("__surface_macro__{name}"),
+                    },
+                );
+            }
+        } else {
+            non_surface_forms.push(form.clone());
+        }
+    }
+
+    let _remaining =
+        super::pass1::compile_local_macros(non_surface_forms, deno, &mut module_env)?;
 
     // Cache the compiled macros for this module.
     cache.insert(canonical, module_env.clone());

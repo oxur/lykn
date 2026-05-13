@@ -41,6 +41,33 @@ const $concat = (...arrays) => {
 const $append = $concat;
 const $nth = (arr, n) => arr.values[n];
 const $length = (arr) => arr.values.length;
+
+// DD-52: surface-macros support — non-prefixed aliases matching
+// packages/lang/expander.js SURFACE_PARAMS, plus macroEnv Map.
+const macroEnv = new Map();
+const sym = $sym;
+const array = $array;
+const gensym = $gensym;
+const isArray = $isArray;
+const isSymbol = $isSymbol;
+const isNumber = $isNumber;
+const isString = $isString;
+const isKeyword = $isKeyword;
+const first = $first;
+const rest = $rest;
+const nth = $nth;
+const length = $length;
+const append = $append;
+function formatSExpr(node) {
+    if (node === null || node === undefined) return 'null';
+    if (node.type === 'atom') return node.value;
+    if (node.type === 'keyword') return ':' + node.value;
+    if (node.type === 'string') return '"' + node.value + '"';
+    if (node.type === 'number') return String(node.value);
+    if (node.type === 'cons') return '(' + formatSExpr(node.car) + ' . ' + formatSExpr(node.cdr) + ')';
+    if (node.type === 'list') return '(' + node.values.map(formatSExpr).join(' ') + ')';
+    return String(node);
+}
 "#;
 
 /// JavaScript source for the long-lived Deno evaluator subprocess.
@@ -107,6 +134,14 @@ while (true) {
             );
             const result = boundFn(...request.args);
             writeLine(JSON.stringify({ ok: true, result }));
+        } else if (request.action === "eval-surface-macro") {
+            const fn_ = macroEnv.get(request.name);
+            if (!fn_) {
+                writeLine(JSON.stringify({ ok: false, error: "surface macro not found: " + request.name }));
+            } else {
+                const result = fn_(...request.args);
+                writeLine(JSON.stringify({ ok: true, result }));
+            }
         } else if (request.action === "resolve") {
             try {
                 const resolved = import.meta.resolve(request.specifier);
@@ -193,6 +228,31 @@ while (true) {
                 }
             } catch (e) {
                 writeLine(JSON.stringify({ ok: false, error: "resolve-macro-source failed: " + e.message }));
+            }
+        } else if (request.action === "load-surface-macros") {
+            try {
+                const moduleDir = request.moduleDir;
+                const jsRelPath = request.jsRelPath;
+                const jsPath = moduleDir + "/" + jsRelPath;
+                let jsSource;
+                try { jsSource = Deno.readTextFileSync(jsPath); }
+                catch { throw new Error("surface-macros: file not found: " + jsRelPath); }
+                const SURFACE_PARAMS = ['macroEnv', 'sym', 'array', 'gensym', 'isArray', 'isSymbol', 'isNumber', 'isString', 'isKeyword', 'first', 'rest', 'nth', 'length', 'append', 'formatSExpr'];
+                const SURFACE_VALUES = [macroEnv, sym, array, gensym, isArray, isSymbol, isNumber, isString, isKeyword, first, rest, nth, length, append, formatSExpr];
+                const beforeKeys = new Set(macroEnv.keys());
+                try {
+                    const loader = new Function(...SURFACE_PARAMS, jsSource);
+                    loader(...SURFACE_VALUES);
+                } catch (err) {
+                    throw new Error("surface-macros: failed to load " + jsRelPath + ": " + err.message);
+                }
+                const registeredNames = [];
+                for (const k of macroEnv.keys()) {
+                    if (!beforeKeys.has(k)) registeredNames.push(k);
+                }
+                writeLine(JSON.stringify({ ok: true, result: { registeredNames } }));
+            } catch (e) {
+                writeLine(JSON.stringify({ ok: false, error: e.message }));
             }
         } else if (request.action === "ping") {
             writeLine(JSON.stringify({ ok: true, result: "pong" }));

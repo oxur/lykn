@@ -1,0 +1,2 @@
+;; DD-52 test fixture: malformed surface-macros directive
+(surface-macros 42)

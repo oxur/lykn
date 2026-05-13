@@ -1,0 +1,2 @@
+;; DD-52 test fixture: references non-existent JS file
+(surface-macros "nonexistent.js")

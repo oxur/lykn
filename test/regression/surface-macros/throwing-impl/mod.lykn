@@ -1,0 +1,2 @@
+;; DD-52 test fixture: throwing surface macros
+(surface-macros "macros.js")
