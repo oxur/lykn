@@ -62,21 +62,38 @@ pub fn process_import_macros(
     Ok(remaining)
 }
 
-/// Extract a `(surface-macros "path.js")` directive's path and span.
-///
-/// Returns `Some((js_rel_path, span))` if the form is a valid surface-macros
-/// directive, `None` otherwise.
-fn extract_surface_macros_directive(form: &SExpr) -> Option<(String, Span)> {
+enum SurfaceMacrosDirective {
+    Valid { js_rel_path: String, span: Span },
+    BadForm { reason: String, span: Span },
+    NotADirective,
+}
+
+fn extract_surface_macros_directive(form: &SExpr) -> SurfaceMacrosDirective {
     if let SExpr::List { values, span } = form
-        && values.len() == 2
         && let Some(SExpr::Atom { value: head, .. }) = values.first()
         && head == "surface-macros"
-        && let Some(SExpr::String { value: path, .. }) = values.get(1)
     {
-        Some((path.clone(), *span))
-    } else {
-        None
+        if values.len() != 2 {
+            return SurfaceMacrosDirective::BadForm {
+                reason: format!(
+                    "surface-macros expects exactly one string argument, got {} arguments",
+                    values.len() - 1
+                ),
+                span: *span,
+            };
+        }
+        if let SExpr::String { value: path, .. } = &values[1] {
+            return SurfaceMacrosDirective::Valid {
+                js_rel_path: path.clone(),
+                span: *span,
+            };
+        }
+        return SurfaceMacrosDirective::BadForm {
+            reason: "surface-macros argument must be a string literal".to_string(),
+            span: *span,
+        };
     }
+    SurfaceMacrosDirective::NotADirective
 }
 
 /// Check whether a form is an `(import-macros ...)` directive.
@@ -384,32 +401,47 @@ fn process_single_import(
     let module_dir = resolved.parent().unwrap_or(Path::new("."));
     let mut non_surface_forms = Vec::new();
     for form in &module_forms {
-        if let Some((js_rel_path, span)) = extract_surface_macros_directive(form) {
-            let registered_names =
-                deno.load_surface_macros(module_dir, &js_rel_path)
-                    .map_err(|e| {
-                        LyknError::Read {
-                            message: format!(
-                                "{}\n  at {}:{}:{}",
-                                e,
-                                resolved.display(),
-                                span.start.line,
-                                span.start.column,
-                            ),
-                            location: span.start,
-                        }
-                    })?;
-            for name in registered_names {
-                module_env.insert(
-                    name.clone(),
-                    super::CompiledMacro {
-                        name: name.clone(),
-                        js_body: format!("__surface_macro__{name}"),
-                    },
-                );
+        match extract_surface_macros_directive(form) {
+            SurfaceMacrosDirective::Valid { js_rel_path, span } => {
+                let registered_names =
+                    deno.load_surface_macros(module_dir, &js_rel_path)
+                        .map_err(|e| {
+                            LyknError::Read {
+                                message: format!(
+                                    "{}\n  at {}:{}:{}",
+                                    e,
+                                    resolved.display(),
+                                    span.start.line,
+                                    span.start.column,
+                                ),
+                                location: span.start,
+                            }
+                        })?;
+                for name in registered_names {
+                    module_env.insert(
+                        name.clone(),
+                        super::CompiledMacro {
+                            name: name.clone(),
+                            js_body: format!("__surface_macro__{name}"),
+                        },
+                    );
+                }
             }
-        } else {
-            non_surface_forms.push(form.clone());
+            SurfaceMacrosDirective::BadForm { reason, span } => {
+                return Err(LyknError::Read {
+                    message: format!(
+                        "{}\n  at {}:{}:{}",
+                        reason,
+                        resolved.display(),
+                        span.start.line,
+                        span.start.column,
+                    ),
+                    location: span.start,
+                });
+            }
+            SurfaceMacrosDirective::NotADirective => {
+                non_surface_forms.push(form.clone());
+            }
         }
     }
 

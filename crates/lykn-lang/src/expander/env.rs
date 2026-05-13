@@ -265,6 +265,8 @@ while (true) {
             try {
                 const moduleDir = request.moduleDir;
                 const jsRelPath = request.jsRelPath;
+                if (jsRelPath.startsWith("/")) throw new Error("surface-macros: absolute paths not allowed: " + jsRelPath);
+                if (jsRelPath.split("/").some(s => s === ".." || s === "")) throw new Error("surface-macros: '..' and empty segments not allowed: " + jsRelPath);
                 const jsPath = moduleDir + "/" + jsRelPath;
                 let jsSource;
                 try { jsSource = Deno.readTextFileSync(jsPath); }
