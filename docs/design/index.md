@@ -6,9 +6,10 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0052 | DD-53 — V-08 Sibling-Fetch for Surface-macros (0.6.0 ship-gate) | Active | 2026-05-12 |
 | 0051 | Deno-Native Tool Boundaries (`deno add`, `deno task`, `deno cache`, `lykn add`) | Draft | 2026-05-05 |
-| 0050 | Position-Aware Compilation of Conditional and Block Forms | Active | 2026-05-03 |
-| 0049 | Identifier Mapping (lykn → JS) | Active | 2026-05-03 |
+| 0050 | Position-Aware Compilation of Conditional and Block Forms | Final | 2026-05-12 |
+| 0049 | Identifier Mapping (lykn → JS) | Final | 2026-05-12 |
 | 0048 | Import-Macros JSR/npm Cache Resolution (V-08 fix) | Final | 2026-05-03 |
 | 0047 | DD-37: JS Surface Compiler Architecture | Draft | 2026-04-18 |
 | 0046 | DD-36: Kernel / Surface Compiler Split | Draft | 2026-04-18 |
@@ -69,13 +70,14 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
-- [0050 - Position-Aware Compilation of Conditional and Block Forms](05-active/0050-position-aware-compilation-of-conditional-and-block-forms.md)
-- [0049 - Identifier Mapping (lykn → JS)](05-active/0049-identifier-mapping-lykn-js.md)
+- [0052 - DD-53 — V-08 Sibling-Fetch for Surface-macros (0.6.0 ship-gate)](05-active/0052-dd-53-v-08-sibling-fetch-for-surface-macros-0.6.0-ship-gate.md)
 - [0030 - Pure Rust Kernel→JS Codegen](05-active/0030-pure-rust-kerneljs-codegen.md)
 - [0029 - DD-18.1: Method Calls in Threading Macros](05-active/0029-dd-18.1-method-calls-in-threading-macros.md)
 
 ### Final
 
+- [0050 - Position-Aware Compilation of Conditional and Block Forms](06-final/0050-position-aware-compilation-of-conditional-and-block-forms.md)
+- [0049 - Identifier Mapping (lykn → JS)](06-final/0049-identifier-mapping-lykn-js.md)
 - [0048 - Import-Macros JSR/npm Cache Resolution (V-08 fix)](06-final/0048-import-macros-jsrnpm-cache-resolution-v-08-fix.md)
 - [0045 - DD-35: Testing Strategy for the Publishing Pipeline](06-final/0045-dd-35-testing-strategy-for-the-publishing-pipeline.md)
 - [0044 - DD-34: Cross-Package `import-macros` Resolution](06-final/0044-dd-34-cross-package-import-macros-resolution.md)
