@@ -75,6 +75,16 @@ function makeTemplateElement(raw, tail) {
   };
 }
 
+/** Build a TemplateElement with $ escaped for ICU literal text. */
+function makeIcuTemplateElement(raw, tail) {
+  const escaped = raw.replace(/\$/g, '\\$');
+  return {
+    type: 'TemplateElement',
+    value: { raw: escaped, cooked: raw },
+    tail,
+  };
+}
+
 // ── DD-54 template helpers ─────────────────────────────────────────────
 
 function templateConcat(args) {
@@ -210,7 +220,7 @@ function emitMft(nodes, kwargs) {
   // If MFT is all literals, emit a simple template literal
   if (nodes.every((n) => n.type === 'literal')) {
     const text = nodes.map((n) => n.value).join('');
-    return { type: 'TemplateLiteral', quasis: [makeTemplateElement(text, true)], expressions: [] };
+    return { type: 'TemplateLiteral', quasis: [makeIcuTemplateElement(text, true)], expressions: [] };
   }
 
   // Build a template literal with expressions for slots and IIFEs for plural/select
@@ -222,21 +232,21 @@ function emitMft(nodes, kwargs) {
     if (node.type === 'literal') {
       currentSegment += node.value;
     } else if (node.type === 'slot') {
-      quasis.push(makeTemplateElement(currentSegment, false));
+      quasis.push(makeIcuTemplateElement(currentSegment, false));
       currentSegment = '';
       expressions.push(kwargs.get(node.name));
     } else if (node.type === 'plural') {
-      quasis.push(makeTemplateElement(currentSegment, false));
+      quasis.push(makeIcuTemplateElement(currentSegment, false));
       currentSegment = '';
       expressions.push(emitPluralIife(node, kwargs));
     } else if (node.type === 'select') {
-      quasis.push(makeTemplateElement(currentSegment, false));
+      quasis.push(makeIcuTemplateElement(currentSegment, false));
       currentSegment = '';
       expressions.push(emitSelectIife(node, kwargs));
     }
   }
 
-  quasis.push(makeTemplateElement(currentSegment, true));
+  quasis.push(makeIcuTemplateElement(currentSegment, true));
 
   return { type: 'TemplateLiteral', quasis, expressions };
 }

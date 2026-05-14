@@ -456,9 +456,9 @@ fn fresh_icu_var(counter: &mut usize) -> String {
     format!("_v{}", n)
 }
 
-/// Check if a template form should use ICU mode and emit accordingly.
-/// Returns true if ICU mode was used; false if the caller should fall through
-/// to concat mode.
+/// Try ICU mode for a template form. Returns true if ICU mode handled it;
+/// false if the caller should fall through to concat mode.
+/// Panics with a compile error message for ICU forms that are malformed.
 pub fn try_emit_template_icu(w: &mut JsWriter, args: &[SExpr]) -> bool {
     if args.is_empty() {
         return false;
@@ -469,55 +469,116 @@ pub fn try_emit_template_icu(w: &mut JsWriter, args: &[SExpr]) -> bool {
         _ => return false,
     };
 
-    // Single-arg: parse as ICU
+    // Rule 1: single literal string — parse as ICU
     if args.len() == 1 {
-        let mft = match parse_icu(icu_string) {
-            Ok(mft) => mft,
-            Err(_) => return false,
-        };
+        let mft = parse_icu(icu_string)
+            .unwrap_or_else(|e| panic!("template: {}", e));
         let slot_names = collect_slot_names(&mft);
         if !slot_names.is_empty() {
-            return false;
+            let first = sorted_names(&slot_names).into_iter().next().unwrap();
+            panic!(
+                "template: no binding for slot {{{}}}\n  in (template \"{}\")\n  expected slots: {}\n  provided kwargs: (none)\n  hint: add :{} <value> to the template call",
+                first, icu_string, sorted_join(&slot_names), first
+            );
         }
         let mut counter = 0;
         emit_mft(w, &mft, &HashMap::new(), &mut counter);
         return true;
     }
 
-    // Multi-arg: check if arg[1] is a keyword
+    // Not ICU if arg[1] isn't a keyword
     if !matches!(&args[1], SExpr::Keyword { .. }) {
         return false;
     }
 
-    // Ambiguous form: string + lone keyword
+    // Rule 2 ambiguous form: string + lone keyword, no value
     if args.len() == 2 {
-        return false;
+        let kw = args[1].as_keyword().unwrap();
+        panic!(
+            "template: ambiguous form\n  arg 0 is a literal string and arg 1 is a keyword (:{}) with no\n  following value, which matches both ICU mode (missing kwarg value)\n  and concat mode (keyword as positional arg).\n  hint:\n    - for ICU mode, add a value: (template \"{}\" :{} <expr>)\n    - for concat mode, use string concatenation instead",
+            kw, icu_string, kw
+        );
     }
 
-    let mft = match parse_icu(icu_string) {
-        Ok(mft) => mft,
-        Err(_) => return false,
-    };
+    // Rule 2: ICU mode — parse and validate
+    let mft = parse_icu(icu_string)
+        .unwrap_or_else(|e| panic!("template: {}", e));
 
-    // Parse kwargs
+    let slot_names = collect_slot_names(&mft);
+
+    // Parse kwargs with validation
     let mut kwargs: HashMap<String, &SExpr> = HashMap::new();
     let mut i = 1;
     while i < args.len() {
-        if let SExpr::Keyword { value, .. } = &args[i] {
-            if i + 1 < args.len() {
+        match &args[i] {
+            SExpr::Keyword { value, .. } => {
+                if kwargs.contains_key(value) {
+                    panic!("template: duplicate keyword argument :{}", value);
+                }
+                if i + 1 >= args.len() {
+                    panic!("template: keyword :{} has no value", value);
+                }
                 kwargs.insert(value.clone(), &args[i + 1]);
                 i += 2;
-            } else {
-                break;
             }
-        } else {
-            break;
+            other => {
+                panic!(
+                    "template: expected keyword argument at position {}, got {:?}",
+                    i, other
+                );
+            }
+        }
+    }
+
+    // Validate: every slot must have a kwarg
+    for name in sorted_names(&slot_names) {
+        if !kwargs.contains_key(&name) {
+            panic!(
+                "template: no binding for slot {{{}}}\n  in (template \"{}\" ...)\n  expected slots: {}\n  provided kwargs: {}\n  hint: add :{} <value> to the template call",
+                name, icu_string,
+                sorted_join(&slot_names),
+                if kwargs.is_empty() { "(none)".into() } else { sorted_join_keys(&kwargs) },
+                name
+            );
+        }
+    }
+
+    // Validate: every kwarg must be used by a slot
+    for key in sorted_keys(&kwargs) {
+        if !slot_names.contains(&key) {
+            panic!(
+                "template: unused keyword argument :{}\n  in (template \"{}\" ...)\n  expected slots: {}\n  provided kwargs: {}\n  hint: remove :{}, or add a {{{}}} slot to the template",
+                key, icu_string,
+                sorted_join(&slot_names),
+                sorted_join_keys(&kwargs),
+                key, key
+            );
         }
     }
 
     let mut counter = 0;
     emit_mft(w, &mft, &kwargs, &mut counter);
     true
+}
+
+fn sorted_names(names: &HashSet<String>) -> Vec<String> {
+    let mut v: Vec<String> = names.iter().cloned().collect();
+    v.sort();
+    v
+}
+
+fn sorted_join(names: &HashSet<String>) -> String {
+    sorted_names(names).join(", ")
+}
+
+fn sorted_keys(map: &HashMap<String, &SExpr>) -> Vec<String> {
+    let mut v: Vec<String> = map.keys().cloned().collect();
+    v.sort();
+    v
+}
+
+fn sorted_join_keys(map: &HashMap<String, &SExpr>) -> String {
+    sorted_keys(map).join(", ")
 }
 
 fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr>, counter: &mut usize) {
@@ -541,7 +602,7 @@ fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr
                 if let Some(expr) = kwargs.get(name) {
                     emit_expr(w, expr, 0);
                 } else {
-                    w.write(name);
+                    panic!("internal error: slot {{{}}} has no kwarg after validation", name);
                 }
                 w.write("}");
             }
@@ -565,7 +626,7 @@ fn emit_template_text_icu(w: &mut JsWriter, value: &str) {
         match ch {
             '`' => w.write("\\`"),
             '\\' => w.write("\\\\"),
-            '$' => w.write_char('$'),
+            '$' => w.write("\\$"),
             c => w.write_char(c),
         }
     }
