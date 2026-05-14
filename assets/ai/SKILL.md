@@ -107,6 +107,7 @@ Note: document paths are relative to the lykn project root.
 | **No-Node boundary** | `docs/guides/14-no-node-boundary.md`, `docs/guides/12-deno/12-01-runtime-basics.md` |
 | **lykn CLI (compile, fmt, check)** | `docs/guides/15-lykn-cli.md` |
 | **Publishing a package** | `docs/guides/15-lykn-cli.md` (ID-04d, ID-04e), `docs/guides/10-project-structure.md` (package layout for publishing) |
+| **Template / i18n** | `docs/guides/17-template-and-i18n.md`, `docs/guides/01-core-idioms.md` (ID-05) |
 
 ---
 

@@ -1,0 +1,52 @@
+;; i18n-notifications — DD-55 ICU MessageFormat demonstration
+;;
+;; Shows the template macro's ICU mode: named slots, multi-use
+;; slots, plural branches with =N and #, select branches, and
+;; nested selectors.
+
+;; --- Simple slot ---
+
+(bind greeting (template "Hello, {name}!" :name "Duncan"))
+(console:log greeting)
+
+;; --- Multi-use slot ---
+
+(bind echo (template "{name} said hi to {name}" :name "Alice"))
+(console:log echo)
+
+;; --- Plural with =0 and # shorthand ---
+
+(func item-count
+  :args (:number n)
+  :returns :string
+  :body
+  (template "{n, plural, =0 {no items} one {1 item} other {# items}}" :n n))
+
+(console:log (template "You have {msg}." :msg (item-count 0)))
+(console:log (template "You have {msg}." :msg (item-count 1)))
+(console:log (template "You have {msg}." :msg (item-count 7)))
+
+;; --- Select ---
+
+(func access-message
+  :args (:string role)
+  :returns :string
+  :body
+  (template "{role, select, owner {You own this repository.} member {You are a member.} other {You have read access.}}" :role role))
+
+(console:log (access-message "owner"))
+(console:log (access-message "member"))
+(console:log (access-message "viewer"))
+
+;; --- Composed: the marketing screenshot ---
+
+(func dashboard-greeting
+  :args (:string role :string name :number count)
+  :returns :string
+  :body
+  (template "{role, select, owner {Welcome back, {name}! You have {count, plural, =0 {no pending tasks} one {1 pending task} other {# pending tasks}}.} member {Hi {name}. You have {count, plural, =0 {no items to review} one {1 item to review} other {# items to review}}.} other {Hello, guest.}}" :role role :name name :count count))
+
+(console:log (dashboard-greeting "member" "Bob" 3))
+(console:log (dashboard-greeting "owner"  "Alice" 0))
+(console:log (dashboard-greeting "owner"  "Alice" 1))
+(console:log (dashboard-greeting "viewer" "X" 99))
