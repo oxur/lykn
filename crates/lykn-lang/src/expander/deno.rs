@@ -44,11 +44,26 @@ fn build_evaluator_script() -> String {
     format!("{}\n{}", env::MACRO_ENV_JS, env::DENO_EVALUATOR_JS)
 }
 
-fn build_deno_command(script: &str, include_config: bool) -> Command {
+fn find_project_json() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let mut dir = cwd.as_path();
+    loop {
+        let candidate = dir.join("project.json");
+        if candidate.exists() {
+            return std::fs::canonicalize(candidate).ok();
+        }
+        dir = dir.parent()?;
+    }
+}
+
+fn build_deno_command(script: &str, project_json: Option<&std::path::Path>) -> Command {
+    let materialized = super::embedded::materialize_packages()
+        .expect("materializing embedded packages failed");
     let mut cmd = Command::new("deno");
+    cmd.current_dir(&materialized);
     cmd.arg("eval");
-    if include_config {
-        cmd.args(["--config", "project.json"]);
+    if let Some(pj) = project_json {
+        cmd.args(["--config", &pj.to_string_lossy()]);
     }
     cmd.arg("--ext=js")
         .arg(script)
@@ -78,8 +93,8 @@ impl DenoSubprocess {
     /// injected. Returns an error if Deno is not installed or cannot be started.
     pub fn spawn() -> Result<Self, LyknError> {
         let script = build_evaluator_script();
-        let has_config = std::path::Path::new("project.json").exists();
-        let mut child = build_deno_command(&script, has_config)
+        let project_json = find_project_json();
+        let mut child = build_deno_command(&script, project_json.as_deref())
             .spawn()
             .map_err(map_spawn_error)?;
 
@@ -501,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_build_deno_command_without_config() {
-        let cmd = build_deno_command("console.log(1)", false);
+        let cmd = build_deno_command("console.log(1)", None);
         let prog = cmd.get_program();
         assert_eq!(prog, "deno");
         let args: Vec<_> = cmd.get_args().collect();
@@ -511,10 +526,10 @@ mod tests {
 
     #[test]
     fn test_build_deno_command_with_config() {
-        let cmd = build_deno_command("console.log(1)", true);
+        let pj = PathBuf::from("/tmp/test-project.json");
+        let cmd = build_deno_command("console.log(1)", Some(&pj));
         let args: Vec<_> = cmd.get_args().collect();
         assert!(args.contains(&std::ffi::OsStr::new("--config")));
-        assert!(args.contains(&std::ffi::OsStr::new("project.json")));
     }
 
     #[test]

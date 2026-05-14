@@ -398,7 +398,7 @@ fn process_single_import(
     // DD-52: process (surface-macros "path.js") directives before compiling
     // local macros. Surface-macros-registered names become available to both
     // local macros and the caller.
-    let module_dir = resolved.parent().unwrap_or(Path::new("."));
+    let module_dir = canonical.parent().unwrap_or(Path::new("."));
     let mut non_surface_forms = Vec::new();
     for form in &module_forms {
         match extract_surface_macros_directive(form) {

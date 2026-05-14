@@ -135,8 +135,7 @@ Deno.test({
 
     const tempProject = Deno.makeTempDirSync({ prefix: "lykn-r5-r3-" });
     try {
-      // Symlink packages/ so the subprocess can import the reader
-      Deno.symlinkSync(`${CWD}/packages`, `${tempProject}/packages`);
+      // DD-54: no symlink needed — the binary self-materializes packages/lang/
 
       // Minimal project.json — no workspace shadowing of JSR specifiers
       Deno.writeTextFileSync(`${tempProject}/project.json`, JSON.stringify({

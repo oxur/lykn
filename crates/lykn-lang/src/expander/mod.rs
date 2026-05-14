@@ -16,6 +16,7 @@
 
 pub mod cache;
 pub mod deno;
+pub mod embedded;
 pub mod env;
 pub mod pass0;
 pub mod pass1;
