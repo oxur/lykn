@@ -10,6 +10,7 @@ use std::fmt;
 use super::emit::emit_expr;
 use super::format::JsWriter;
 use crate::ast::sexpr::SExpr;
+use crate::reader::source_loc::Span;
 
 // ── MFT node types ────────────────────────────────────────────────────
 
@@ -47,7 +48,8 @@ pub struct SelectBranch {
 
 // ── Parser ────────────────────────────────────────────────────────────
 
-const PLURAL_CATEGORIES: &[&str] = &["zero", "one", "two", "few", "many", "other"];
+const ALL_CLDR_CATEGORIES: &[&str] = &["zero", "one", "two", "few", "many", "other"];
+const ENGLISH_CLDR_CATEGORIES: &[&str] = &["one", "other"];
 
 #[derive(Debug)]
 pub struct IcuParseError {
@@ -60,7 +62,7 @@ impl fmt::Display for IcuParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "template: {}\n  in \"{}\"\n  at position {}",
+            "{}\n  in \"{}\"\n  at position {}",
             self.message, self.input, self.position
         )
     }
@@ -319,6 +321,30 @@ impl<'a> IcuParser<'a> {
             )));
         }
 
+        // English CLDR Phase A: =1 collides with `one`
+        let exact_values: HashSet<i64> = branches
+            .iter()
+            .filter_map(|b| match &b.key {
+                PluralKey::Exact(n) => Some(*n),
+                _ => None,
+            })
+            .collect();
+        let category_keys: HashSet<&str> = branches
+            .iter()
+            .filter_map(|b| match &b.key {
+                PluralKey::Category(c) => Some(c.as_str()),
+                _ => None,
+            })
+            .collect();
+        if exact_values.contains(&1) && category_keys.contains("one") {
+            return Err(self.error(&format!(
+                "plural block for {{{}}} has overlapping branches: \
+                 '=1' and 'one' both match count == 1 under English plural rules. \
+                 Remove one — they handle the same case.",
+                name
+            )));
+        }
+
         self.expect(b'}')?;
         Ok(MftNode::Plural {
             name: name.to_string(),
@@ -343,11 +369,20 @@ impl<'a> IcuParser<'a> {
         if cat.is_empty() {
             return Err(self.error("expected plural category or '=N'"));
         }
-        if !PLURAL_CATEGORIES.contains(&cat.as_str()) {
+        if !ALL_CLDR_CATEGORIES.contains(&cat.as_str()) {
             return Err(self.error(&format!(
-                "unknown plural category '{}' for plural block; valid categories: {}",
+                "unknown plural category '{}'; valid CLDR categories: {}",
                 cat,
-                PLURAL_CATEGORIES.join(" ")
+                ALL_CLDR_CATEGORIES.join(" ")
+            )));
+        }
+        if !ENGLISH_CLDR_CATEGORIES.contains(&cat.as_str()) {
+            return Err(self.error(&format!(
+                "plural category '{}' is not valid under English plural rules. \
+                 English CLDR uses only 'one' and 'other'. \
+                 Hint: use '=N {{...}}' for specific numeric values, \
+                 e.g. '=0 {{none}}' for n=0 or '=2 {{pair}}' for n=2.",
+                cat
             )));
         }
         Ok(PluralKey::Category(cat))
@@ -399,7 +434,6 @@ impl<'a> IcuParser<'a> {
     }
 }
 
-
 fn coalesce_literals(nodes: Vec<MftNode>) -> Vec<MftNode> {
     let mut result: Vec<MftNode> = Vec::new();
     for node in nodes {
@@ -415,6 +449,12 @@ fn coalesce_literals(nodes: Vec<MftNode>) -> Vec<MftNode> {
 }
 
 // ── JS emitter ────────────────────────────────────────────────────────
+
+fn fresh_icu_var(counter: &mut usize) -> String {
+    let n = *counter;
+    *counter += 1;
+    format!("_v{}", n)
+}
 
 /// Check if a template form should use ICU mode and emit accordingly.
 /// Returns true if ICU mode was used; false if the caller should fall through
@@ -439,7 +479,8 @@ pub fn try_emit_template_icu(w: &mut JsWriter, args: &[SExpr]) -> bool {
         if !slot_names.is_empty() {
             return false;
         }
-        emit_mft(w, &mft, &HashMap::new());
+        let mut counter = 0;
+        emit_mft(w, &mft, &HashMap::new(), &mut counter);
         return true;
     }
 
@@ -474,11 +515,12 @@ pub fn try_emit_template_icu(w: &mut JsWriter, args: &[SExpr]) -> bool {
         }
     }
 
-    emit_mft(w, &mft, &kwargs);
+    let mut counter = 0;
+    emit_mft(w, &mft, &kwargs, &mut counter);
     true
 }
 
-fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr>) {
+fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr>, counter: &mut usize) {
     if nodes.iter().all(|n| matches!(n, MftNode::Literal(_))) {
         w.write("`");
         for node in nodes {
@@ -505,12 +547,12 @@ fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr
             }
             MftNode::Plural { name, branches } => {
                 w.write("${");
-                emit_plural_iife(w, name, branches, kwargs);
+                emit_plural_iife(w, name, branches, kwargs, counter);
                 w.write("}");
             }
             MftNode::Select { name, branches } => {
                 w.write("${");
-                emit_select_iife(w, name, branches, kwargs);
+                emit_select_iife(w, name, branches, kwargs, counter);
                 w.write("}");
             }
         }
@@ -529,14 +571,31 @@ fn emit_template_text_icu(w: &mut JsWriter, value: &str) {
     }
 }
 
+fn make_slot_override<'a>(
+    kwargs: &HashMap<String, &'a SExpr>,
+    name: &str,
+    replacement: &'a SExpr,
+) -> HashMap<String, &'a SExpr> {
+    let mut copy = kwargs.clone();
+    copy.insert(name.to_string(), replacement);
+    copy
+}
+
 fn emit_plural_iife(
     w: &mut JsWriter,
     name: &str,
     branches: &[PluralBranch],
     kwargs: &HashMap<String, &SExpr>,
+    counter: &mut usize,
 ) {
+    let var_name = fresh_icu_var(counter);
+    let var_expr = SExpr::Atom {
+        value: var_name.clone(),
+        span: Span::default(),
+    };
+
     w.write("(() => {");
-    w.write(" const _v = ");
+    w.write(&format!(" const {} = ", var_name));
     if let Some(expr) = kwargs.get(name) {
         emit_expr(w, expr, 0);
     } else {
@@ -544,39 +603,36 @@ fn emit_plural_iife(
     }
     w.write(";");
 
-    // Exact branches first
     for branch in branches {
         if let PluralKey::Exact(n) = &branch.key {
-            w.write(&format!(" if (_v === {}) return ", n));
-            let mut inner_kwargs = kwargs.clone();
-            inner_kwargs.insert(name.to_string(), &IIFE_V_PLACEHOLDER);
-            emit_mft(w, &branch.body, &inner_kwargs);
+            w.write(&format!(" if ({} === {}) return ", var_name, n));
+            let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
+            emit_mft(w, &branch.body, &inner_kwargs, counter);
             w.write(";");
         }
     }
 
-    // Category branches (English CLDR)
     for branch in branches {
         if let PluralKey::Category(cat) = &branch.key {
             if cat == "other" {
                 continue;
             }
-            if let Some(test) = plural_category_test(cat) {
+            if let Some(test) = plural_category_test(cat, &var_name) {
                 w.write(&format!(" if ({}) return ", test));
-                let mut inner_kwargs = kwargs.clone();
-                inner_kwargs.insert(name.to_string(), &IIFE_V_PLACEHOLDER);
-                emit_mft(w, &branch.body, &inner_kwargs);
+                let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
+                emit_mft(w, &branch.body, &inner_kwargs, counter);
                 w.write(";");
             }
         }
     }
 
-    // `other` branch
-    if let Some(other) = branches.iter().find(|b| b.key == PluralKey::Category("other".into())) {
+    if let Some(other) = branches
+        .iter()
+        .find(|b| b.key == PluralKey::Category("other".into()))
+    {
         w.write(" return ");
-        let mut inner_kwargs = kwargs.clone();
-        inner_kwargs.insert(name.to_string(), &IIFE_V_PLACEHOLDER);
-        emit_mft(w, &other.body, &inner_kwargs);
+        let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
+        emit_mft(w, &other.body, &inner_kwargs, counter);
         w.write(";");
     }
 
@@ -588,9 +644,16 @@ fn emit_select_iife(
     name: &str,
     branches: &[SelectBranch],
     kwargs: &HashMap<String, &SExpr>,
+    counter: &mut usize,
 ) {
+    let var_name = fresh_icu_var(counter);
+    let var_expr = SExpr::Atom {
+        value: var_name.clone(),
+        span: Span::default(),
+    };
+
     w.write("(() => {");
-    w.write(" const _v = ");
+    w.write(&format!(" const {} = ", var_name));
     if let Some(expr) = kwargs.get(name) {
         emit_expr(w, expr, 0);
     } else {
@@ -602,35 +665,28 @@ fn emit_select_iife(
         if branch.key == "other" {
             continue;
         }
-        w.write(&format!(" if (_v === \"{}\") return ", branch.key));
-        emit_mft(w, &branch.body, kwargs);
+        w.write(&format!(" if ({} === \"{}\") return ", var_name, branch.key));
+        let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
+        emit_mft(w, &branch.body, &inner_kwargs, counter);
         w.write(";");
     }
 
     if let Some(other) = branches.iter().find(|b| b.key == "other") {
         w.write(" return ");
-        emit_mft(w, &other.body, kwargs);
+        let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
+        emit_mft(w, &other.body, &inner_kwargs, counter);
         w.write(";");
     }
 
     w.write(" })()");
 }
 
-fn plural_category_test(category: &str) -> Option<String> {
+fn plural_category_test(category: &str, var_name: &str) -> Option<String> {
     match category {
-        "one" => Some("_v === 1".into()),
-        "zero" => Some("_v === 0".into()),
+        "one" => Some(format!("{} === 1", var_name)),
         _ => None,
     }
 }
-
-use std::sync::LazyLock;
-use crate::reader::source_loc::Span;
-
-static IIFE_V_PLACEHOLDER: LazyLock<SExpr> = LazyLock::new(|| SExpr::Atom {
-    value: "_v".to_string(),
-    span: Span::default(),
-});
 
 // ── Tests ─────────────────────────────────────────────────────────────
 
@@ -690,7 +746,6 @@ mod tests {
             assert_eq!(branches.len(), 2);
             assert_eq!(branches[0].key, PluralKey::Category("one".into()));
             assert_eq!(branches[1].key, PluralKey::Category("other".into()));
-            // # is resolved to Slot("n")
             assert!(branches[1].body.contains(&MftNode::Slot("n".into())));
         } else {
             panic!("expected Plural node");
@@ -772,6 +827,48 @@ mod tests {
         assert!(names.contains("count"));
     }
 
+    // ── Review regression tests ───────────────────────────────────
+
+    #[test]
+    fn test_reject_zero_category() {
+        let err = parse_icu("{n, plural, zero {none} other {many}}");
+        assert!(err.is_err());
+        assert!(err.unwrap_err().message.contains("not valid under English plural rules"));
+    }
+
+    #[test]
+    fn test_reject_two_few_many() {
+        for cat in &["two", "few", "many"] {
+            let input = format!("{{n, plural, {} {{x}} other {{y}}}}", cat);
+            let err = parse_icu(&input);
+            assert!(err.is_err(), "expected error for category '{}'", cat);
+            assert!(
+                err.unwrap_err().message.contains("not valid under English plural rules"),
+                "wrong error for '{}'",
+                cat
+            );
+        }
+    }
+
+    #[test]
+    fn test_exact_one_overlap() {
+        let err = parse_icu("{n, plural, =1 {x} one {y} other {z}}");
+        assert!(err.is_err());
+        assert!(err.unwrap_err().message.contains("overlapping branches"));
+    }
+
+    #[test]
+    fn test_error_no_template_prefix() {
+        let err = parse_icu("{n, plural, weird {x} other {y}}").unwrap_err();
+        assert!(
+            !err.message.starts_with("template:"),
+            "IcuParseError.message should not start with 'template:': {}",
+            err.message
+        );
+    }
+
+    // ── Emitter tests ─────────────────────────────────────────────
+
     #[test]
     fn test_emit_simple_slot() {
         let mft = parse_icu("Hello, {name}!").unwrap();
@@ -782,7 +879,8 @@ mod tests {
         };
         kwargs.insert("name".into(), &expr);
         let mut w = JsWriter::new();
-        emit_mft(&mut w, &mft, &kwargs);
+        let mut counter = 0;
+        emit_mft(&mut w, &mft, &kwargs, &mut counter);
         assert_eq!(w.finish(), "`Hello, ${n}!`");
     }
 
@@ -790,7 +888,8 @@ mod tests {
     fn test_emit_no_slots() {
         let mft = parse_icu("hello world").unwrap();
         let mut w = JsWriter::new();
-        emit_mft(&mut w, &mft, &HashMap::new());
+        let mut counter = 0;
+        emit_mft(&mut w, &mft, &HashMap::new(), &mut counter);
         assert_eq!(w.finish(), "`hello world`");
     }
 
@@ -804,7 +903,8 @@ mod tests {
         };
         kwargs.insert("n".into(), &expr);
         let mut w = JsWriter::new();
-        emit_mft(&mut w, &mft, &kwargs);
+        let mut counter = 0;
+        emit_mft(&mut w, &mft, &kwargs, &mut counter);
         let output = w.finish();
         assert!(output.contains("count"));
         assert!(output.contains("=== 1"));
@@ -822,11 +922,46 @@ mod tests {
         };
         kwargs.insert("role".into(), &expr);
         let mut w = JsWriter::new();
-        emit_mft(&mut w, &mft, &kwargs);
+        let mut counter = 0;
+        emit_mft(&mut w, &mft, &kwargs, &mut counter);
         let output = w.finish();
         assert!(output.contains("r"));
         assert!(output.contains("\"owner\""));
         assert!(output.contains("You own it."));
         assert!(output.contains("Guest."));
+    }
+
+    #[test]
+    fn test_emit_nested_no_tdz() {
+        let mft = parse_icu("{n, plural, one {{n, plural, one {a} other {b}}} other {c}}").unwrap();
+        let mut kwargs = HashMap::new();
+        let expr = SExpr::Atom {
+            value: "n".into(),
+            span: Span::default(),
+        };
+        kwargs.insert("n".into(), &expr);
+        let mut w = JsWriter::new();
+        let mut counter = 0;
+        emit_mft(&mut w, &mft, &kwargs, &mut counter);
+        let output = w.finish();
+        assert!(output.contains("_v0"), "expected _v0 in output: {}", output);
+        assert!(output.contains("_v1"), "expected _v1 in output: {}", output);
+        assert!(!output.contains("const _v0 = _v0"), "TDZ: const _v0 = _v0 in: {}", output);
+    }
+
+    #[test]
+    fn test_emit_select_uses_override() {
+        let mft = parse_icu("{role, select, owner {Owner: {role}} other {Guest: {role}}}").unwrap();
+        let mut kwargs = HashMap::new();
+        let expr = SExpr::Atom {
+            value: "r".into(),
+            span: Span::default(),
+        };
+        kwargs.insert("role".into(), &expr);
+        let mut w = JsWriter::new();
+        let mut counter = 0;
+        emit_mft(&mut w, &mft, &kwargs, &mut counter);
+        let output = w.finish();
+        assert!(output.contains("_v0"), "expected _v0 reference in branches: {}", output);
     }
 }
