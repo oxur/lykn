@@ -13,6 +13,9 @@ pub enum LyknError {
     #[error("{0}")]
     Classify(Diagnostic),
 
+    #[error("{0}")]
+    Codegen(Diagnostic),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

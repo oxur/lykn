@@ -123,7 +123,7 @@ pub fn compile_source(
     if kernel_json_only {
         Ok(emitter::json::emit_module_json(&kernel))
     } else {
-        Ok(codegen::emit_module_js(&kernel))
+        Ok(codegen::emit_module_js(&kernel)?)
     }
 }
 

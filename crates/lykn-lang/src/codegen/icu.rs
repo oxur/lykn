@@ -600,7 +600,7 @@ fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr
             MftNode::Slot(name) => {
                 w.write("${");
                 if let Some(expr) = kwargs.get(name) {
-                    emit_expr(w, expr, 0);
+                    emit_expr(w, expr, 0).unwrap();
                 } else {
                     panic!("internal error: slot {{{}}} has no kwarg after validation", name);
                 }
@@ -658,7 +658,7 @@ fn emit_plural_iife(
     w.write("(() => {");
     w.write(&format!(" const {} = ", var_name));
     if let Some(expr) = kwargs.get(name) {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0).unwrap();
     } else {
         w.write(name);
     }
@@ -716,7 +716,7 @@ fn emit_select_iife(
     w.write("(() => {");
     w.write(&format!(" const {} = ", var_name));
     if let Some(expr) = kwargs.get(name) {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0).unwrap();
     } else {
         w.write(name);
     }

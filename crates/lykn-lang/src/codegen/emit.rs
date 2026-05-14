@@ -5,6 +5,7 @@
 //! directly.
 
 use crate::ast::sexpr::SExpr;
+use crate::error::LyknError;
 
 use super::format::JsWriter;
 use super::icu::try_emit_template_icu;
@@ -50,7 +51,7 @@ fn is_statement_form(name: &str) -> bool {
 
 /// Emit an expression. `parent_prec` is the precedence of the enclosing
 /// operator context (0 means top-level / no enclosing operator).
-pub fn emit_expr(w: &mut JsWriter, expr: &SExpr, parent_prec: u8) {
+pub fn emit_expr(w: &mut JsWriter, expr: &SExpr, parent_prec: u8) -> Result<(), LyknError> {
     match expr {
         SExpr::Number { value, .. } => emit_number(w, *value),
         SExpr::String { value, .. } => emit_string_literal(w, value),
@@ -65,27 +66,29 @@ pub fn emit_expr(w: &mut JsWriter, expr: &SExpr, parent_prec: u8) {
             w.write(&to_js_identifier(value));
             w.write("\"");
         }
-        SExpr::List { values, .. } => emit_list(w, values, parent_prec),
+        SExpr::List { values, .. } => emit_list(w, values, parent_prec)?,
         SExpr::Cons { .. } => {
             // Cons cells are rarely used in kernel output; emit a comment.
             w.write("/* cons */");
         }
     }
+    Ok(())
 }
 
 /// Emit an expression in statement position: appends a semicolon + newline for
 /// expression statements, or just a newline for statement forms.
-pub fn emit_statement(w: &mut JsWriter, expr: &SExpr) {
+pub fn emit_statement(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
     if let SExpr::List { values, .. } = expr
         && let Some(head) = values.first().and_then(|e| e.as_atom())
         && is_statement_form(head)
     {
-        emit_list(w, values, 0);
-        return;
+        emit_list(w, values, 0)?;
+        return Ok(());
     }
     // Expression statement.
-    emit_expr(w, expr, 0);
+    emit_expr(w, expr, 0)?;
     w.semicolon();
+    Ok(())
 }
 
 // ── Leaf helpers ───────────────────────────────────────────────────────
@@ -135,9 +138,9 @@ fn emit_template_text(w: &mut JsWriter, value: &str) {
 
 // ── List dispatcher ───────────────────────────────────────────────────
 
-fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
+fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) -> Result<(), LyknError> {
     if values.is_empty() {
-        return;
+        return Ok(());
     }
 
     let head = match values[0].as_atom() {
@@ -147,10 +150,10 @@ fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
             // computed call like ((get-fn) arg). Wrap in parens to ensure the
             // callee is parsed as an expression (e.g. (() => 42)() not () => 42()).
             w.write("(");
-            emit_expr(w, &values[0], 0);
+            emit_expr(w, &values[0], 0)?;
             w.write(")");
-            emit_call_args(w, &values[1..]);
-            return;
+            emit_call_args(w, &values[1..])?;
+            return Ok(());
         }
     };
 
@@ -158,81 +161,81 @@ fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
 
     match head {
         // ── Declarations ───────────────────────────────────────────
-        "const" | "let" | "var" => emit_declaration(w, head, args),
+        "const" | "let" | "var" => emit_declaration(w, head, args)?,
 
         // ── Functions ──────────────────────────────────────────────
-        "=>" => emit_arrow(w, args, false),
-        "lambda" => emit_lambda(w, args),
-        "function" => emit_function(w, args),
-        "function*" => emit_function_star(w, args),
-        "async" => emit_async(w, args),
-        "await" => emit_await(w, args),
-        "yield" => emit_yield(w, args),
-        "yield*" => emit_yield_star(w, args),
-        "return" => emit_return(w, args),
+        "=>" => emit_arrow(w, args, false)?,
+        "lambda" => emit_lambda(w, args)?,
+        "function" => emit_function(w, args)?,
+        "function*" => emit_function_star(w, args)?,
+        "async" => emit_async(w, args)?,
+        "await" => emit_await(w, args)?,
+        "yield" => emit_yield(w, args)?,
+        "yield*" => emit_yield_star(w, args)?,
+        "return" => emit_return(w, args)?,
 
         // ── Control flow ───────────────────────────────────────────
-        "if" => emit_if(w, args),
-        "block" => emit_block(w, args),
-        "while" => emit_while(w, args),
-        "do-while" => emit_do_while(w, args),
-        "for" => emit_for(w, args),
-        "for-of" => emit_for_of(w, args),
-        "for-in" => emit_for_in(w, args),
-        "for-await-of" => emit_for_await_of(w, args),
-        "switch" => emit_switch(w, args),
-        "break" => emit_break(w, args),
-        "continue" => emit_continue(w, args),
-        "label" => emit_label(w, args),
-        "throw" => emit_throw(w, args),
-        "try" => emit_try(w, args),
+        "if" => emit_if(w, args)?,
+        "block" => emit_block(w, args)?,
+        "while" => emit_while(w, args)?,
+        "do-while" => emit_do_while(w, args)?,
+        "for" => emit_for(w, args)?,
+        "for-of" => emit_for_of(w, args)?,
+        "for-in" => emit_for_in(w, args)?,
+        "for-await-of" => emit_for_await_of(w, args)?,
+        "switch" => emit_switch(w, args)?,
+        "break" => emit_break(w, args)?,
+        "continue" => emit_continue(w, args)?,
+        "label" => emit_label(w, args)?,
+        "throw" => emit_throw(w, args)?,
+        "try" => emit_try(w, args)?,
 
         // ── Expressions ────────────────────────────────────────────
-        "?" => emit_ternary(w, args, parent_prec),
-        "=" => emit_assignment(w, args),
-        "new" => emit_new(w, args),
-        "get" => emit_computed_member(w, args),
-        "." => emit_method_call(w, args),
-        "seq" => emit_seq(w, args),
-        "++" => emit_update(w, "++", args),
-        "--" => emit_update(w, "--", args),
+        "?" => emit_ternary(w, args, parent_prec)?,
+        "=" => emit_assignment(w, args)?,
+        "new" => emit_new(w, args)?,
+        "get" => emit_computed_member(w, args)?,
+        "." => emit_method_call(w, args)?,
+        "seq" => emit_seq(w, args)?,
+        "++" => emit_update(w, "++", args)?,
+        "--" => emit_update(w, "--", args)?,
 
         // ── Unary operators ────────────────────────────────────────
-        "!" | "~" => emit_unary_symbol(w, head, args),
-        "typeof" | "void" | "delete" => emit_unary_word(w, head, args),
+        "!" | "~" => emit_unary_symbol(w, head, args)?,
+        "typeof" | "void" | "delete" => emit_unary_word(w, head, args)?,
 
         // ── Compound assignment ────────────────────────────────────
         "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "|=" | "^="
-        | "&&=" | "||=" | "??=" => emit_compound_assign(w, head, args),
+        | "&&=" | "||=" | "??=" => emit_compound_assign(w, head, args)?,
 
         // ── Binary / n-ary operators ───────────────────────────────
         "+" | "-" | "*" | "/" | "%" | "**" | "===" | "!==" | "==" | "!=" | "<" | ">" | "<="
         | ">=" | "&&" | "||" | "??" | "&" | "|" | "^" | "<<" | ">>" | ">>>" | "in"
-        | "instanceof" => emit_binary(w, head, args, parent_prec),
+        | "instanceof" => emit_binary(w, head, args, parent_prec)?,
 
         // ── Object / Array ─────────────────────────────────────────
-        "object" => emit_object(w, args),
-        "array" => emit_array(w, args),
-        "spread" => emit_spread(w, args),
+        "object" => emit_object(w, args)?,
+        "array" => emit_array(w, args)?,
+        "spread" => emit_spread(w, args)?,
 
         // ── Templates & regex ──────────────────────────────────────
-        "template" => emit_template(w, args),
-        "tag" => emit_tagged_template(w, args),
+        "template" => emit_template(w, args)?,
+        "tag" => emit_tagged_template(w, args)?,
         "regex" => emit_regex(w, args),
 
         // ── Patterns (used in destructuring contexts) ──────────────
-        "default" => emit_default_pattern(w, args),
-        "rest" => emit_rest_pattern(w, args),
-        "alias" => emit_alias_pattern(w, args),
+        "default" => emit_default_pattern(w, args)?,
+        "rest" => emit_rest_pattern(w, args)?,
+        "alias" => emit_alias_pattern(w, args)?,
 
         // ── Classes ────────────────────────────────────────────────
-        "class" => emit_class(w, args),
-        "class-expr" => emit_class_expr(w, args),
+        "class" => emit_class(w, args)?,
+        "class-expr" => emit_class_expr(w, args)?,
 
         // ── Modules ────────────────────────────────────────────────
-        "import" => emit_import(w, args),
-        "export" => emit_export(w, args),
-        "dynamic-import" => emit_dynamic_import(w, args),
+        "import" => emit_import(w, args)?,
+        "export" => emit_export(w, args)?,
+        "dynamic-import" => emit_dynamic_import(w, args)?,
 
         // ── Misc ───────────────────────────────────────────────────
         "debugger" => {
@@ -243,40 +246,43 @@ fn emit_list(w: &mut JsWriter, values: &[SExpr], parent_prec: u8) {
         // ── Default: function call ─────────────────────────────────
         _ => {
             emit_atom(w, head);
-            emit_call_args(w, args);
+            emit_call_args(w, args)?;
         }
     }
+    Ok(())
 }
 
 // ── Helper: emit comma-separated call arguments ────────────────────────
 
-fn emit_call_args(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_call_args(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("(");
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
             w.write(", ");
         }
-        emit_expr(w, arg, 0);
+        emit_expr(w, arg, 0)?;
     }
     w.write(")");
+    Ok(())
 }
 
 // ── Helper: emit a block body `{ stmt; stmt; }` ───────────────────────
 
-fn emit_block_body(w: &mut JsWriter, stmts: &[SExpr]) {
+fn emit_block_body(w: &mut JsWriter, stmts: &[SExpr]) -> Result<(), LyknError> {
     w.write("{");
     w.newline();
     w.indent();
     for stmt in stmts {
-        emit_statement(w, stmt);
+        emit_statement(w, stmt)?;
     }
     w.dedent();
     w.write("}");
+    Ok(())
 }
 
 // ── Helper: emit a pattern (destructuring left-hand side) ──────────────
 
-fn emit_pattern(w: &mut JsWriter, expr: &SExpr) {
+fn emit_pattern(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
     match expr {
         SExpr::Atom { value, .. } => {
             if value == "_" {
@@ -287,18 +293,19 @@ fn emit_pattern(w: &mut JsWriter, expr: &SExpr) {
             }
         }
         SExpr::List { values, .. } if !values.is_empty() => match values[0].as_atom() {
-            Some("object") => emit_object_pattern(w, &values[1..]),
-            Some("array") => emit_array_pattern(w, &values[1..]),
-            Some("default") => emit_default_pattern(w, &values[1..]),
-            Some("rest") => emit_rest_pattern(w, &values[1..]),
-            Some("alias") => emit_alias_pattern(w, &values[1..]),
-            _ => emit_expr(w, expr, 0),
+            Some("object") => emit_object_pattern(w, &values[1..])?,
+            Some("array") => emit_array_pattern(w, &values[1..])?,
+            Some("default") => emit_default_pattern(w, &values[1..])?,
+            Some("rest") => emit_rest_pattern(w, &values[1..])?,
+            Some("alias") => emit_alias_pattern(w, &values[1..])?,
+            _ => emit_expr(w, expr, 0)?,
         },
-        _ => emit_expr(w, expr, 0),
+        _ => emit_expr(w, expr, 0)?,
     }
+    Ok(())
 }
 
-fn emit_object_pattern(w: &mut JsWriter, members: &[SExpr]) {
+fn emit_object_pattern(w: &mut JsWriter, members: &[SExpr]) -> Result<(), LyknError> {
     w.write("{");
     for (i, member) in members.iter().enumerate() {
         if i > 0 {
@@ -311,33 +318,34 @@ fn emit_object_pattern(w: &mut JsWriter, members: &[SExpr]) {
                     Some("default") => {
                         // (default name val)
                         if values.len() >= 3 {
-                            emit_pattern(w, &values[1]);
+                            emit_pattern(w, &values[1])?;
                             w.write(" = ");
-                            emit_expr(w, &values[2], 0);
+                            emit_expr(w, &values[2], 0)?;
                         }
                     }
                     Some("alias") => {
-                        emit_alias_pattern(w, &values[1..]);
+                        emit_alias_pattern(w, &values[1..])?;
                     }
                     Some("rest") => {
-                        emit_rest_pattern(w, &values[1..]);
+                        emit_rest_pattern(w, &values[1..])?;
                     }
                     Some("spread") => {
                         w.write("...");
                         if values.len() >= 2 {
-                            emit_expr(w, &values[1], 0);
+                            emit_expr(w, &values[1], 0)?;
                         }
                     }
-                    _ => emit_pattern(w, member),
+                    _ => emit_pattern(w, member)?,
                 }
             }
-            _ => emit_pattern(w, member),
+            _ => emit_pattern(w, member)?,
         }
     }
     w.write("}");
+    Ok(())
 }
 
-fn emit_array_pattern(w: &mut JsWriter, elements: &[SExpr]) {
+fn emit_array_pattern(w: &mut JsWriter, elements: &[SExpr]) -> Result<(), LyknError> {
     w.write("[");
     for (i, elem) in elements.iter().enumerate() {
         if i > 0 {
@@ -350,47 +358,49 @@ fn emit_array_pattern(w: &mut JsWriter, elements: &[SExpr]) {
             SExpr::List { values, .. }
                 if !values.is_empty() && values[0].as_atom() == Some("rest") =>
             {
-                emit_rest_pattern(w, &values[1..]);
+                emit_rest_pattern(w, &values[1..])?;
             }
-            _ => emit_pattern(w, elem),
+            _ => emit_pattern(w, elem)?,
         }
     }
     w.write("]");
+    Ok(())
 }
 
 // ── Declarations ───────────────────────────────────────────────────────
 
-fn emit_declaration(w: &mut JsWriter, kind: &str, args: &[SExpr]) {
+fn emit_declaration(w: &mut JsWriter, kind: &str, args: &[SExpr]) -> Result<(), LyknError> {
     // (const binding) or (const binding init)
     w.write(kind);
     w.write(" ");
     if args.is_empty() {
         w.semicolon();
-        return;
+        return Ok(());
     }
     // Left-hand side: could be a pattern (object/array) or simple name.
-    emit_pattern(w, &args[0]);
+    emit_pattern(w, &args[0])?;
     if args.len() >= 2 {
         w.write(" = ");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
     }
     w.semicolon();
+    Ok(())
 }
 
 // ── Functions ──────────────────────────────────────────────────────────
 
-fn emit_arrow(w: &mut JsWriter, args: &[SExpr], is_async: bool) {
+fn emit_arrow(w: &mut JsWriter, args: &[SExpr], is_async: bool) -> Result<(), LyknError> {
     // (=> (params...) body...) or (=> () body...)
     if is_async {
         w.write("async ");
     }
     if args.is_empty() {
         w.write("() => {}");
-        return;
+        return Ok(());
     }
 
     // Params.
-    emit_params(w, &args[0]);
+    emit_params(w, &args[0])?;
     w.write(" => ");
 
     let body = &args[1..];
@@ -399,93 +409,97 @@ fn emit_arrow(w: &mut JsWriter, args: &[SExpr], is_async: bool) {
         if let SExpr::List { values, .. } = &body[0]
             && values.first().and_then(|e| e.as_atom()) == Some("block")
         {
-            emit_block_body(w, &values[1..]);
-            return;
+            emit_block_body(w, &values[1..])?;
+            return Ok(());
         }
-        emit_expr(w, &body[0], 0);
+        emit_expr(w, &body[0], 0)?;
     } else {
         // Multiple statements → block body.
-        emit_block_body(w, body);
+        emit_block_body(w, body)?;
     }
+    Ok(())
 }
 
-fn emit_lambda(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_lambda(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (lambda (params...) body...)
     w.write("function");
     if args.is_empty() {
         w.write("() {}");
-        return;
+        return Ok(());
     }
-    emit_params(w, &args[0]);
+    emit_params(w, &args[0])?;
     w.write(" ");
-    emit_block_body(w, &args[1..]);
+    emit_block_body(w, &args[1..])?;
+    Ok(())
 }
 
-fn emit_function(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_function(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (function name (params...) body...)
     if args.is_empty() {
         w.write("function() {}");
         w.newline();
-        return;
+        return Ok(());
     }
     w.write("function ");
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     if args.len() >= 2 {
-        emit_params(w, &args[1]);
+        emit_params(w, &args[1])?;
     } else {
         w.write("()");
     }
     w.write(" ");
     if args.len() >= 3 {
-        emit_block_body(w, &args[2..]);
+        emit_block_body(w, &args[2..])?;
     } else {
         w.write("{}");
     }
     w.newline();
+    Ok(())
 }
 
-fn emit_function_star(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_function_star(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (function* name (params...) body...) — named
     // (function* (params...) body...)      — anonymous
     if args.is_empty() {
         w.write("function*() {}");
         w.newline();
-        return;
+        return Ok(());
     }
     // Check if first arg is a param list (anonymous) or a name (named)
     if args[0].is_list() {
         // Anonymous: (function* (params) body...)
         w.write("function*");
-        emit_params(w, &args[0]);
+        emit_params(w, &args[0])?;
         w.write(" ");
         if args.len() >= 2 {
-            emit_block_body(w, &args[1..]);
+            emit_block_body(w, &args[1..])?;
         } else {
             w.write("{}");
         }
     } else {
         // Named: (function* name (params) body...)
         w.write("function* ");
-        emit_expr(w, &args[0], 0);
+        emit_expr(w, &args[0], 0)?;
         if args.len() >= 2 {
-            emit_params(w, &args[1]);
+            emit_params(w, &args[1])?;
         } else {
             w.write("()");
         }
         w.write(" ");
         if args.len() >= 3 {
-            emit_block_body(w, &args[2..]);
+            emit_block_body(w, &args[2..])?;
         } else {
             w.write("{}");
         }
     }
     w.newline();
+    Ok(())
 }
 
-fn emit_async(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_async(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (async (=> (params) body)) — unwrap child function, prepend async
     if args.is_empty() {
-        return;
+        return Ok(());
     }
     let inner = &args[0];
     if let SExpr::List { values, .. } = inner
@@ -493,237 +507,254 @@ fn emit_async(w: &mut JsWriter, args: &[SExpr]) {
     {
         match head {
             "=>" => {
-                emit_arrow(w, &values[1..], true);
-                return;
+                emit_arrow(w, &values[1..], true)?;
+                return Ok(());
             }
             "function" => {
                 w.write("async ");
-                emit_function(w, &values[1..]);
-                return;
+                emit_function(w, &values[1..])?;
+                return Ok(());
             }
             "function*" => {
                 w.write("async ");
-                emit_function_star(w, &values[1..]);
-                return;
+                emit_function_star(w, &values[1..])?;
+                return Ok(());
             }
             "lambda" => {
                 w.write("async ");
-                emit_lambda(w, &values[1..]);
-                return;
+                emit_lambda(w, &values[1..])?;
+                return Ok(());
             }
             _ => {}
         }
     }
     w.write("async ");
-    emit_expr(w, inner, 0);
+    emit_expr(w, inner, 0)?;
+    Ok(())
 }
 
-fn emit_await(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_await(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("await ");
     if let Some(expr) = args.first() {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
+    Ok(())
 }
 
-fn emit_yield(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_yield(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("yield");
     if let Some(expr) = args.first() {
         w.write(" ");
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
+    Ok(())
 }
 
-fn emit_yield_star(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_yield_star(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("yield* ");
     if let Some(expr) = args.first() {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
+    Ok(())
 }
 
-fn emit_return(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_return(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("return");
     if let Some(expr) = args.first() {
         w.write(" ");
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
     w.semicolon();
+    Ok(())
 }
 
-fn emit_params(w: &mut JsWriter, params_expr: &SExpr) {
+fn emit_params(w: &mut JsWriter, params_expr: &SExpr) -> Result<(), LyknError> {
     w.write("(");
     if let SExpr::List { values, .. } = params_expr {
         for (i, param) in values.iter().enumerate() {
             if i > 0 {
                 w.write(", ");
             }
-            emit_pattern(w, param);
+            emit_pattern(w, param)?;
         }
     }
     w.write(")");
+    Ok(())
 }
 
 // ── Control flow ───────────────────────────────────────────────────────
 
-fn emit_if(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_if(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (if cond then) or (if cond then else)
     if args.is_empty() {
-        return;
+        return Ok(());
     }
     w.write("if (");
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     w.write(") ");
 
     if args.len() >= 2 {
-        emit_stmt_or_block(w, &args[1]);
+        emit_stmt_or_block(w, &args[1])?;
     }
 
     if args.len() >= 3 {
         // Check if we just emitted a block — if so, the cursor is after `}`.
         w.write(" else ");
-        emit_stmt_or_block(w, &args[2]);
+        emit_stmt_or_block(w, &args[2])?;
     }
 
     w.newline();
+    Ok(())
 }
 
 /// Emit a single statement as either a block `{ ... }` or inline `stmt;`.
-fn emit_stmt_or_block(w: &mut JsWriter, expr: &SExpr) {
+fn emit_stmt_or_block(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
     if let SExpr::List { values, .. } = expr
         && values.first().and_then(|e| e.as_atom()) == Some("block")
     {
-        emit_block_body(w, &values[1..]);
-        return;
+        emit_block_body(w, &values[1..])?;
+        return Ok(());
     }
     // Inline statement.
-    emit_statement(w, expr);
+    emit_statement(w, expr)?;
+    Ok(())
 }
 
-fn emit_block(w: &mut JsWriter, stmts: &[SExpr]) {
-    emit_block_body(w, stmts);
+fn emit_block(w: &mut JsWriter, stmts: &[SExpr]) -> Result<(), LyknError> {
+    emit_block_body(w, stmts)?;
     w.newline();
+    Ok(())
 }
 
-fn emit_while(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_while(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     if args.is_empty() {
-        return;
+        return Ok(());
     }
     w.write("while (");
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     w.write(") ");
-    emit_block_body(w, &args[1..]);
+    emit_block_body(w, &args[1..])?;
     w.newline();
+    Ok(())
 }
 
-fn emit_do_while(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_do_while(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (do-while cond body...)
     if args.is_empty() {
-        return;
+        return Ok(());
     }
     w.write("do ");
-    emit_block_body(w, &args[1..]);
+    emit_block_body(w, &args[1..])?;
     w.write(" while (");
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     w.write(")");
     w.semicolon();
+    Ok(())
 }
 
-fn emit_for(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_for(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (for init test update body...)
     if args.len() < 3 {
-        return;
+        return Ok(());
     }
     w.write("for (");
-    emit_for_clause(w, &args[0]);
+    emit_for_clause(w, &args[0])?;
     w.write("; ");
-    emit_for_clause(w, &args[1]);
+    emit_for_clause(w, &args[1])?;
     w.write("; ");
-    emit_for_clause(w, &args[2]);
+    emit_for_clause(w, &args[2])?;
     w.write(") ");
-    emit_block_body(w, &args[3..]);
+    emit_block_body(w, &args[3..])?;
     w.newline();
+    Ok(())
 }
 
-fn emit_for_clause(w: &mut JsWriter, expr: &SExpr) {
+fn emit_for_clause(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
     // An empty list means "omit".
     if let SExpr::List { values, .. } = expr {
         if values.is_empty() {
-            return;
+            return Ok(());
         }
         // Special handling for declarations in for-init: emit without
         // trailing semicolon.
         if let Some(head) = values.first().and_then(|e| e.as_atom())
             && matches!(head, "const" | "let" | "var")
         {
-            emit_declaration_bare(w, head, &values[1..]);
-            return;
+            emit_declaration_bare(w, head, &values[1..])?;
+            return Ok(());
         }
     }
-    emit_expr(w, expr, 0);
+    emit_expr(w, expr, 0)?;
+    Ok(())
 }
 
 /// Emit a declaration without a trailing semicolon (for use in for-init).
-fn emit_declaration_bare(w: &mut JsWriter, kind: &str, args: &[SExpr]) {
+fn emit_declaration_bare(w: &mut JsWriter, kind: &str, args: &[SExpr]) -> Result<(), LyknError> {
     w.write(kind);
     w.write(" ");
     if args.is_empty() {
-        return;
+        return Ok(());
     }
-    emit_pattern(w, &args[0]);
+    emit_pattern(w, &args[0])?;
     if args.len() >= 2 {
         w.write(" = ");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
     }
+    Ok(())
 }
 
-fn emit_for_of(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_for_of(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (for-of binding iterable body...)
     if args.len() < 2 {
-        return;
+        return Ok(());
     }
     w.write("for (const ");
-    emit_pattern(w, &args[0]);
+    emit_pattern(w, &args[0])?;
     w.write(" of ");
-    emit_expr(w, &args[1], 0);
+    emit_expr(w, &args[1], 0)?;
     w.write(") ");
-    emit_block_body(w, &args[2..]);
+    emit_block_body(w, &args[2..])?;
     w.newline();
+    Ok(())
 }
 
-fn emit_for_in(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_for_in(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (for-in binding obj body...)
     if args.len() < 2 {
-        return;
+        return Ok(());
     }
     w.write("for (const ");
-    emit_pattern(w, &args[0]);
+    emit_pattern(w, &args[0])?;
     w.write(" in ");
-    emit_expr(w, &args[1], 0);
+    emit_expr(w, &args[1], 0)?;
     w.write(") ");
-    emit_block_body(w, &args[2..]);
+    emit_block_body(w, &args[2..])?;
     w.newline();
+    Ok(())
 }
 
-fn emit_for_await_of(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_for_await_of(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (for-await-of binding iterable body...)
     if args.len() < 2 {
-        return;
+        return Ok(());
     }
     w.write("for await (const ");
-    emit_pattern(w, &args[0]);
+    emit_pattern(w, &args[0])?;
     w.write(" of ");
-    emit_expr(w, &args[1], 0);
+    emit_expr(w, &args[1], 0)?;
     w.write(") ");
-    emit_block_body(w, &args[2..]);
+    emit_block_body(w, &args[2..])?;
     w.newline();
+    Ok(())
 }
 
-fn emit_switch(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_switch(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (switch disc case1 case2 ...)
     if args.is_empty() {
-        return;
+        return Ok(());
     }
     w.write("switch (");
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     w.write(") {");
     w.newline();
     w.indent();
@@ -738,13 +769,13 @@ fn emit_switch(w: &mut JsWriter, args: &[SExpr]) {
                 w.write("default:");
             } else {
                 w.write("case ");
-                emit_expr(w, &values[0], 0);
+                emit_expr(w, &values[0], 0)?;
                 w.write(":");
             }
             w.newline();
             w.indent();
             for stmt in &values[1..] {
-                emit_statement(w, stmt);
+                emit_statement(w, stmt)?;
             }
             w.dedent();
         }
@@ -753,45 +784,50 @@ fn emit_switch(w: &mut JsWriter, args: &[SExpr]) {
     w.dedent();
     w.write("}");
     w.newline();
+    Ok(())
 }
 
-fn emit_break(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_break(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("break");
     if let Some(label) = args.first() {
         w.write(" ");
-        emit_expr(w, label, 0);
+        emit_expr(w, label, 0)?;
     }
     w.semicolon();
+    Ok(())
 }
 
-fn emit_continue(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_continue(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("continue");
     if let Some(label) = args.first() {
         w.write(" ");
-        emit_expr(w, label, 0);
+        emit_expr(w, label, 0)?;
     }
     w.semicolon();
+    Ok(())
 }
 
-fn emit_label(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_label(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (label name body)
     if args.len() < 2 {
-        return;
+        return Ok(());
     }
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     w.write(": ");
-    emit_statement(w, &args[1]);
+    emit_statement(w, &args[1])?;
+    Ok(())
 }
 
-fn emit_throw(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_throw(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("throw ");
     if let Some(expr) = args.first() {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
     w.semicolon();
+    Ok(())
 }
 
-fn emit_try(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_try(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (try body... (catch e handler...) (finally cleanup...))
     // Separate body forms from catch/finally.
     let mut body: Vec<&SExpr> = Vec::new();
@@ -819,7 +855,7 @@ fn emit_try(w: &mut JsWriter, args: &[SExpr]) {
     w.newline();
     w.indent();
     for stmt in &body {
-        emit_statement(w, stmt);
+        emit_statement(w, stmt)?;
     }
     w.dedent();
     w.write("}");
@@ -828,7 +864,7 @@ fn emit_try(w: &mut JsWriter, args: &[SExpr]) {
         w.write(" catch");
         if let Some(binding) = catch_args.first() {
             w.write(" (");
-            emit_expr(w, binding, 0);
+            emit_expr(w, binding, 0)?;
             w.write(")");
         }
         w.write(" ");
@@ -836,7 +872,7 @@ fn emit_try(w: &mut JsWriter, args: &[SExpr]) {
         w.newline();
         w.indent();
         for stmt in &catch_args[1..] {
-            emit_statement(w, stmt);
+            emit_statement(w, stmt)?;
         }
         w.dedent();
         w.write("}");
@@ -848,18 +884,19 @@ fn emit_try(w: &mut JsWriter, args: &[SExpr]) {
         w.newline();
         w.indent();
         for stmt in finally_args {
-            emit_statement(w, stmt);
+            emit_statement(w, stmt)?;
         }
         w.dedent();
         w.write("}");
     }
 
     w.newline();
+    Ok(())
 }
 
 // ── Expressions ────────────────────────────────────────────────────────
 
-fn emit_ternary(w: &mut JsWriter, args: &[SExpr], parent_prec: u8) {
+fn emit_ternary(w: &mut JsWriter, args: &[SExpr], parent_prec: u8) -> Result<(), LyknError> {
     // (? test then else) — precedence 3 (lower than ??)
     let my_prec: u8 = 3;
     let needs_parens = my_prec < parent_prec;
@@ -867,109 +904,119 @@ fn emit_ternary(w: &mut JsWriter, args: &[SExpr], parent_prec: u8) {
         w.write("(");
     }
     if args.len() >= 3 {
-        emit_expr(w, &args[0], my_prec);
+        emit_expr(w, &args[0], my_prec)?;
         w.write(" ? ");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
         w.write(" : ");
-        emit_expr(w, &args[2], my_prec);
+        emit_expr(w, &args[2], my_prec)?;
     }
     if needs_parens {
         w.write(")");
     }
+    Ok(())
 }
 
-fn emit_assignment(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_assignment(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (= left right)
     if args.len() >= 2 {
-        emit_pattern(w, &args[0]);
+        emit_pattern(w, &args[0])?;
         w.write(" = ");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
     }
+    Ok(())
 }
 
-fn emit_new(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_new(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (new Thing a b)
     w.write("new ");
     if let Some(constructor) = args.first() {
-        emit_expr(w, constructor, 0);
-        emit_call_args(w, &args[1..]);
+        emit_expr(w, constructor, 0)?;
+        emit_call_args(w, &args[1..])?;
     }
+    Ok(())
 }
 
-fn emit_computed_member(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_computed_member(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (get obj key)
     if args.len() >= 2 {
-        emit_expr(w, &args[0], 20);
+        emit_expr(w, &args[0], 20)?;
         w.write("[");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
         w.write("]");
     }
+    Ok(())
 }
 
-fn emit_method_call(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_method_call(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (. obj method arg...)
     if args.len() < 2 {
-        return;
+        return Ok(());
     }
-    emit_expr(w, &args[0], 20);
+    emit_expr(w, &args[0], 20)?;
     w.write(".");
     if let SExpr::Atom { value, .. } = &args[1] {
         w.write(&to_js_identifier(value));
     } else {
-        emit_expr(w, &args[1], 20);
+        emit_expr(w, &args[1], 20)?;
     }
-    emit_call_args(w, &args[2..]);
+    emit_call_args(w, &args[2..])?;
+    Ok(())
 }
 
-fn emit_seq(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_seq(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
             w.write(", ");
         }
-        emit_expr(w, arg, 0);
+        emit_expr(w, arg, 0)?;
     }
+    Ok(())
 }
 
-fn emit_update(w: &mut JsWriter, op: &str, args: &[SExpr]) {
+fn emit_update(w: &mut JsWriter, op: &str, args: &[SExpr]) -> Result<(), LyknError> {
     // (++ x) → ++x
     if let Some(operand) = args.first() {
         w.write(op);
-        emit_expr(w, operand, 20);
+        emit_expr(w, operand, 20)?;
     }
+    Ok(())
 }
 
 // ── Unary ──────────────────────────────────────────────────────────────
 
-fn emit_unary_symbol(w: &mut JsWriter, op: &str, args: &[SExpr]) {
+fn emit_unary_symbol(w: &mut JsWriter, op: &str, args: &[SExpr]) -> Result<(), LyknError> {
     if let Some(operand) = args.first() {
         w.write(op);
-        emit_expr(w, operand, 20);
+        emit_expr(w, operand, 20)?;
     }
+    Ok(())
 }
 
-fn emit_unary_word(w: &mut JsWriter, op: &str, args: &[SExpr]) {
+fn emit_unary_word(w: &mut JsWriter, op: &str, args: &[SExpr]) -> Result<(), LyknError> {
     if let Some(operand) = args.first() {
         w.write(op);
         w.write(" ");
-        emit_expr(w, operand, 20);
+        emit_expr(w, operand, 20)?;
     }
+    Ok(())
 }
 
 // ── Compound assignment ────────────────────────────────────────────────
 
-fn emit_compound_assign(w: &mut JsWriter, op: &str, args: &[SExpr]) {
+fn emit_compound_assign(w: &mut JsWriter, op: &str, args: &[SExpr]) -> Result<(), LyknError> {
     if args.len() >= 2 {
-        emit_expr(w, &args[0], 0);
+        emit_expr(w, &args[0], 0)?;
         w.write(" ");
         w.write(op);
         w.write(" ");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
     }
+    Ok(())
 }
 
 // ── Binary / n-ary ─────────────────────────────────────────────────────
 
-fn emit_binary(w: &mut JsWriter, op: &str, args: &[SExpr], parent_prec: u8) {
+fn emit_binary(w: &mut JsWriter, op: &str, args: &[SExpr], parent_prec: u8) -> Result<(), LyknError> {
     let my_prec = precedence(op);
     let needs_parens = my_prec < parent_prec;
 
@@ -981,9 +1028,9 @@ fn emit_binary(w: &mut JsWriter, op: &str, args: &[SExpr], parent_prec: u8) {
         // Unary minus: (- x) → -x
         if op == "-" {
             w.write("-");
-            emit_expr(w, &args[0], 20);
+            emit_expr(w, &args[0], 20)?;
         } else {
-            emit_expr(w, &args[0], my_prec);
+            emit_expr(w, &args[0], my_prec)?;
         }
     } else {
         for (i, arg) in args.iter().enumerate() {
@@ -993,18 +1040,19 @@ fn emit_binary(w: &mut JsWriter, op: &str, args: &[SExpr], parent_prec: u8) {
                 w.write(op);
                 w.write(" ");
             }
-            emit_expr(w, arg, my_prec + 1);
+            emit_expr(w, arg, my_prec + 1)?;
         }
     }
 
     if needs_parens {
         w.write(")");
     }
+    Ok(())
 }
 
 // ── Object / Array ─────────────────────────────────────────────────────
 
-fn emit_object(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_object(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("{");
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
@@ -1020,32 +1068,33 @@ fn emit_object(w: &mut JsWriter, args: &[SExpr]) {
                     Some("spread") => {
                         w.write("...");
                         if values.len() >= 2 {
-                            emit_expr(w, &values[1], 0);
+                            emit_expr(w, &values[1], 0)?;
                         }
                     }
                     _ => {
                         // Check if the key is a list (computed property).
                         if values[0].is_list() {
                             w.write("[");
-                            emit_expr(w, &values[0], 0);
+                            emit_expr(w, &values[0], 0)?;
                             w.write("]");
                         } else {
-                            emit_expr(w, &values[0], 0);
+                            emit_expr(w, &values[0], 0)?;
                         }
                         if values.len() >= 2 {
                             w.write(": ");
-                            emit_expr(w, &values[1], 0);
+                            emit_expr(w, &values[1], 0)?;
                         }
                     }
                 }
             }
-            _ => emit_expr(w, arg, 0),
+            _ => emit_expr(w, arg, 0)?,
         }
     }
     w.write("}");
+    Ok(())
 }
 
-fn emit_array(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_array(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("[");
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
@@ -1056,28 +1105,30 @@ fn emit_array(w: &mut JsWriter, args: &[SExpr]) {
         {
             w.write("...");
             if values.len() >= 2 {
-                emit_expr(w, &values[1], 0);
+                emit_expr(w, &values[1], 0)?;
             }
             continue;
         }
-        emit_expr(w, arg, 0);
+        emit_expr(w, arg, 0)?;
     }
     w.write("]");
+    Ok(())
 }
 
-fn emit_spread(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_spread(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("...");
     if let Some(expr) = args.first() {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
+    Ok(())
 }
 
 // ── Templates & regex ──────────────────────────────────────────────────
 
-fn emit_template(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_template(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // DD-54: try ICU mode first; fall through to concat if not applicable
     if try_emit_template_icu(w, args) {
-        return;
+        return Ok(());
     }
     w.write("`");
     for arg in args {
@@ -1087,27 +1138,29 @@ fn emit_template(w: &mut JsWriter, args: &[SExpr]) {
             }
             _ => {
                 w.write("${");
-                emit_expr(w, arg, 0);
+                emit_expr(w, arg, 0)?;
                 w.write("}");
             }
         }
     }
     w.write("`");
+    Ok(())
 }
 
-fn emit_tagged_template(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_tagged_template(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (tag fn (template ...))
     if args.len() >= 2 {
-        emit_expr(w, &args[0], 20);
+        emit_expr(w, &args[0], 20)?;
         // The second arg should be a template form — emit it directly.
         if let SExpr::List { values, .. } = &args[1]
             && values.first().and_then(|e| e.as_atom()) == Some("template")
         {
-            emit_template(w, &values[1..]);
-            return;
+            emit_template(w, &values[1..])?;
+            return Ok(());
         }
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
     }
+    Ok(())
 }
 
 fn emit_regex(w: &mut JsWriter, args: &[SExpr]) {
@@ -1124,65 +1177,69 @@ fn emit_regex(w: &mut JsWriter, args: &[SExpr]) {
 
 // ── Patterns ───────────────────────────────────────────────────────────
 
-fn emit_default_pattern(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_default_pattern(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (default x 0) → x = 0
     if args.len() >= 2 {
-        emit_pattern(w, &args[0]);
+        emit_pattern(w, &args[0])?;
         w.write(" = ");
-        emit_expr(w, &args[1], 0);
+        emit_expr(w, &args[1], 0)?;
     }
+    Ok(())
 }
 
-fn emit_rest_pattern(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_rest_pattern(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (rest x) → ...x
     w.write("...");
     if let Some(expr) = args.first() {
-        emit_pattern(w, expr);
+        emit_pattern(w, expr)?;
     }
+    Ok(())
 }
 
-fn emit_alias_pattern(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_alias_pattern(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (alias original local) → original: local
     // (alias original local default) → original: local = default
     if args.len() >= 2 {
-        emit_expr(w, &args[0], 0);
+        emit_expr(w, &args[0], 0)?;
         w.write(": ");
-        emit_pattern(w, &args[1]);
+        emit_pattern(w, &args[1])?;
         if args.len() >= 3 {
             w.write(" = ");
-            emit_expr(w, &args[2], 0);
+            emit_expr(w, &args[2], 0)?;
         }
     }
+    Ok(())
 }
 
 // ── Classes ────────────────────────────────────────────────────────────
 
-fn emit_class(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_class(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (class Name (Super) members...) or (class Name () members...)
     if args.len() < 2 {
-        return;
+        return Ok(());
     }
     w.write("class ");
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
 
     // Superclass list.
     if let SExpr::List { values, .. } = &args[1]
         && !values.is_empty()
     {
         w.write(" extends ");
-        emit_expr(w, &values[0], 0);
+        emit_expr(w, &values[0], 0)?;
     }
 
     w.write(" ");
-    emit_class_body(w, &args[2..]);
+    emit_class_body(w, &args[2..])?;
     w.newline();
+    Ok(())
 }
 
-fn emit_class_expr(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_class_expr(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (class-expr (Super) members...) — anonymous
     if args.is_empty() {
         w.write("class {}");
-        return;
+        return Ok(());
     }
     w.write("class");
 
@@ -1190,35 +1247,37 @@ fn emit_class_expr(w: &mut JsWriter, args: &[SExpr]) {
         && !values.is_empty()
     {
         w.write(" extends ");
-        emit_expr(w, &values[0], 0);
+        emit_expr(w, &values[0], 0)?;
     }
 
     w.write(" ");
-    emit_class_body(w, &args[1..]);
+    emit_class_body(w, &args[1..])?;
+    Ok(())
 }
 
-fn emit_class_body(w: &mut JsWriter, members: &[SExpr]) {
+fn emit_class_body(w: &mut JsWriter, members: &[SExpr]) -> Result<(), LyknError> {
     w.write("{");
     w.newline();
     w.indent();
 
     for member in members {
-        emit_class_member(w, member, "");
+        emit_class_member(w, member, "")?;
     }
 
     w.dedent();
     w.write("}");
+    Ok(())
 }
 
-fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
+fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) -> Result<(), LyknError> {
     let values = match member {
         SExpr::List { values, .. } if !values.is_empty() => values,
-        _ => return,
+        _ => return Ok(()),
     };
 
     let head = match values[0].as_atom() {
         Some(h) => h,
-        None => return,
+        None => return Ok(()),
     };
 
     match head {
@@ -1230,7 +1289,7 @@ fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
                 } else {
                     format!("{prefix}static ")
                 };
-                emit_class_member(w, &values[1], &new_prefix);
+                emit_class_member(w, &values[1], &new_prefix)?;
             }
         }
         "async" => {
@@ -1240,7 +1299,7 @@ fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
                 } else {
                     format!("{prefix}async ")
                 };
-                emit_class_member(w, &values[1], &new_prefix);
+                emit_class_member(w, &values[1], &new_prefix)?;
             }
         }
         "get" => {
@@ -1248,10 +1307,10 @@ fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
             if values.len() >= 3 {
                 w.write(prefix);
                 w.write("get ");
-                emit_expr(w, &values[1], 0);
-                emit_params(w, &values[2]);
+                emit_expr(w, &values[1], 0)?;
+                emit_params(w, &values[2])?;
                 w.write(" ");
-                emit_block_body(w, &values[3..]);
+                emit_block_body(w, &values[3..])?;
                 w.newline();
             }
         }
@@ -1260,10 +1319,10 @@ fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
             if values.len() >= 3 {
                 w.write(prefix);
                 w.write("set ");
-                emit_expr(w, &values[1], 0);
-                emit_params(w, &values[2]);
+                emit_expr(w, &values[1], 0)?;
+                emit_params(w, &values[2])?;
                 w.write(" ");
-                emit_block_body(w, &values[3..]);
+                emit_block_body(w, &values[3..])?;
                 w.newline();
             }
         }
@@ -1271,10 +1330,10 @@ fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
             // (field name) or (field name value)
             w.write(prefix);
             if values.len() >= 2 {
-                emit_field_name(w, &values[1]);
+                emit_field_name(w, &values[1])?;
                 if values.len() >= 3 {
                     w.write(" = ");
-                    emit_expr(w, &values[2], 0);
+                    emit_expr(w, &values[2], 0)?;
                 }
             }
             w.semicolon();
@@ -1284,57 +1343,59 @@ fn emit_class_member(w: &mut JsWriter, member: &SExpr, prefix: &str) {
             w.write(prefix);
             w.write("constructor");
             if values.len() >= 2 {
-                emit_params(w, &values[1]);
+                emit_params(w, &values[1])?;
             } else {
                 w.write("()");
             }
             w.write(" ");
-            emit_block_body(w, &values[2..]);
+            emit_block_body(w, &values[2..])?;
             w.newline();
         }
         _ => {
             // Regular method: (method-name (params) body...)
             w.write(prefix);
-            emit_field_name(w, &values[0]);
+            emit_field_name(w, &values[0])?;
             if values.len() >= 2 {
-                emit_params(w, &values[1]);
+                emit_params(w, &values[1])?;
             } else {
                 w.write("()");
             }
             w.write(" ");
             if values.len() >= 3 {
-                emit_block_body(w, &values[2..]);
+                emit_block_body(w, &values[2..])?;
             } else {
                 w.write("{}");
             }
             w.newline();
         }
     }
+    Ok(())
 }
 
 /// Emit a field/method name, handling private fields (leading hyphen → `#_`).
-fn emit_field_name(w: &mut JsWriter, expr: &SExpr) {
+fn emit_field_name(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
     if let SExpr::Atom { value, .. } = expr {
         if let Some(rest) = value.strip_prefix('-') {
             w.write("#_");
             w.write(&to_js_identifier(rest));
-            return;
+            return Ok(());
         }
         w.write(&to_js_identifier(value));
     } else {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
+    Ok(())
 }
 
 // ── Modules ────────────────────────────────────────────────────────────
 
-fn emit_import(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_import(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // (import "mod")
     // (import "mod" name)
     // (import "mod" (a b))
     // (import "mod" name (a b))
     if args.is_empty() {
-        return;
+        return Ok(());
     }
 
     w.write("import ");
@@ -1344,41 +1405,42 @@ fn emit_import(w: &mut JsWriter, args: &[SExpr]) {
     match args.len() {
         1 => {
             // Side-effect import.
-            emit_expr(w, module_path, 0);
+            emit_expr(w, module_path, 0)?;
         }
         2 => {
             // Default import or named imports.
             match &args[1] {
                 SExpr::List { values, .. } => {
                     // Named imports.
-                    emit_import_specifiers(w, values);
+                    emit_import_specifiers(w, values)?;
                     w.write(" from ");
-                    emit_expr(w, module_path, 0);
+                    emit_expr(w, module_path, 0)?;
                 }
                 _ => {
                     // Default import.
-                    emit_expr(w, &args[1], 0);
+                    emit_expr(w, &args[1], 0)?;
                     w.write(" from ");
-                    emit_expr(w, module_path, 0);
+                    emit_expr(w, module_path, 0)?;
                 }
             }
         }
         _ => {
             // Default + named: (import "mod" name (a b))
-            emit_expr(w, &args[1], 0);
+            emit_expr(w, &args[1], 0)?;
             if let Some(SExpr::List { values, .. }) = args.get(2) {
                 w.write(", ");
-                emit_import_specifiers(w, values);
+                emit_import_specifiers(w, values)?;
             }
             w.write(" from ");
-            emit_expr(w, module_path, 0);
+            emit_expr(w, module_path, 0)?;
         }
     }
 
     w.semicolon();
+    Ok(())
 }
 
-fn emit_import_specifiers(w: &mut JsWriter, specs: &[SExpr]) {
+fn emit_import_specifiers(w: &mut JsWriter, specs: &[SExpr]) -> Result<(), LyknError> {
     w.write("{");
     for (i, spec) in specs.iter().enumerate() {
         if i > 0 {
@@ -1390,20 +1452,21 @@ fn emit_import_specifiers(w: &mut JsWriter, specs: &[SExpr]) {
             {
                 // (alias original local) → original as local
                 if values.len() >= 3 {
-                    emit_expr(w, &values[1], 0);
+                    emit_expr(w, &values[1], 0)?;
                     w.write(" as ");
-                    emit_expr(w, &values[2], 0);
+                    emit_expr(w, &values[2], 0)?;
                 }
             }
-            _ => emit_expr(w, spec, 0),
+            _ => emit_expr(w, spec, 0)?,
         }
     }
     w.write("}");
+    Ok(())
 }
 
-fn emit_export(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_export(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     if args.is_empty() {
-        return;
+        return Ok(());
     }
 
     w.write("export ");
@@ -1412,10 +1475,10 @@ fn emit_export(w: &mut JsWriter, args: &[SExpr]) {
     if args[0].as_atom() == Some("default") {
         w.write("default ");
         if args.len() >= 2 {
-            emit_expr(w, &args[1], 0);
+            emit_expr(w, &args[1], 0)?;
         }
         w.semicolon();
-        return;
+        return Ok(());
     }
 
     // (export (const x 1)) — export a declaration
@@ -1424,13 +1487,13 @@ fn emit_export(w: &mut JsWriter, args: &[SExpr]) {
     {
         if head == "names" {
             // (export (names a b))
-            emit_export_names(w, &values[1..]);
+            emit_export_names(w, &values[1..])?;
             w.semicolon();
-            return;
+            return Ok(());
         }
         // Export a declaration.
-        emit_list(w, values, 0);
-        return;
+        emit_list(w, values, 0)?;
+        return Ok(());
     }
 
     // (export "mod" (names a b))
@@ -1439,28 +1502,29 @@ fn emit_export(w: &mut JsWriter, args: &[SExpr]) {
         && let SExpr::List { values, .. } = &args[1]
         && values.first().and_then(|e| e.as_atom()) == Some("names")
     {
-        emit_export_names(w, &values[1..]);
+        emit_export_names(w, &values[1..])?;
         w.write(" from ");
-        emit_expr(w, &args[0], 0);
+        emit_expr(w, &args[0], 0)?;
         w.semicolon();
-        return;
+        return Ok(());
     }
 
     // (export name) → export { name };
     // Bare atom export — wrap in named export braces
     if let SExpr::Atom { .. } = &args[0] {
         w.write("{ ");
-        emit_expr(w, &args[0], 0);
+        emit_expr(w, &args[0], 0)?;
         w.write(" }");
         w.semicolon();
-        return;
+        return Ok(());
     }
 
-    emit_expr(w, &args[0], 0);
+    emit_expr(w, &args[0], 0)?;
     w.semicolon();
+    Ok(())
 }
 
-fn emit_export_names(w: &mut JsWriter, specs: &[SExpr]) {
+fn emit_export_names(w: &mut JsWriter, specs: &[SExpr]) -> Result<(), LyknError> {
     w.write("{");
     for (i, spec) in specs.iter().enumerate() {
         if i > 0 {
@@ -1472,23 +1536,25 @@ fn emit_export_names(w: &mut JsWriter, specs: &[SExpr]) {
             {
                 // (alias local exported) → local as exported
                 if values.len() >= 3 {
-                    emit_expr(w, &values[1], 0);
+                    emit_expr(w, &values[1], 0)?;
                     w.write(" as ");
-                    emit_expr(w, &values[2], 0);
+                    emit_expr(w, &values[2], 0)?;
                 }
             }
-            _ => emit_expr(w, spec, 0),
+            _ => emit_expr(w, spec, 0)?,
         }
     }
     w.write("}");
+    Ok(())
 }
 
-fn emit_dynamic_import(w: &mut JsWriter, args: &[SExpr]) {
+fn emit_dynamic_import(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     w.write("import(");
     if let Some(expr) = args.first() {
-        emit_expr(w, expr, 0);
+        emit_expr(w, expr, 0)?;
     }
     w.write(")");
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1552,13 +1618,13 @@ mod tests {
 
     fn emit_to_string(expr: &SExpr) -> String {
         let mut w = JsWriter::new();
-        emit_expr(&mut w, expr, 0);
+        emit_expr(&mut w, expr, 0).unwrap();
         w.finish()
     }
 
     fn stmt_to_string(expr: &SExpr) -> String {
         let mut w = JsWriter::new();
-        emit_statement(&mut w, expr);
+        emit_statement(&mut w, expr).unwrap();
         w.finish()
     }
 

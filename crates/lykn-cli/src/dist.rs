@@ -237,9 +237,13 @@ fn compile_lykn_sources(pkg_path: &Path, build_dir: &Path, emit_dts: bool) -> Re
                 }
                 let kernel =
                     lykn_lang::emitter::emit(&classified, &analysis_result.type_registry, false);
-                let js = lykn_lang::codegen::emit_module_js(&kernel);
-                fs::write(&js_path, &js).map_err(|e| DistError::Io {
-                    path: js_path.clone(),
+                let js = lykn_lang::codegen::emit_module_js(&kernel)
+                    .map_err(|e| DistError::Io {
+                        path: js_path.clone(),
+                        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+                    })?;
+                fs::write(&js_path, js).map_err(|e| DistError::Io {
+                    path: js_path,
                     source: e,
                 })?;
 

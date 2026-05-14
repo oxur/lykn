@@ -20,7 +20,7 @@
 //!         span: Span::default(),
 //!     },
 //! ];
-//! let js = emit_module_js(&forms);
+//! let js = emit_module_js(&forms).unwrap();
 //! assert_eq!(js, "const x = 1;\n");
 //! ```
 
@@ -31,6 +31,7 @@ pub mod names;
 pub mod precedence;
 
 use crate::ast::sexpr::SExpr;
+use crate::error::LyknError;
 
 use emit::emit_statement;
 use format::JsWriter;
@@ -39,12 +40,12 @@ use format::JsWriter;
 ///
 /// Each top-level form is emitted as a statement. The resulting string is
 /// ready to be written to a `.js` file.
-pub fn emit_module_js(forms: &[SExpr]) -> String {
+pub fn emit_module_js(forms: &[SExpr]) -> Result<String, LyknError> {
     let mut w = JsWriter::new();
     for form in forms {
-        emit_statement(&mut w, form);
+        emit_statement(&mut w, form)?;
     }
-    w.finish()
+    Ok(w.finish())
 }
 
 #[cfg(test)]
@@ -86,13 +87,13 @@ mod tests {
 
     #[test]
     fn test_emit_module_js_empty() {
-        assert_eq!(emit_module_js(&[]), "");
+        assert_eq!(emit_module_js(&[]).unwrap(), "");
     }
 
     #[test]
     fn test_emit_module_js_single_declaration() {
         let forms = vec![list(vec![atom("const"), atom("x"), num(1.0)])];
-        assert_eq!(emit_module_js(&forms), "const x = 1;\n");
+        assert_eq!(emit_module_js(&forms).unwrap(), "const x = 1;\n");
     }
 
     #[test]
@@ -110,7 +111,7 @@ mod tests {
         let export = list(vec![atom("export"), atom("default"), atom("result")]);
 
         let forms = vec![import, constant, export];
-        let js = emit_module_js(&forms);
+        let js = emit_module_js(&forms).unwrap();
 
         assert!(js.contains("import {add, sub} from \"./utils.js\";"));
         assert!(js.contains("const result = add(1, 2);"));
@@ -136,7 +137,7 @@ mod tests {
         let call = list(vec![atom("greet"), str_lit("world")]);
 
         let forms = vec![func, call];
-        let js = emit_module_js(&forms);
+        let js = emit_module_js(&forms).unwrap();
 
         assert!(js.contains("function greet(name)"));
         assert!(js.contains("return `Hello, ${name}!`"));
@@ -164,7 +165,7 @@ mod tests {
         ]);
 
         let forms = vec![cls];
-        let js = emit_module_js(&forms);
+        let js = emit_module_js(&forms).unwrap();
 
         assert!(js.contains("class Point {"));
         assert!(js.contains("constructor(x)"));
