@@ -108,7 +108,7 @@ function templateIcu(args) {
     mft = parseIcu(icuString);
   } catch (e) {
     if (e instanceof IcuParseError) {
-      throw new Error(`template: ${e.message}`);
+      throw e;
     }
     throw e;
   }
