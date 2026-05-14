@@ -3,6 +3,7 @@
 // Uses astring for code generation
 
 import { generate } from 'astring';
+import { parseIcu, collectSlotNames, IcuParseError } from './icu-parser.js';
 
 /** Build an ImportSpecifier from a reader node (atom or alias list). */
 function buildImportSpecifier(node) {
@@ -72,6 +73,251 @@ function makeTemplateElement(raw, tail) {
     value: { raw, cooked: raw },
     tail,
   };
+}
+
+// ── DD-54 template helpers ─────────────────────────────────────────────
+
+function templateConcat(args) {
+  const quasis = [];
+  const expressions = [];
+  let currentSegment = '';
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].type === 'string') {
+      currentSegment += args[i].value;
+    } else {
+      quasis.push(makeTemplateElement(currentSegment, false));
+      currentSegment = '';
+      expressions.push(compileExpr(args[i], 'expression'));
+    }
+  }
+
+  quasis.push(makeTemplateElement(currentSegment, true));
+
+  return {
+    type: 'TemplateLiteral',
+    quasis,
+    expressions,
+  };
+}
+
+function templateIcu(args) {
+  const icuString = args[0].value;
+  let mft;
+  try {
+    mft = parseIcu(icuString);
+  } catch (e) {
+    if (e instanceof IcuParseError) {
+      throw new Error(`template: ${e.message}`);
+    }
+    throw e;
+  }
+
+  const slotNames = collectSlotNames(mft);
+
+  // Parse keyword args: :name value :name2 value2 ...
+  const kwargs = new Map();
+  for (let i = 1; i < args.length; i += 2) {
+    if (args[i].type !== 'keyword') {
+      throw new Error(
+        `template: expected keyword argument at position ${i}, got ${args[i].type}`
+      );
+    }
+    const key = args[i].value;
+    if (kwargs.has(key)) {
+      throw new Error(`template: duplicate keyword argument :${key}`);
+    }
+    if (i + 1 >= args.length) {
+      throw new Error(`template: keyword :${key} has no value`);
+    }
+    kwargs.set(key, compileExpr(args[i + 1], 'expression'));
+  }
+
+  // Validate: every slot must have a kwarg
+  for (const name of slotNames) {
+    if (!kwargs.has(name)) {
+      throw new Error(
+        `template: no binding for slot {${name}}\n` +
+        `  in (template "${icuString}" ...)\n` +
+        `  expected slots: ${[...slotNames].join(', ')}\n` +
+        `  provided kwargs: ${kwargs.size > 0 ? [...kwargs.keys()].join(', ') : '(none)'}\n` +
+        `  hint: add :${name} <value> to the template call`
+      );
+    }
+  }
+
+  // Validate: every kwarg must be used by a slot
+  for (const key of kwargs.keys()) {
+    if (!slotNames.has(key)) {
+      throw new Error(
+        `template: unused keyword argument :${key}\n` +
+        `  in (template "${icuString}" ...)\n` +
+        `  expected slots: ${[...slotNames].join(', ')}\n` +
+        `  provided kwargs: ${[...kwargs.keys()].join(', ')}\n` +
+        `  hint: remove :${key}, or add a {${key}} slot to the template`
+      );
+    }
+  }
+
+  // Emit the MFT as an ESTree expression
+  return emitMft(mft, kwargs);
+}
+
+function emitMft(nodes, kwargs) {
+  // If MFT is all literals, emit a simple template literal
+  if (nodes.every((n) => n.type === 'literal')) {
+    const text = nodes.map((n) => n.value).join('');
+    return { type: 'TemplateLiteral', quasis: [makeTemplateElement(text, true)], expressions: [] };
+  }
+
+  // Build a template literal with expressions for slots and IIFEs for plural/select
+  const quasis = [];
+  const expressions = [];
+  let currentSegment = '';
+
+  for (const node of nodes) {
+    if (node.type === 'literal') {
+      currentSegment += node.value;
+    } else if (node.type === 'slot') {
+      quasis.push(makeTemplateElement(currentSegment, false));
+      currentSegment = '';
+      expressions.push(kwargs.get(node.name));
+    } else if (node.type === 'plural') {
+      quasis.push(makeTemplateElement(currentSegment, false));
+      currentSegment = '';
+      expressions.push(emitPluralIife(node, kwargs));
+    } else if (node.type === 'select') {
+      quasis.push(makeTemplateElement(currentSegment, false));
+      currentSegment = '';
+      expressions.push(emitSelectIife(node, kwargs));
+    }
+  }
+
+  quasis.push(makeTemplateElement(currentSegment, true));
+
+  return { type: 'TemplateLiteral', quasis, expressions };
+}
+
+function emitPluralIife(node, kwargs) {
+  // (() => { const _v = <kwarg>; if (_v === N) return ...; if (_v === 1) return ...; return ...; })()
+  const valueExpr = kwargs.get(node.name);
+  const vId = { type: 'Identifier', name: '_v' };
+
+  const body = [];
+  // const _v = <value>;
+  body.push({
+    type: 'VariableDeclaration',
+    declarations: [{
+      type: 'VariableDeclarator',
+      id: vId,
+      init: valueExpr,
+    }],
+    kind: 'const',
+  });
+
+  // Emit exact-value branches (=N) first, then category branches
+  const exactBranches = node.branches.filter((b) => b.key.startsWith('='));
+  const categoryBranches = node.branches.filter((b) => !b.key.startsWith('='));
+
+  for (const branch of exactBranches) {
+    const n = parseInt(branch.key.slice(1), 10);
+    body.push({
+      type: 'IfStatement',
+      test: { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: n } },
+      consequent: { type: 'ReturnStatement', argument: emitMft(branch.body, makeSlotOverride(kwargs, node.name, vId)) },
+    });
+  }
+
+  // Category branches: for Phase A (English CLDR), one → _v === 1
+  for (const branch of categoryBranches) {
+    if (branch.key === 'other') continue;
+    const test = pluralCategoryTest(branch.key, vId);
+    if (test) {
+      body.push({
+        type: 'IfStatement',
+        test,
+        consequent: { type: 'ReturnStatement', argument: emitMft(branch.body, makeSlotOverride(kwargs, node.name, vId)) },
+      });
+    }
+  }
+
+  // `other` branch is the final return
+  const otherBranch = categoryBranches.find((b) => b.key === 'other');
+  body.push({
+    type: 'ReturnStatement',
+    argument: emitMft(otherBranch.body, makeSlotOverride(kwargs, node.name, vId)),
+  });
+
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'ArrowFunctionExpression',
+      params: [],
+      body: { type: 'BlockStatement', body },
+      expression: false,
+    },
+    arguments: [],
+  };
+}
+
+function emitSelectIife(node, kwargs) {
+  const valueExpr = kwargs.get(node.name);
+  const vId = { type: 'Identifier', name: '_v' };
+
+  const body = [];
+  body.push({
+    type: 'VariableDeclaration',
+    declarations: [{
+      type: 'VariableDeclarator',
+      id: vId,
+      init: valueExpr,
+    }],
+    kind: 'const',
+  });
+
+  for (const branch of node.branches) {
+    if (branch.key === 'other') continue;
+    body.push({
+      type: 'IfStatement',
+      test: { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: branch.key } },
+      consequent: { type: 'ReturnStatement', argument: emitMft(branch.body, kwargs) },
+    });
+  }
+
+  const otherBranch = node.branches.find((b) => b.key === 'other');
+  body.push({
+    type: 'ReturnStatement',
+    argument: emitMft(otherBranch.body, kwargs),
+  });
+
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'ArrowFunctionExpression',
+      params: [],
+      body: { type: 'BlockStatement', body },
+      expression: false,
+    },
+    arguments: [],
+  };
+}
+
+function pluralCategoryTest(category, vId) {
+  // English CLDR: one → count === 1
+  if (category === 'one') {
+    return { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: 1 } };
+  }
+  if (category === 'zero') {
+    return { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: 0 } };
+  }
+  // two, few, many — not used in English CLDR; emit no test (fall through to other)
+  return null;
+}
+
+function makeSlotOverride(kwargs, name, replacement) {
+  const copy = new Map(kwargs);
+  copy.set(name, replacement);
+  return copy;
 }
 
 // ── DD-49 data tables ──────────────────────────────────────────────────
@@ -999,6 +1245,9 @@ const macros = {
   },
 
   // Template literal: (template "Hello, " name "!")
+  // ICU mode:  (template "Hello, {name}!" :name n)
+  // Concat mode: (template "Hello, " name "!")
+  // Dispatch: DD-54 §Dispatch rule
   'template'(args) {
     if (args.length === 0) {
       return {
@@ -1008,27 +1257,44 @@ const macros = {
       };
     }
 
-    const quasis = [];
-    const expressions = [];
-    let currentSegment = '';
-
-    for (let i = 0; i < args.length; i++) {
-      if (args[i].type === 'string') {
-        currentSegment += args[i].value;
-      } else {
-        quasis.push(makeTemplateElement(currentSegment, false));
-        currentSegment = '';
-        expressions.push(compileExpr(args[i], 'expression'));
+    // DD-54 dispatch: ICU mode if arg[0] is literal string AND
+    // (only one arg, OR arg[1] is a keyword)
+    if (args[0].type === 'string') {
+      if (args.length === 1) {
+        // Rule 1: single literal string — parse as ICU
+        const mft = parseIcu(args[0].value);
+        const slotNames = collectSlotNames(mft);
+        if (slotNames.size > 0) {
+          throw new Error(
+            `template: no binding for slot {${[...slotNames][0]}}\n` +
+            `  in (template "${args[0].value}")\n` +
+            `  expected slots: ${[...slotNames].join(', ')}\n` +
+            `  provided kwargs: (none)\n` +
+            `  hint: add :${[...slotNames][0]} <value> to the template call`
+          );
+        }
+        // No slots — emit using the parsed MFT (resolves escape sequences)
+        return emitMft(mft, new Map());
+      } else if (args.length >= 2 && args[1].type === 'keyword') {
+        // Rule 2: literal string + keyword → ICU mode
+        // Check ambiguous form: keyword with no value
+        if (args.length === 2) {
+          throw new Error(
+            `template: ambiguous form\n` +
+            `  arg 0 is a literal string and arg 1 is a keyword (:${args[1].value}) with no\n` +
+            `  following value, which matches both ICU mode (missing kwarg value)\n` +
+            `  and concat mode (keyword as positional arg).\n` +
+            `  hint:\n` +
+            `    - for ICU mode, add a value: (template "${args[0].value}" :${args[1].value} <expr>)\n` +
+            `    - for concat mode, use string concatenation instead`
+          );
+        }
+        return templateIcu(args);
       }
     }
 
-    quasis.push(makeTemplateElement(currentSegment, true));
-
-    return {
-      type: 'TemplateLiteral',
-      quasis,
-      expressions,
-    };
+    // Rule 3: concat mode (current behaviour)
+    return templateConcat(args);
   },
 
   // Tagged template literal: (tag fn (template ...))
