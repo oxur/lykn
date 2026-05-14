@@ -108,7 +108,8 @@ fn stage_runtime(
     let build_dir = project_root.join("target/lykn/build").join(sname);
     let pkg_path = project_root.join(pkg_dir);
 
-    compile_lykn_sources(&pkg_path, &build_dir)?;
+    let emit_dts = pkg_config.lykn.emit_dts.unwrap_or(true);
+    compile_lykn_sources(&pkg_path, &build_dir, emit_dts)?;
     copy_js_to_build(&pkg_path, &build_dir)?;
     prepare_dist_dir(&dist_dir)?;
     copy_js_files(&build_dir, &dist_dir, project_imports)?;
@@ -170,7 +171,7 @@ fn stage_tooling(
 /// Compile any `.lykn` source files in the package directory that don't
 /// have a corresponding `.js` file in `build_dir` (or whose `.js` is older
 /// than the source). Compiled output goes to `build_dir`, not next to source.
-fn compile_lykn_sources(pkg_path: &Path, build_dir: &Path) -> Result<(), DistError> {
+fn compile_lykn_sources(pkg_path: &Path, build_dir: &Path, emit_dts: bool) -> Result<(), DistError> {
     let entries = fs::read_dir(pkg_path).map_err(|e| DistError::Io {
         path: pkg_path.to_path_buf(),
         source: e,
@@ -237,10 +238,30 @@ fn compile_lykn_sources(pkg_path: &Path, build_dir: &Path) -> Result<(), DistErr
                 let kernel =
                     lykn_lang::emitter::emit(&classified, &analysis_result.type_registry, false);
                 let js = lykn_lang::codegen::emit_module_js(&kernel);
-                fs::write(&js_path, js).map_err(|e| DistError::Io {
-                    path: js_path,
+                fs::write(&js_path, &js).map_err(|e| DistError::Io {
+                    path: js_path.clone(),
                     source: e,
                 })?;
+
+                if emit_dts {
+                    let file_str = path.display().to_string();
+                    let (dts_content, dts_warnings) =
+                        lykn_lang::emitter::dts::emit_dts_module(
+                            &classified,
+                            &analysis_result.type_registry,
+                            &file_str,
+                        );
+                    for w in &dts_warnings {
+                        eprintln!("{w}");
+                    }
+                    if !dts_content.is_empty() {
+                        let dts_path = js_path.with_extension("d.ts");
+                        fs::write(&dts_path, &dts_content).map_err(|e| DistError::Io {
+                            path: dts_path,
+                            source: e,
+                        })?;
+                    }
+                }
             }
         }
     }
@@ -550,7 +571,8 @@ pub fn build_project(project_root: &Path) -> Result<Vec<BuiltPackage>, DistError
         let sname = config::short_name(&pkg_config.name).to_string();
         let build_dir = project_root.join("target/lykn/build").join(&sname);
 
-        compile_lykn_sources(&pkg_path, &build_dir)?;
+        let emit_dts = pkg_config.lykn.emit_dts.unwrap_or(true);
+        compile_lykn_sources(&pkg_path, &build_dir, emit_dts)?;
         copy_js_to_build(&pkg_path, &build_dir)?;
 
         built.push(BuiltPackage {

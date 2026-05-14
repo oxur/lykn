@@ -57,6 +57,11 @@ pub struct LyknMetadata {
     /// Entry point for macro modules.
     #[serde(skip_serializing_if = "Option::is_none", rename = "macroEntry")]
     pub macro_entry: Option<String>,
+
+    /// Whether to emit .d.ts declaration files alongside .js output.
+    /// Defaults to true (opt-out via false).
+    #[serde(skip_serializing_if = "Option::is_none", rename = "emitDts")]
+    pub emit_dts: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
