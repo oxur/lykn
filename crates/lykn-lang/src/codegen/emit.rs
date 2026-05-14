@@ -8,7 +8,7 @@ use crate::ast::sexpr::SExpr;
 use crate::error::LyknError;
 
 use super::format::JsWriter;
-use super::icu::try_emit_template_icu;
+use super::icu::{try_emit_template_icu, IcuDispatch};
 use super::names::{emit_atom, to_js_identifier};
 use super::precedence::precedence;
 
@@ -121,16 +121,14 @@ fn emit_string_literal(w: &mut JsWriter, value: &str) {
 }
 
 fn emit_template_text(w: &mut JsWriter, value: &str) {
+    // '$' is always escaped to '\$' so that user text never accidentally
+    // forms a `${...}` template-literal interpolation in the emitted JS.
+    // Concat-mode and ICU-mode agree on this.
     for ch in value.chars() {
         match ch {
             '`' => w.write("\\`"),
             '\\' => w.write("\\\\"),
-            '$' => {
-                // We need to escape ${ but not standalone $.
-                // For simplicity, pass through — the template text should not
-                // contain literal `${` unless the source intended interpolation.
-                w.write_char('$');
-            }
+            '$' => w.write("\\$"),
             c => w.write_char(c),
         }
     }
@@ -1127,8 +1125,9 @@ fn emit_spread(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
 
 fn emit_template(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
     // DD-54: try ICU mode first; fall through to concat if not applicable
-    if try_emit_template_icu(w, args) {
-        return Ok(());
+    match try_emit_template_icu(w, args)? {
+        IcuDispatch::Handled => return Ok(()),
+        IcuDispatch::NotIcu => {}
     }
     w.write("`");
     for arg in args {

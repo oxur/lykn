@@ -66,18 +66,15 @@ function toClassKey(name) {
   return { type: 'Identifier', name: converted };
 }
 
-/** Build a TemplateElement node for template literals. */
+/** Build a TemplateElement node for template literals.
+ *  '$' is always escaped to '\$' so that user text never accidentally
+ *  forms a `${...}` template-literal interpolation in the emitted JS.
+ *  Concat-mode and ICU-mode agree on this. */
 function makeTemplateElement(raw, tail) {
-  return {
-    type: 'TemplateElement',
-    value: { raw, cooked: raw },
-    tail,
-  };
-}
-
-/** Build a TemplateElement with $ escaped for ICU literal text. */
-function makeIcuTemplateElement(raw, tail) {
-  const escaped = raw.replace(/\$/g, '\\$');
+  const escaped = raw
+    .replaceAll('\\', '\\\\')
+    .replaceAll('`', '\\`')
+    .replaceAll('$', '\\$');
   return {
     type: 'TemplateElement',
     value: { raw: escaped, cooked: raw },
@@ -220,7 +217,7 @@ function emitMft(nodes, kwargs) {
   // If MFT is all literals, emit a simple template literal
   if (nodes.every((n) => n.type === 'literal')) {
     const text = nodes.map((n) => n.value).join('');
-    return { type: 'TemplateLiteral', quasis: [makeIcuTemplateElement(text, true)], expressions: [] };
+    return { type: 'TemplateLiteral', quasis: [makeTemplateElement(text, true)], expressions: [] };
   }
 
   // Build a template literal with expressions for slots and IIFEs for plural/select
@@ -232,21 +229,21 @@ function emitMft(nodes, kwargs) {
     if (node.type === 'literal') {
       currentSegment += node.value;
     } else if (node.type === 'slot') {
-      quasis.push(makeIcuTemplateElement(currentSegment, false));
+      quasis.push(makeTemplateElement(currentSegment, false));
       currentSegment = '';
       expressions.push(kwargs.get(node.name));
     } else if (node.type === 'plural') {
-      quasis.push(makeIcuTemplateElement(currentSegment, false));
+      quasis.push(makeTemplateElement(currentSegment, false));
       currentSegment = '';
       expressions.push(emitPluralIife(node, kwargs));
     } else if (node.type === 'select') {
-      quasis.push(makeIcuTemplateElement(currentSegment, false));
+      quasis.push(makeTemplateElement(currentSegment, false));
       currentSegment = '';
       expressions.push(emitSelectIife(node, kwargs));
     }
   }
 
-  quasis.push(makeIcuTemplateElement(currentSegment, true));
+  quasis.push(makeTemplateElement(currentSegment, true));
 
   return { type: 'TemplateLiteral', quasis, expressions };
 }

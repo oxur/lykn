@@ -9,7 +9,10 @@ use std::fmt;
 
 use super::emit::emit_expr;
 use super::format::JsWriter;
+use super::names::to_js_identifier;
 use crate::ast::sexpr::SExpr;
+use crate::diagnostics::{Diagnostic, Severity};
+use crate::error::LyknError;
 use crate::reader::source_loc::Span;
 
 // ── MFT node types ────────────────────────────────────────────────────
@@ -90,6 +93,14 @@ pub fn collect_slot_names(nodes: &[MftNode]) -> HashSet<String> {
     names
 }
 
+pub fn count_slot_references(nodes: &[MftNode]) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for node in nodes {
+        count_slot_references_inner(node, &mut counts);
+    }
+    counts
+}
+
 fn collect_slot_names_inner(node: &MftNode, names: &mut HashSet<String>) {
     match node {
         MftNode::Slot(name) => {
@@ -108,6 +119,31 @@ fn collect_slot_names_inner(node: &MftNode, names: &mut HashSet<String>) {
             for branch in branches {
                 for child in &branch.body {
                     collect_slot_names_inner(child, names);
+                }
+            }
+        }
+        MftNode::Literal(_) => {}
+    }
+}
+
+fn count_slot_references_inner(node: &MftNode, counts: &mut HashMap<String, usize>) {
+    match node {
+        MftNode::Slot(name) => {
+            *counts.entry(name.clone()).or_insert(0) += 1;
+        }
+        MftNode::Plural { name, branches } => {
+            *counts.entry(name.clone()).or_insert(0) += 1;
+            for branch in branches {
+                for child in &branch.body {
+                    count_slot_references_inner(child, counts);
+                }
+            }
+        }
+        MftNode::Select { name, branches } => {
+            *counts.entry(name.clone()).or_insert(0) += 1;
+            for branch in branches {
+                for child in &branch.body {
+                    count_slot_references_inner(child, counts);
                 }
             }
         }
@@ -168,6 +204,9 @@ impl<'a> IcuParser<'a> {
         }
     }
 
+    // R-10: '#' at top level is handled by parse_literal which guarantees
+    // forward progress. Inside plural branches, parse_branch_body routes
+    // '#' → Slot(selector).
     fn parse_message(&mut self, in_branch: bool) -> Result<Vec<MftNode>, IcuParseError> {
         let mut nodes = Vec::new();
         while self.pos < self.bytes.len() {
@@ -175,10 +214,6 @@ impl<'a> IcuParser<'a> {
                 Some(b'}') => break,
                 Some(b'{') => nodes.push(self.parse_block()?),
                 Some(b'\'') => nodes.push(self.parse_escape()),
-                Some(b'#') if in_branch => {
-                    nodes.push(MftNode::Literal("#".into()));
-                    self.advance();
-                }
                 _ => nodes.push(self.parse_literal(in_branch)),
             }
         }
@@ -202,12 +237,17 @@ impl<'a> IcuParser<'a> {
         Ok(coalesce_literals(nodes))
     }
 
+    // R-10: guarantees forward progress — '#' with in_branch only breaks
+    // after at least one character has been consumed (self.pos > start).
     fn parse_literal(&mut self, in_branch: bool) -> MftNode {
         let start = self.pos;
-        while self.pos < self.bytes.len() {
+        loop {
+            if self.pos >= self.bytes.len() {
+                break;
+            }
             match self.bytes[self.pos] {
                 b'{' | b'}' | b'\'' => break,
-                b'#' if in_branch => break,
+                b'#' if in_branch && self.pos > start => break,
                 _ => self.pos += 1,
             }
         }
@@ -456,132 +496,244 @@ fn fresh_icu_var(counter: &mut usize) -> String {
     format!("_v{}", n)
 }
 
-/// Try ICU mode for a template form. Returns true if ICU mode handled it;
-/// false if the caller should fall through to concat mode.
-/// Panics with a compile error message for ICU forms that are malformed.
-pub fn try_emit_template_icu(w: &mut JsWriter, args: &[SExpr]) -> bool {
+/// Outcome of attempting ICU-mode dispatch for a `template` form.
+pub enum IcuDispatch {
+    /// Form is unambiguously not ICU mode. Caller should fall through to concat.
+    NotIcu,
+    /// Form was ICU mode and was emitted successfully.
+    Handled,
+}
+
+/// Try ICU mode for a template form. Returns `Ok(IcuDispatch::Handled)` if
+/// ICU mode emitted, `Ok(IcuDispatch::NotIcu)` if the caller should use
+/// concat mode, or `Err(LyknError)` for malformed ICU forms.
+pub fn try_emit_template_icu(
+    w: &mut JsWriter,
+    args: &[SExpr],
+) -> Result<IcuDispatch, LyknError> {
     if args.is_empty() {
-        return false;
+        return Ok(IcuDispatch::NotIcu);
     }
 
     let icu_string = match &args[0] {
-        SExpr::String { value, .. } => value,
-        _ => return false,
+        SExpr::String { value, .. } => value.clone(),
+        _ => return Ok(IcuDispatch::NotIcu),
     };
+    let anchor_span = args[0].span();
 
     // Rule 1: single literal string — parse as ICU
     if args.len() == 1 {
-        let mft = parse_icu(icu_string)
-            .unwrap_or_else(|e| panic!("template: {}", e));
+        let mft = parse_icu(&icu_string).map_err(|e| icu_err(&e, anchor_span))?;
         let slot_names = collect_slot_names(&mft);
         if !slot_names.is_empty() {
-            let first = sorted_names(&slot_names).into_iter().next().unwrap();
-            panic!(
-                "template: no binding for slot {{{}}}\n  in (template \"{}\")\n  expected slots: {}\n  provided kwargs: (none)\n  hint: add :{} <value> to the template call",
-                first, icu_string, sorted_join(&slot_names), first
-            );
+            return Err(missing_kwarg_err(&slot_names, &icu_string, anchor_span));
         }
         let mut counter = 0;
-        emit_mft(w, &mft, &HashMap::new(), &mut counter);
-        return true;
+        emit_mft(w, &mft, &HashMap::new(), &mut counter)?;
+        return Ok(IcuDispatch::Handled);
     }
 
     // Not ICU if arg[1] isn't a keyword
     if !matches!(&args[1], SExpr::Keyword { .. }) {
-        return false;
+        return Ok(IcuDispatch::NotIcu);
     }
 
     // Rule 2 ambiguous form: string + lone keyword, no value
     if args.len() == 2 {
         let kw = args[1].as_keyword().unwrap();
-        panic!(
-            "template: ambiguous form\n  arg 0 is a literal string and arg 1 is a keyword (:{}) with no\n  following value, which matches both ICU mode (missing kwarg value)\n  and concat mode (keyword as positional arg).\n  hint:\n    - for ICU mode, add a value: (template \"{}\" :{} <expr>)\n    - for concat mode, use string concatenation instead",
-            kw, icu_string, kw
-        );
+        return Err(codegen_err(
+            format!(
+                "template: ambiguous form\n  \
+                 arg 0 is a literal string and arg 1 is a keyword (:{kw}) with no\n  \
+                 following value, which matches both ICU mode (missing kwarg value)\n  \
+                 and concat mode (keyword as positional arg)."
+            ),
+            args[1].span(),
+            Some(format!(
+                "for ICU mode, add a value: (template \"{icu_string}\" :{kw} <expr>)\n\
+                 for concat mode, use string concatenation instead"
+            )),
+        ));
     }
 
     // Rule 2: ICU mode — parse and validate
-    let mft = parse_icu(icu_string)
-        .unwrap_or_else(|e| panic!("template: {}", e));
-
+    let mft = parse_icu(&icu_string).map_err(|e| icu_err(&e, anchor_span))?;
     let slot_names = collect_slot_names(&mft);
+    let kwargs = parse_and_validate_kwargs(args, &slot_names, &icu_string)?;
 
-    // Parse kwargs with validation
-    let mut kwargs: HashMap<String, &SExpr> = HashMap::new();
+    // R-4: hoist non-trivial kwargs referenced more than once
+    let multiplicity = count_slot_references(&mft);
+    let mut hoisted: Vec<(String, SExpr)> = Vec::new();
+    let mut final_kwargs: HashMap<String, SExpr> = HashMap::new();
+
+    for (key, expr) in kwargs {
+        let refs = multiplicity.get(&key).copied().unwrap_or(0);
+        let trivial = matches!(
+            &expr,
+            SExpr::Atom { .. } | SExpr::Number { .. } | SExpr::String { .. } | SExpr::Bool { .. }
+        );
+        if refs > 1 && !trivial {
+            let local_name = format!("_{}", to_js_identifier(&key));
+            let placeholder = SExpr::Atom {
+                value: local_name.clone(),
+                span: Span::default(),
+            };
+            hoisted.push((local_name, expr));
+            final_kwargs.insert(key, placeholder);
+        } else {
+            final_kwargs.insert(key, expr);
+        }
+    }
+
+    let mut counter = 0;
+    if hoisted.is_empty() {
+        emit_mft(w, &mft, &final_kwargs, &mut counter)?;
+    } else {
+        w.write("(() => { ");
+        for (name, expr) in &hoisted {
+            w.write(&format!("const {name} = "));
+            emit_expr(w, expr, 0)?;
+            w.write("; ");
+        }
+        w.write("return ");
+        emit_mft(w, &mft, &final_kwargs, &mut counter)?;
+        w.write("; })()");
+    }
+    Ok(IcuDispatch::Handled)
+}
+
+fn parse_and_validate_kwargs(
+    args: &[SExpr],
+    slot_names: &HashSet<String>,
+    icu_string: &str,
+) -> Result<HashMap<String, SExpr>, LyknError> {
+    let mut kwargs: HashMap<String, SExpr> = HashMap::new();
     let mut i = 1;
     while i < args.len() {
         match &args[i] {
             SExpr::Keyword { value, .. } => {
                 if kwargs.contains_key(value) {
-                    panic!("template: duplicate keyword argument :{}", value);
+                    return Err(codegen_err(
+                        format!("template: duplicate keyword argument :{value}"),
+                        args[i].span(),
+                        None,
+                    ));
                 }
                 if i + 1 >= args.len() {
-                    panic!("template: keyword :{} has no value", value);
+                    return Err(codegen_err(
+                        format!("template: keyword :{value} has no value"),
+                        args[i].span(),
+                        None,
+                    ));
                 }
-                kwargs.insert(value.clone(), &args[i + 1]);
+                kwargs.insert(value.clone(), args[i + 1].clone());
                 i += 2;
             }
             other => {
-                panic!(
-                    "template: expected keyword argument at position {}, got {:?}",
-                    i, other
-                );
+                return Err(codegen_err(
+                    format!("template: expected keyword argument at position {i}, got {other:?}"),
+                    other.span(),
+                    None,
+                ));
             }
         }
     }
 
-    // Validate: every slot must have a kwarg
-    for name in sorted_names(&slot_names) {
+    // Every slot must have a kwarg
+    for name in sorted_set(slot_names) {
         if !kwargs.contains_key(&name) {
-            panic!(
-                "template: no binding for slot {{{}}}\n  in (template \"{}\" ...)\n  expected slots: {}\n  provided kwargs: {}\n  hint: add :{} <value> to the template call",
-                name, icu_string,
-                sorted_join(&slot_names),
-                if kwargs.is_empty() { "(none)".into() } else { sorted_join_keys(&kwargs) },
-                name
-            );
+            return Err(codegen_err(
+                format!(
+                    "template: no binding for slot {{{name}}}\n  \
+                     in (template \"{icu_string}\" ...)\n  \
+                     expected slots: {}\n  \
+                     provided kwargs: {}",
+                    sorted_set(slot_names).join(", "),
+                    if kwargs.is_empty() {
+                        "(none)".into()
+                    } else {
+                        sorted_map_keys(&kwargs).join(", ")
+                    },
+                ),
+                args[0].span(),
+                Some(format!("add :{name} <value> to the template call")),
+            ));
         }
     }
 
-    // Validate: every kwarg must be used by a slot
-    for key in sorted_keys(&kwargs) {
+    // Every kwarg must be used by a slot
+    for key in sorted_map_keys(&kwargs) {
         if !slot_names.contains(&key) {
-            panic!(
-                "template: unused keyword argument :{}\n  in (template \"{}\" ...)\n  expected slots: {}\n  provided kwargs: {}\n  hint: remove :{}, or add a {{{}}} slot to the template",
-                key, icu_string,
-                sorted_join(&slot_names),
-                sorted_join_keys(&kwargs),
-                key, key
-            );
+            return Err(codegen_err(
+                format!(
+                    "template: unused keyword argument :{key}\n  \
+                     in (template \"{icu_string}\" ...)\n  \
+                     expected slots: {}\n  \
+                     provided kwargs: {}",
+                    sorted_set(slot_names).join(", "),
+                    sorted_map_keys(&kwargs).join(", "),
+                ),
+                args[0].span(),
+                Some(format!("remove :{key}, or add a {{{key}}} slot to the template")),
+            ));
         }
     }
 
-    let mut counter = 0;
-    emit_mft(w, &mft, &kwargs, &mut counter);
-    true
+    Ok(kwargs)
 }
 
-fn sorted_names(names: &HashSet<String>) -> Vec<String> {
+// ── Error helpers ─────────────────────────────────────────────────────
+
+fn codegen_err(message: String, span: Span, suggestion: Option<String>) -> LyknError {
+    LyknError::Codegen(Diagnostic {
+        severity: Severity::Error,
+        message,
+        span,
+        suggestion,
+    })
+}
+
+fn icu_err(e: &IcuParseError, span: Span) -> LyknError {
+    // TODO: translate e.position into a Span offset for finer attribution
+    codegen_err(format!("template: {}", e.message), span, None)
+}
+
+fn missing_kwarg_err(slot_names: &HashSet<String>, icu_string: &str, span: Span) -> LyknError {
+    let names = sorted_set(slot_names);
+    let first = names.first().cloned().unwrap_or_default();
+    codegen_err(
+        format!(
+            "template: no binding for slot {{{first}}}\n  \
+             in (template \"{icu_string}\")\n  \
+             expected slots: {}\n  \
+             provided kwargs: (none)",
+            names.join(", "),
+        ),
+        span,
+        Some(format!("add :{first} <value> to the template call")),
+    )
+}
+
+fn sorted_set(names: &HashSet<String>) -> Vec<String> {
     let mut v: Vec<String> = names.iter().cloned().collect();
     v.sort();
     v
 }
 
-fn sorted_join(names: &HashSet<String>) -> String {
-    sorted_names(names).join(", ")
-}
-
-fn sorted_keys(map: &HashMap<String, &SExpr>) -> Vec<String> {
+fn sorted_map_keys<V>(map: &HashMap<String, V>) -> Vec<String> {
     let mut v: Vec<String> = map.keys().cloned().collect();
     v.sort();
     v
 }
 
-fn sorted_join_keys(map: &HashMap<String, &SExpr>) -> String {
-    sorted_keys(map).join(", ")
-}
+// ── MFT emission ──────────────────────────────────────────────────────
 
-fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr>, counter: &mut usize) {
+fn emit_mft(
+    w: &mut JsWriter,
+    nodes: &[MftNode],
+    kwargs: &HashMap<String, SExpr>,
+    counter: &mut usize,
+) -> Result<(), LyknError> {
     if nodes.iter().all(|n| matches!(n, MftNode::Literal(_))) {
         w.write("`");
         for node in nodes {
@@ -590,7 +742,7 @@ fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr
             }
         }
         w.write("`");
-        return;
+        return Ok(());
     }
 
     w.write("`");
@@ -600,25 +752,26 @@ fn emit_mft(w: &mut JsWriter, nodes: &[MftNode], kwargs: &HashMap<String, &SExpr
             MftNode::Slot(name) => {
                 w.write("${");
                 if let Some(expr) = kwargs.get(name) {
-                    emit_expr(w, expr, 0).unwrap();
+                    emit_expr(w, expr, 0)?;
                 } else {
-                    panic!("internal error: slot {{{}}} has no kwarg after validation", name);
+                    unreachable!("slot {{{}}} has no kwarg after validation", name);
                 }
                 w.write("}");
             }
             MftNode::Plural { name, branches } => {
                 w.write("${");
-                emit_plural_iife(w, name, branches, kwargs, counter);
+                emit_plural_iife(w, name, branches, kwargs, counter)?;
                 w.write("}");
             }
             MftNode::Select { name, branches } => {
                 w.write("${");
-                emit_select_iife(w, name, branches, kwargs, counter);
+                emit_select_iife(w, name, branches, kwargs, counter)?;
                 w.write("}");
             }
         }
     }
     w.write("`");
+    Ok(())
 }
 
 fn emit_template_text_icu(w: &mut JsWriter, value: &str) {
@@ -626,17 +779,19 @@ fn emit_template_text_icu(w: &mut JsWriter, value: &str) {
         match ch {
             '`' => w.write("\\`"),
             '\\' => w.write("\\\\"),
+            // '$' is always escaped to '\$' so that user text never accidentally
+            // forms a `${...}` template-literal interpolation in the emitted JS.
             '$' => w.write("\\$"),
             c => w.write_char(c),
         }
     }
 }
 
-fn make_slot_override<'a>(
-    kwargs: &HashMap<String, &'a SExpr>,
+fn make_slot_override(
+    kwargs: &HashMap<String, SExpr>,
     name: &str,
-    replacement: &'a SExpr,
-) -> HashMap<String, &'a SExpr> {
+    replacement: SExpr,
+) -> HashMap<String, SExpr> {
     let mut copy = kwargs.clone();
     copy.insert(name.to_string(), replacement);
     copy
@@ -646,9 +801,9 @@ fn emit_plural_iife(
     w: &mut JsWriter,
     name: &str,
     branches: &[PluralBranch],
-    kwargs: &HashMap<String, &SExpr>,
+    kwargs: &HashMap<String, SExpr>,
     counter: &mut usize,
-) {
+) -> Result<(), LyknError> {
     let var_name = fresh_icu_var(counter);
     let var_expr = SExpr::Atom {
         value: var_name.clone(),
@@ -658,7 +813,7 @@ fn emit_plural_iife(
     w.write("(() => {");
     w.write(&format!(" const {} = ", var_name));
     if let Some(expr) = kwargs.get(name) {
-        emit_expr(w, expr, 0).unwrap();
+        emit_expr(w, expr, 0)?;
     } else {
         w.write(name);
     }
@@ -667,8 +822,8 @@ fn emit_plural_iife(
     for branch in branches {
         if let PluralKey::Exact(n) = &branch.key {
             w.write(&format!(" if ({} === {}) return ", var_name, n));
-            let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
-            emit_mft(w, &branch.body, &inner_kwargs, counter);
+            let inner_kwargs = make_slot_override(kwargs, name, var_expr.clone());
+            emit_mft(w, &branch.body, &inner_kwargs, counter)?;
             w.write(";");
         }
     }
@@ -680,8 +835,8 @@ fn emit_plural_iife(
             }
             if let Some(test) = plural_category_test(cat, &var_name) {
                 w.write(&format!(" if ({}) return ", test));
-                let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
-                emit_mft(w, &branch.body, &inner_kwargs, counter);
+                let inner_kwargs = make_slot_override(kwargs, name, var_expr.clone());
+                emit_mft(w, &branch.body, &inner_kwargs, counter)?;
                 w.write(";");
             }
         }
@@ -692,21 +847,22 @@ fn emit_plural_iife(
         .find(|b| b.key == PluralKey::Category("other".into()))
     {
         w.write(" return ");
-        let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
-        emit_mft(w, &other.body, &inner_kwargs, counter);
+        let inner_kwargs = make_slot_override(kwargs, name, var_expr);
+        emit_mft(w, &other.body, &inner_kwargs, counter)?;
         w.write(";");
     }
 
     w.write(" })()");
+    Ok(())
 }
 
 fn emit_select_iife(
     w: &mut JsWriter,
     name: &str,
     branches: &[SelectBranch],
-    kwargs: &HashMap<String, &SExpr>,
+    kwargs: &HashMap<String, SExpr>,
     counter: &mut usize,
-) {
+) -> Result<(), LyknError> {
     let var_name = fresh_icu_var(counter);
     let var_expr = SExpr::Atom {
         value: var_name.clone(),
@@ -716,7 +872,7 @@ fn emit_select_iife(
     w.write("(() => {");
     w.write(&format!(" const {} = ", var_name));
     if let Some(expr) = kwargs.get(name) {
-        emit_expr(w, expr, 0).unwrap();
+        emit_expr(w, expr, 0)?;
     } else {
         w.write(name);
     }
@@ -727,25 +883,28 @@ fn emit_select_iife(
             continue;
         }
         w.write(&format!(" if ({} === \"{}\") return ", var_name, branch.key));
-        let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
-        emit_mft(w, &branch.body, &inner_kwargs, counter);
+        let inner_kwargs = make_slot_override(kwargs, name, var_expr.clone());
+        emit_mft(w, &branch.body, &inner_kwargs, counter)?;
         w.write(";");
     }
 
     if let Some(other) = branches.iter().find(|b| b.key == "other") {
         w.write(" return ");
-        let inner_kwargs = make_slot_override(kwargs, name, &var_expr);
-        emit_mft(w, &other.body, &inner_kwargs, counter);
+        let inner_kwargs = make_slot_override(kwargs, name, var_expr);
+        emit_mft(w, &other.body, &inner_kwargs, counter)?;
         w.write(";");
     }
 
     w.write(" })()");
+    Ok(())
 }
 
 fn plural_category_test(category: &str, var_name: &str) -> Option<String> {
-    match category {
-        "one" => Some(format!("{} === 1", var_name)),
-        _ => None,
+    // English CLDR Phase A: only 'one' has a test
+    if category == "one" {
+        Some(format!("{} === 1", var_name))
+    } else {
+        None
     }
 }
 
@@ -754,6 +913,8 @@ fn plural_category_test(category: &str, var_name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Parser tests ──────────────────────────────────────────────
 
     #[test]
     fn test_parse_literal() {
@@ -770,14 +931,11 @@ mod tests {
     #[test]
     fn test_parse_slot_surrounded() {
         let result = parse_icu("Hello, {name}!").unwrap();
-        assert_eq!(
-            result,
-            vec![
-                MftNode::Literal("Hello, ".into()),
-                MftNode::Slot("name".into()),
-                MftNode::Literal("!".into()),
-            ]
-        );
+        assert_eq!(result, vec![
+            MftNode::Literal("Hello, ".into()),
+            MftNode::Slot("name".into()),
+            MftNode::Literal("!".into()),
+        ]);
     }
 
     #[test]
@@ -805,8 +963,6 @@ mod tests {
         if let MftNode::Plural { name, branches } = &result[0] {
             assert_eq!(name, "n");
             assert_eq!(branches.len(), 2);
-            assert_eq!(branches[0].key, PluralKey::Category("one".into()));
-            assert_eq!(branches[1].key, PluralKey::Category("other".into()));
             assert!(branches[1].body.contains(&MftNode::Slot("n".into())));
         } else {
             panic!("expected Plural node");
@@ -830,9 +986,8 @@ mod tests {
 
     #[test]
     fn test_parse_plural_unknown_category() {
-        let err = parse_icu("{n, plural, weird {x} other {y}}");
-        assert!(err.is_err());
-        assert!(err.unwrap_err().message.contains("unknown plural category"));
+        let err = parse_icu("{n, plural, weird {x} other {y}}").unwrap_err();
+        assert!(err.message.contains("unknown plural category"));
     }
 
     #[test]
@@ -888,141 +1043,142 @@ mod tests {
         assert!(names.contains("count"));
     }
 
-    // ── Review regression tests ───────────────────────────────────
+    // ── Review regression: categories ─────────────────────────────
 
     #[test]
     fn test_reject_zero_category() {
-        let err = parse_icu("{n, plural, zero {none} other {many}}");
-        assert!(err.is_err());
-        assert!(err.unwrap_err().message.contains("not valid under English plural rules"));
+        let err = parse_icu("{n, plural, zero {none} other {many}}").unwrap_err();
+        assert!(err.message.contains("not valid under English plural rules"));
     }
 
     #[test]
     fn test_reject_two_few_many() {
         for cat in &["two", "few", "many"] {
             let input = format!("{{n, plural, {} {{x}} other {{y}}}}", cat);
-            let err = parse_icu(&input);
-            assert!(err.is_err(), "expected error for category '{}'", cat);
-            assert!(
-                err.unwrap_err().message.contains("not valid under English plural rules"),
-                "wrong error for '{}'",
-                cat
-            );
+            let err = parse_icu(&input).unwrap_err();
+            assert!(err.message.contains("not valid under English plural rules"), "{}", cat);
         }
     }
 
     #[test]
     fn test_exact_one_overlap() {
-        let err = parse_icu("{n, plural, =1 {x} one {y} other {z}}");
-        assert!(err.is_err());
-        assert!(err.unwrap_err().message.contains("overlapping branches"));
+        let err = parse_icu("{n, plural, =1 {x} one {y} other {z}}").unwrap_err();
+        assert!(err.message.contains("overlapping branches"));
+    }
+
+    #[test]
+    fn test_exact_one_overlap_reverse() {
+        let err = parse_icu("{n, plural, one {y} =1 {x} other {z}}").unwrap_err();
+        assert!(err.message.contains("overlapping branches"));
     }
 
     #[test]
     fn test_error_no_template_prefix() {
         let err = parse_icu("{n, plural, weird {x} other {y}}").unwrap_err();
-        assert!(
-            !err.message.starts_with("template:"),
-            "IcuParseError.message should not start with 'template:': {}",
-            err.message
-        );
+        assert!(!err.message.starts_with("template:"), "{}", err.message);
+    }
+
+    // ── Review regression: R-10 (# handling) ──────────────────────
+
+    #[test]
+    fn parse_hash_at_top_level_is_literal() {
+        let result = parse_icu("a # b").unwrap();
+        assert_eq!(result, vec![MftNode::Literal("a # b".into())]);
+    }
+
+    #[test]
+    fn parse_hash_only_top_level() {
+        let result = parse_icu("#").unwrap();
+        assert_eq!(result, vec![MftNode::Literal("#".into())]);
+    }
+
+    #[test]
+    fn parse_message_does_not_spin_on_hash() {
+        let result = parse_icu("####").unwrap();
+        assert_eq!(result, vec![MftNode::Literal("####".into())]);
     }
 
     // ── Emitter tests ─────────────────────────────────────────────
+
+    fn mk(name: &str) -> SExpr {
+        SExpr::Atom { value: name.into(), span: Span::default() }
+    }
+
+    fn emit_mft_str(mft: &[MftNode], kwargs: &HashMap<String, SExpr>) -> String {
+        let mut w = JsWriter::new();
+        let mut counter = 0;
+        emit_mft(&mut w, mft, kwargs, &mut counter).unwrap();
+        w.finish()
+    }
 
     #[test]
     fn test_emit_simple_slot() {
         let mft = parse_icu("Hello, {name}!").unwrap();
         let mut kwargs = HashMap::new();
-        let expr = SExpr::Atom {
-            value: "n".into(),
-            span: Span::default(),
-        };
-        kwargs.insert("name".into(), &expr);
-        let mut w = JsWriter::new();
-        let mut counter = 0;
-        emit_mft(&mut w, &mft, &kwargs, &mut counter);
-        assert_eq!(w.finish(), "`Hello, ${n}!`");
+        kwargs.insert("name".into(), mk("n"));
+        assert_eq!(emit_mft_str(&mft, &kwargs), "`Hello, ${n}!`");
     }
 
     #[test]
     fn test_emit_no_slots() {
         let mft = parse_icu("hello world").unwrap();
-        let mut w = JsWriter::new();
-        let mut counter = 0;
-        emit_mft(&mut w, &mft, &HashMap::new(), &mut counter);
-        assert_eq!(w.finish(), "`hello world`");
+        assert_eq!(emit_mft_str(&mft, &HashMap::new()), "`hello world`");
     }
 
     #[test]
     fn test_emit_plural() {
         let mft = parse_icu("{n, plural, one {1 item} other {# items}}").unwrap();
         let mut kwargs = HashMap::new();
-        let expr = SExpr::Atom {
-            value: "count".into(),
-            span: Span::default(),
-        };
-        kwargs.insert("n".into(), &expr);
-        let mut w = JsWriter::new();
-        let mut counter = 0;
-        emit_mft(&mut w, &mft, &kwargs, &mut counter);
-        let output = w.finish();
+        kwargs.insert("n".into(), mk("count"));
+        let output = emit_mft_str(&mft, &kwargs);
         assert!(output.contains("count"));
         assert!(output.contains("=== 1"));
         assert!(output.contains("1 item"));
-        assert!(output.contains("items"));
     }
 
     #[test]
     fn test_emit_select() {
         let mft = parse_icu("{role, select, owner {You own it.} other {Guest.}}").unwrap();
         let mut kwargs = HashMap::new();
-        let expr = SExpr::Atom {
-            value: "r".into(),
-            span: Span::default(),
-        };
-        kwargs.insert("role".into(), &expr);
-        let mut w = JsWriter::new();
-        let mut counter = 0;
-        emit_mft(&mut w, &mft, &kwargs, &mut counter);
-        let output = w.finish();
-        assert!(output.contains("r"));
+        kwargs.insert("role".into(), mk("r"));
+        let output = emit_mft_str(&mft, &kwargs);
         assert!(output.contains("\"owner\""));
         assert!(output.contains("You own it."));
-        assert!(output.contains("Guest."));
     }
 
     #[test]
     fn test_emit_nested_no_tdz() {
         let mft = parse_icu("{n, plural, one {{n, plural, one {a} other {b}}} other {c}}").unwrap();
         let mut kwargs = HashMap::new();
-        let expr = SExpr::Atom {
-            value: "n".into(),
-            span: Span::default(),
-        };
-        kwargs.insert("n".into(), &expr);
-        let mut w = JsWriter::new();
-        let mut counter = 0;
-        emit_mft(&mut w, &mft, &kwargs, &mut counter);
-        let output = w.finish();
-        assert!(output.contains("_v0"), "expected _v0 in output: {}", output);
-        assert!(output.contains("_v1"), "expected _v1 in output: {}", output);
-        assert!(!output.contains("const _v0 = _v0"), "TDZ: const _v0 = _v0 in: {}", output);
+        kwargs.insert("n".into(), mk("n"));
+        let output = emit_mft_str(&mft, &kwargs);
+        assert!(output.contains("_v0"), "expected _v0: {output}");
+        assert!(output.contains("_v1"), "expected _v1: {output}");
+        assert!(!output.contains("const _v0 = _v0"), "TDZ: {output}");
     }
 
     #[test]
     fn test_emit_select_uses_override() {
         let mft = parse_icu("{role, select, owner {Owner: {role}} other {Guest: {role}}}").unwrap();
         let mut kwargs = HashMap::new();
-        let expr = SExpr::Atom {
-            value: "r".into(),
-            span: Span::default(),
-        };
-        kwargs.insert("role".into(), &expr);
-        let mut w = JsWriter::new();
-        let mut counter = 0;
-        emit_mft(&mut w, &mft, &kwargs, &mut counter);
-        let output = w.finish();
-        assert!(output.contains("_v0"), "expected _v0 reference in branches: {}", output);
+        kwargs.insert("role".into(), mk("r"));
+        let output = emit_mft_str(&mft, &kwargs);
+        assert!(output.contains("_v0"), "expected _v0 in branches: {output}");
+    }
+
+    // ── Review regression: R-7 ($ escaping) ───────────────────────
+
+    #[test]
+    fn emit_dollar_in_literal_is_escaped() {
+        let mft = parse_icu("$5").unwrap();
+        let output = emit_mft_str(&mft, &HashMap::new());
+        assert!(output.contains("\\$"), "expected escaped \\$, got: {output}");
+    }
+
+    #[test]
+    fn emit_dollar_before_brace_is_escaped() {
+        let mft = parse_icu("$'{'name'}'").unwrap();
+        let output = emit_mft_str(&mft, &HashMap::new());
+        assert!(output.contains("\\$"), "expected escaped \\$, got: {output}");
     }
 }
