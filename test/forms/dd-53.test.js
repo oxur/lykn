@@ -119,10 +119,13 @@ Deno.test("DD-53 R-4: (surface-macros \"/etc/passwd\") is rejected for local pat
   }
 });
 
-// ── R-5: JSR end-to-end test (live, network-gated) ──────────────────
+// ── R-5 Round 3: JSR end-to-end via production code path ─────────────
+// Invokes `lykn compile` from a temp dir outside the workspace so
+// jsr:@lykn/testing@0.5.2 flows through the production JSR fetch path
+// (resolve-macro-source → sibling-fetch → cache → load_surface_macros).
 
 Deno.test({
-  name: "DD-53 R-5: JSR-fetched surface-macros work end-to-end via protocol",
+  name: "DD-53 R-5 (Round 3): JSR end-to-end via production code path",
   async fn() {
     const netPerm = await Deno.permissions.query({ name: "net", host: "jsr.io" });
     if (netPerm.state !== "granted") {
@@ -130,81 +133,50 @@ Deno.test({
       return;
     }
 
-    // Use a unique temp cache directory to guarantee a fresh fetch
-    const testCacheDir = Deno.makeTempDirSync({ prefix: "lykn-r5-" });
-    const cacheKey = "r5_lykn_testing_0_5_2";
-
+    const tempProject = Deno.makeTempDirSync({ prefix: "lykn-r5-r3-" });
     try {
-      // Invoke the subprocess action directly by compiling a small source
-      // that imports from jsr:@lykn/testing@0.5.2.
-      // Since workspace resolution shadows the JSR specifier, we invoke
-      // the resolve-macro-source protocol action directly via a test script.
-      const testScript = `
-        import { read } from "./packages/lang/reader.js";
-        const encoder = new TextEncoder();
-        function writeLine(s) { Deno.stdout.writeSync(encoder.encode(s + "\\n")); }
+      // Symlink packages/ so the subprocess can import the reader
+      Deno.symlinkSync(`${CWD}/packages`, `${tempProject}/packages`);
 
-        const spec = "jsr:@lykn/testing@0.5.2";
-        const proc = new Deno.Command("deno", {
-          args: ["info", "--json", spec],
-          stdout: "piped", stderr: "piped",
-        }).outputSync();
-        if (!proc.success) { writeLine(JSON.stringify({ok:false,error:"deno info failed"})); Deno.exit(1); }
-        const info = JSON.parse(new TextDecoder().decode(proc.stdout));
-        const redirectUrl = (info.redirects || {})[spec];
-        if (!redirectUrl) { writeLine(JSON.stringify({ok:false,error:"not found on JSR"})); Deno.exit(1); }
-        const baseUrl = redirectUrl.replace(/\\/[^/]+$/, "/");
-        const srcResp = await fetch(baseUrl + "mod.lykn");
-        const source = await srcResp.text();
+      // Minimal project.json — no workspace shadowing of JSR specifiers
+      Deno.writeTextFileSync(`${tempProject}/project.json`, JSON.stringify({
+        imports: { "astring": "npm:astring@^1.9.0" },
+      }));
 
-        // Parse and fetch siblings
-        const forms = read(source);
-        const pkgDir = "${testCacheDir}/${cacheKey}";
-        Deno.mkdirSync(pkgDir, { recursive: true });
-        Deno.writeTextFileSync(pkgDir + "/mod.lykn", source);
-        for (const form of forms) {
-          if (form.type === "list" && form.values.length === 2 &&
-              form.values[0].type === "atom" && form.values[0].value === "surface-macros" &&
-              form.values[1].type === "string") {
-            const sibPath = form.values[1].value;
-            const sibResp = await fetch(baseUrl + sibPath);
-            Deno.writeTextFileSync(pkgDir + "/" + sibPath, await sibResp.text());
-          }
-        }
-        writeLine(JSON.stringify({ok:true, source: source.substring(0, 50), baseUrl}));
-      `;
+      // Source with literal jsr: specifier
+      Deno.writeTextFileSync(`${tempProject}/test.lykn`,
+        '(import-macros "jsr:@lykn/testing@0.5.2" (test is-equal))\n(test "r5-r3" (is-equal 1 1))\n');
 
-      const proc = new Deno.Command("deno", {
-        args: ["eval", "--config", "project.json", "--ext=js", testScript],
+      // Invoke lykn compile from the temp dir
+      const lyknBin = `${CWD}/bin/lykn`;
+      const proc = new Deno.Command(lyknBin, {
+        args: ["compile", "test.lykn"],
+        cwd: tempProject,
         stdout: "piped",
         stderr: "piped",
       }).outputSync();
 
       const stdout = new TextDecoder().decode(proc.stdout).trim();
       const stderr = new TextDecoder().decode(proc.stderr).trim();
-      if (!proc.success) {
-        throw new Error(`Protocol test failed: ${stderr}`);
-      }
 
-      const result = JSON.parse(stdout);
-      assertEquals(result.ok, true, "JSR fetch should succeed");
+      // Assert compilation succeeded
+      assertEquals(proc.success, true, `lykn compile failed: ${stderr}`);
 
-      // Verify cache directory contents
-      const pkgDir = `${testCacheDir}/${cacheKey}`;
-      const modLykn = Deno.readTextFileSync(pkgDir + "/mod.lykn");
-      assertStringIncludes(modLykn, "surface-macros", "cached mod.lykn should contain surface-macros directive");
+      // Assert macro expansion shape
+      assertStringIncludes(stdout, "Deno.test", "test macro should expand to Deno.test");
+      assertStringIncludes(stdout, "assertEquals", "is-equal macro should expand to assertEquals");
+      assertStringIncludes(stdout, "r5-r3", "test name should be in output");
 
-      const macrosJs = Deno.readTextFileSync(pkgDir + "/macros.js");
-      assertStringIncludes(macrosJs, "macroEnv", "cached macros.js should contain macroEnv references");
-
-      // Verify the cached files can be used by load_surface_macros
-      // by compiling a source that imports from the cached directory
-      const testSource = `(import-macros "${pkgDir}" (test is-equal))\n(test "r5" (is-equal 1 1))`;
-      const compiled = compileRust(testSource);
-      assertStringIncludes(compiled, "Deno.test", "surface-macros expansion should produce Deno.test");
-      assertStringIncludes(compiled, "assertEquals", "is-equal macro should expand to assertEquals");
+      // Inspect cache directory — verify per-package layout with mod.lykn + macros.js
+      const cacheRoot = `${Deno.env.get("HOME")}/.cache/lykn/macros`;
+      const expectedKey = "jsr_@lykn_testing@0.5.2";
+      const pkgDir = `${cacheRoot}/${expectedKey}`;
+      const modLyknStat = Deno.statSync(`${pkgDir}/mod.lykn`);
+      assertEquals(modLyknStat.isFile, true, "cache should contain mod.lykn");
+      const macrosJsStat = Deno.statSync(`${pkgDir}/macros.js`);
+      assertEquals(macrosJsStat.isFile, true, "cache should contain macros.js");
     } finally {
-      try { Deno.removeSync(testCacheDir, { recursive: true }); } catch { /* ignore */ }
+      try { Deno.removeSync(tempProject, { recursive: true }); } catch { /* ignore */ }
     }
   },
 });
