@@ -237,6 +237,9 @@ cargo build --release && cp ./target/release/lykn ./bin
 # Run a Lykn file directly
 lykn run examples/surface/main.lykn
 
+# ICU MessageFormat / i18n demo (plural, select, named slots)
+lykn run examples/surface/i18n-notifications.lykn
+
 # Serve the browser examples — any static file server works
 python3 -m http.server 5099
 # Then open http://localhost:5099/examples/surface/browser.html
