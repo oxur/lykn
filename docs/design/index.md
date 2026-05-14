@@ -6,10 +6,14 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
-| 0052 | DD-53 — V-08 Sibling-Fetch for Surface-macros (0.6.0 ship-gate) | Active | 2026-05-12 |
-| 0051 | Deno-Native Tool Boundaries (`deno add`, `deno task`, `deno cache`, `lykn add`) | Draft | 2026-05-05 |
-| 0050 | Position-Aware Compilation of Conditional and Block Forms | Final | 2026-05-12 |
-| 0049 | Identifier Mapping (lykn → JS) | Final | 2026-05-12 |
+| 0056 | M10 Pre-DD Inventory — `.d.ts` Generation from `:type` Annotations | Active | 2026-05-13 |
+| 0055 | `template` Macro Redesign — ICU MessageFormat & i18n Foundation | Final | 2026-05-13 |
+| 0054 | Binary Self-Containment: Embed `packages/lang/` in the Lykn Binary | Final | 2026-05-13 |
+| 0053 | V-08 Sibling-Fetch for Surface-macros | Final | 2026-05-13 |
+| 0052 | Surface-macros JS-loading in the Rust expander | Final | 2026-05-13 |
+| 0051 | Deno-Native Tool Boundaries (`deno add`, `deno task`, `deno cache`, `lykn add`) | Final | 2026-05-13 |
+| 0050 | Position-Aware Compilation of Conditional and Block Forms | Final | 2026-05-13 |
+| 0049 | Identifier Mapping (lykn → JS) | Final | 2026-05-13 |
 | 0048 | Import-Macros JSR/npm Cache Resolution (V-08 fix) | Final | 2026-05-03 |
 | 0047 | DD-37: JS Surface Compiler Architecture | Draft | 2026-04-18 |
 | 0046 | DD-36: Kernel / Surface Compiler Split | Draft | 2026-04-18 |
@@ -63,19 +67,23 @@ This index is automatically generated. Do not edit manually.
 
 ### Draft
 
-- [0051 - Deno-Native Tool Boundaries (`deno add`, `deno task`, `deno cache`, `lykn add`)](01-draft/0051-deno-native-tool-boundaries-deno-add-deno-task-deno-cache-lykn-add.md)
 - [0047 - DD-37: JS Surface Compiler Architecture](01-draft/0047-dd-37-js-surface-compiler-architecture.md)
 - [0046 - DD-36: Kernel / Surface Compiler Split](01-draft/0046-dd-36-kernel-surface-compiler-split.md)
 - [0028 - Fix `lykn compile` Rust CLI Bugs](01-draft/0028-fix-lykn-compile-rust-cli-bugs.md)
 
 ### Active
 
-- [0052 - DD-53 — V-08 Sibling-Fetch for Surface-macros (0.6.0 ship-gate)](05-active/0052-dd-53-v-08-sibling-fetch-for-surface-macros-0.6.0-ship-gate.md)
+- [0056 - M10 Pre-DD Inventory — `.d.ts` Generation from `:type` Annotations](05-active/0056-m10-pre-dd-inventory-.d.ts-generation-from-type-annotations.md)
 - [0030 - Pure Rust Kernel→JS Codegen](05-active/0030-pure-rust-kerneljs-codegen.md)
 - [0029 - DD-18.1: Method Calls in Threading Macros](05-active/0029-dd-18.1-method-calls-in-threading-macros.md)
 
 ### Final
 
+- [0055 - DD-55: `template` Macro Redesign — ICU MessageFormat & i18n Foundation](06-final/0055-dd-55-template-macro-redesign-icu-messageformat-i18n-foundation.md)
+- [0054 - DD-54 — Binary Self-Containment: Embed `packages/lang/` in the Lykn Binary](06-final/0054-dd-54-binary-self-containment-embed-packageslang-in-the-lykn-binary.md)
+- [0053 - DD-53 — V-08 Sibling-Fetch for Surface-macros (0.6.0 ship-gate)](06-final/0053-dd-53-v-08-sibling-fetch-for-surface-macros-0.6.0-ship-gate.md)
+- [0052 - DD-52 — Surface-macros JS-loading in the Rust expander](06-final/0052-dd-52-surface-macros-js-loading-in-the-rust-expander.md)
+- [0051 - Deno-Native Tool Boundaries (`deno add`, `deno task`, `deno cache`, `lykn add`)](06-final/0051-deno-native-tool-boundaries-deno-add-deno-task-deno-cache-lykn-add.md)
 - [0050 - Position-Aware Compilation of Conditional and Block Forms](06-final/0050-position-aware-compilation-of-conditional-and-block-forms.md)
 - [0049 - Identifier Mapping (lykn → JS)](06-final/0049-identifier-mapping-lykn-js.md)
 - [0048 - Import-Macros JSR/npm Cache Resolution (V-08 fix)](06-final/0048-import-macros-jsrnpm-cache-resolution-v-08-fix.md)
