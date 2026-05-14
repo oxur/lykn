@@ -222,14 +222,14 @@ pub fn emit_dts_module(
                     ));
                 }
                 SurfaceForm::Bind {
-                    name, type_ann, ..
+                    name, type_ann, value, ..
                 } => {
                     if let Some(ann) = type_ann {
                         if let Some(n) = name.as_atom() {
                             out.push_str(&emit_bind_dts(n, ann, true, registry));
                         }
                     } else if let Some(n) = name.as_atom() {
-                        out.push_str(&emit_bind_inferred_dts(n, true));
+                        out.push_str(&emit_bind_inferred_dts(n, value, true));
                     }
                 }
                 SurfaceForm::Type {
@@ -254,10 +254,21 @@ pub fn emit_dts_module(
     (out, warnings)
 }
 
-fn emit_bind_inferred_dts(name: &str, exported: bool) -> String {
+fn infer_literal_ts_type(expr: &crate::ast::sexpr::SExpr) -> &'static str {
+    use crate::ast::sexpr::SExpr;
+    match expr {
+        SExpr::String { .. } => "string",
+        SExpr::Number { .. } => "number",
+        SExpr::Bool { .. } => "boolean",
+        _ => "unknown",
+    }
+}
+
+fn emit_bind_inferred_dts(name: &str, value: &crate::ast::sexpr::SExpr, exported: bool) -> String {
     let modifier = if exported { "export " } else { "declare " };
     let js_name = to_js_identifier(name);
-    format!("{modifier}const {js_name}: string;\n")
+    let ts_type = infer_literal_ts_type(value);
+    format!("{modifier}const {js_name}: {ts_type};\n")
 }
 
 fn emit_constructor_fn_dts(
@@ -520,5 +531,35 @@ mod tests {
     fn test_emit_bind_lisp_case() {
         let result = emit_bind_dts("max-retries", &ann("number"), true, &reg());
         assert_eq!(result, "export const maxRetries: number;\n");
+    }
+
+    #[test]
+    fn test_emit_bind_inferred_string() {
+        let val = crate::ast::sexpr::SExpr::String { value: "hello".to_string(), span: s() };
+        assert_eq!(emit_bind_inferred_dts("NAME", &val, true), "export const NAME: string;\n");
+    }
+
+    #[test]
+    fn test_emit_bind_inferred_number() {
+        let val = crate::ast::sexpr::SExpr::Number { value: 42.0, span: s() };
+        assert_eq!(emit_bind_inferred_dts("COUNT", &val, true), "export const COUNT: number;\n");
+    }
+
+    #[test]
+    fn test_emit_bind_inferred_boolean() {
+        let val = crate::ast::sexpr::SExpr::Bool { value: true, span: s() };
+        assert_eq!(emit_bind_inferred_dts("ENABLED", &val, true), "export const ENABLED: boolean;\n");
+    }
+
+    #[test]
+    fn test_emit_bind_inferred_null_to_unknown() {
+        let val = crate::ast::sexpr::SExpr::Null { span: s() };
+        assert_eq!(emit_bind_inferred_dts("NOTHING", &val, true), "export const NOTHING: unknown;\n");
+    }
+
+    #[test]
+    fn test_emit_bind_inferred_computed_to_unknown() {
+        let val = crate::ast::sexpr::SExpr::List { values: vec![], span: s() };
+        assert_eq!(emit_bind_inferred_dts("COMPUTED", &val, true), "export const COMPUTED: unknown;\n");
     }
 }

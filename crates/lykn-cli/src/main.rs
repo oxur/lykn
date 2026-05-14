@@ -259,24 +259,43 @@ fn cmd_compile(
     strip_assertions: bool,
     kernel_json: bool,
 ) {
-    match compile::compile_file(file, strip_assertions, kernel_json) {
-        Ok(result) => {
-            if let Some(out_path) = output {
-                if let Err(e) = std::fs::write(out_path, &result) {
+    if output.is_some() {
+        match compile::compile_file_with_dts(file, strip_assertions, kernel_json) {
+            Ok((js, dts_opt, dts_warnings)) => {
+                for w in &dts_warnings {
+                    eprintln!("{w}");
+                }
+                let out_path = output.unwrap();
+                if let Err(e) = std::fs::write(out_path, &js) {
                     eprintln!("error writing {}: {e}", out_path.display());
                     process::exit(1);
                 }
-            } else {
+                if let Some(dts) = dts_opt {
+                    let dts_path = out_path.with_extension("d.ts");
+                    if let Err(e) = std::fs::write(&dts_path, &dts) {
+                        eprintln!("error writing {}: {e}", dts_path.display());
+                        process::exit(1);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                process::exit(1);
+            }
+        }
+    } else {
+        match compile::compile_file(file, strip_assertions, kernel_json) {
+            Ok(result) => {
                 if std::io::stdout().is_terminal() {
                     eprintln!("note: compiled output is going to stdout. Use `-o <file>` to write");
                     eprintln!("to disk, or use `lykn dist` to stage for publishing.");
                 }
                 print!("{result}");
             }
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            process::exit(1);
+            Err(e) => {
+                eprintln!("{e}");
+                process::exit(1);
+            }
         }
     }
 }

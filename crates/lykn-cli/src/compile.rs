@@ -49,6 +49,19 @@ pub fn compile_file(
     compile_source(&source, Some(path), strip_assertions, kernel_json_only)
 }
 
+/// Compile a lykn file and also produce .d.ts content.
+pub fn compile_file_with_dts(
+    path: &Path,
+    strip_assertions: bool,
+    kernel_json_only: bool,
+) -> Result<(String, Option<String>, Vec<lykn_lang::diagnostics::Diagnostic>), CompileError> {
+    let source = std::fs::read_to_string(path).map_err(|e| CompileError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    compile_source_with_dts(&source, Some(path), strip_assertions, kernel_json_only)
+}
+
 /// Compile lykn source text through the full pipeline.
 ///
 /// This is the core compilation function. `file_path` is used for macro
@@ -112,6 +125,75 @@ pub fn compile_source(
     } else {
         Ok(codegen::emit_module_js(&kernel))
     }
+}
+
+/// Compile lykn source and also produce .d.ts content.
+///
+/// Returns `(js_output, dts_content_if_any, dts_warnings)`.
+pub fn compile_source_with_dts(
+    source: &str,
+    file_path: Option<&Path>,
+    strip_assertions: bool,
+    kernel_json_only: bool,
+) -> Result<(String, Option<String>, Vec<lykn_lang::diagnostics::Diagnostic>), CompileError> {
+    let forms = reader::read(source)?;
+
+    let imports: Option<HashMap<String, String>> =
+        crate::config::read_project_config_optional().map(|c| c.imports.into_iter().collect());
+    let forms = expander::expand(forms, file_path, imports.as_ref())?;
+
+    let classified = classifier::classify(&forms).map_err(|diags| {
+        CompileError::Analysis(
+            diags
+                .iter()
+                .map(|d| format!("{d}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    })?;
+
+    let analysis_result = analysis::analyze(&classified);
+
+    if analysis_result.has_errors {
+        let msgs: Vec<String> = analysis_result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .map(|d| format!("{d}"))
+            .collect();
+        return Err(CompileError::Analysis(msgs.join("\n")));
+    }
+
+    for diag in &analysis_result.diagnostics {
+        if diag.severity == Severity::Warning {
+            eprintln!("{diag}");
+        }
+    }
+
+    let kernel = emitter::emit(
+        &classified,
+        &analysis_result.type_registry,
+        strip_assertions,
+    );
+
+    let js = if kernel_json_only {
+        emitter::json::emit_module_json(&kernel)
+    } else {
+        codegen::emit_module_js(&kernel)
+    };
+
+    let file_str = file_path
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let (dts_content, dts_warnings) =
+        emitter::dts::emit_dts_module(&classified, &analysis_result.type_registry, &file_str);
+    let dts_opt = if dts_content.is_empty() {
+        None
+    } else {
+        Some(dts_content)
+    };
+
+    Ok((js, dts_opt, dts_warnings))
 }
 
 #[cfg(test)]
