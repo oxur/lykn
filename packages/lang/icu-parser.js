@@ -11,7 +11,8 @@
 //   key is "=N" (exact), or a CLDR category (zero|one|two|few|many|other)
 // SelectBranch: { key: string, body: MFTNode[] }
 
-const PLURAL_CATEGORIES = new Set(["zero", "one", "two", "few", "many", "other"]);
+const ALL_CLDR_CATEGORIES = new Set(["zero", "one", "two", "few", "many", "other"]);
+const ENGLISH_CLDR_CATEGORIES = new Set(["one", "other"]);
 
 export function parseIcu(input) {
   const parser = new IcuParser(input);
@@ -232,6 +233,24 @@ class IcuParser {
       this.error(`plural block for {${name}} missing required 'other' branch`);
     }
 
+    // English CLDR Phase A: =1 collides with `one`
+    const exactValues = new Set();
+    const categoryKeys = new Set();
+    for (const b of branches) {
+      if (b.key.startsWith("=")) {
+        exactValues.add(parseInt(b.key.slice(1), 10));
+      } else {
+        categoryKeys.add(b.key);
+      }
+    }
+    if (exactValues.has(1) && categoryKeys.has("one")) {
+      this.error(
+        `plural block for {${name}} has overlapping branches: ` +
+        `'=1' and 'one' both match count == 1 under English plural rules. ` +
+        `Remove one — they handle the same case.`
+      );
+    }
+
     this.expect("}");
     return { type: "plural", name, branches };
   }
@@ -248,10 +267,18 @@ class IcuParser {
     }
     const cat = this.parseIdentifier();
     if (!cat) this.error("expected plural category or '=N'");
-    if (!PLURAL_CATEGORIES.has(cat) && !cat.startsWith("=")) {
+    if (!ALL_CLDR_CATEGORIES.has(cat)) {
       this.error(
-        `unknown plural category '${cat}' for plural block; ` +
-        `valid categories: ${[...PLURAL_CATEGORIES].join(" ")}`
+        `unknown plural category '${cat}'; ` +
+        `valid CLDR categories: ${[...ALL_CLDR_CATEGORIES].join(" ")}`
+      );
+    }
+    if (ALL_CLDR_CATEGORIES.has(cat) && !ENGLISH_CLDR_CATEGORIES.has(cat)) {
+      this.error(
+        `plural category '${cat}' is not valid under English plural rules. ` +
+        `English CLDR uses only 'one' and 'other'. ` +
+        `Hint: use '=N {...}' for specific numeric values, ` +
+        `e.g. '=0 {none}' for n=0 or '=2 {pair}' for n=2.`
       );
     }
     return cat;
@@ -293,7 +320,7 @@ class IcuParser {
 
 export class IcuParseError extends Error {
   constructor(msg, input, pos) {
-    super(`template: ${msg}\n  in "${input}"\n  at position ${pos}`);
+    super(`${msg}\n  in "${input}"\n  at position ${pos}`);
     this.name = "IcuParseError";
     this.input = input;
     this.position = pos;

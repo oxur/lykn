@@ -311,6 +311,34 @@ Deno.test("collectSlotNames: nested plural+select", () => {
   assertEquals(names, new Set(["role", "n", "unit"]));
 });
 
+// --- Review regression tests (DD-54 review 2026-05-13) ---
+
+Deno.test("icu: parser rejects 'zero' in English Phase A", () => {
+  assertThrows(
+    () => parseIcu("{n, plural, zero {none} other {many}}"),
+    IcuParseError,
+    "not valid under English plural rules",
+  );
+});
+
+Deno.test("icu: parser rejects 'two/few/many' in English Phase A", () => {
+  for (const cat of ["two", "few", "many"]) {
+    assertThrows(
+      () => parseIcu(`{n, plural, ${cat} {x} other {y}}`),
+      IcuParseError,
+      "not valid under English plural rules",
+    );
+  }
+});
+
+Deno.test("icu: parser rejects =1 + one overlap", () => {
+  assertThrows(
+    () => parseIcu("{n, plural, =1 {x} one {y} other {z}}"),
+    IcuParseError,
+    "overlapping branches",
+  );
+});
+
 // --- Composed example from DD-54 ---
 
 Deno.test("icu: marketing screenshot example parses", () => {

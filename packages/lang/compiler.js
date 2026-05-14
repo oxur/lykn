@@ -101,7 +101,13 @@ function templateConcat(args) {
   };
 }
 
+let _icuGensymCounter = 0;
+function freshIcuVar() {
+  return { type: 'Identifier', name: `_v${_icuGensymCounter++}` };
+}
+
 function templateIcu(args) {
+  _icuGensymCounter = 0;
   const icuString = args[0].value;
   let mft;
   try {
@@ -159,8 +165,45 @@ function templateIcu(args) {
     }
   }
 
-  // Emit the MFT as an ESTree expression
-  return emitMft(mft, kwargs);
+  // Hoist non-trivial kwarg expressions referenced more than once.
+  const slotMultiplicity = countSlotReferences(mft);
+  const hoistedDecls = [];
+  const finalKwargs = new Map();
+  for (const [key, expr] of kwargs) {
+    const refs = slotMultiplicity.get(key) ?? 0;
+    const isTrivial = expr.type === 'Identifier' || expr.type === 'Literal';
+    if (refs > 1 && !isTrivial) {
+      const local = { type: 'Identifier', name: `_${toJsIdentifier(key)}` };
+      hoistedDecls.push({
+        type: 'VariableDeclaration',
+        kind: 'const',
+        declarations: [{ type: 'VariableDeclarator', id: local, init: expr }],
+      });
+      finalKwargs.set(key, local);
+    } else {
+      finalKwargs.set(key, expr);
+    }
+  }
+
+  const body = emitMft(mft, finalKwargs);
+
+  if (hoistedDecls.length === 0) {
+    return body;
+  }
+
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'ArrowFunctionExpression',
+      params: [],
+      body: {
+        type: 'BlockStatement',
+        body: [...hoistedDecls, { type: 'ReturnStatement', argument: body }],
+      },
+      expression: false,
+    },
+    arguments: [],
+  };
 }
 
 function emitMft(nodes, kwargs) {
@@ -201,7 +244,7 @@ function emitMft(nodes, kwargs) {
 function emitPluralIife(node, kwargs) {
   // (() => { const _v = <kwarg>; if (_v === N) return ...; if (_v === 1) return ...; return ...; })()
   const valueExpr = kwargs.get(node.name);
-  const vId = { type: 'Identifier', name: '_v' };
+  const vId = freshIcuVar();
 
   const body = [];
   // const _v = <value>;
@@ -262,7 +305,7 @@ function emitPluralIife(node, kwargs) {
 
 function emitSelectIife(node, kwargs) {
   const valueExpr = kwargs.get(node.name);
-  const vId = { type: 'Identifier', name: '_v' };
+  const vId = freshIcuVar();
 
   const body = [];
   body.push({
@@ -280,14 +323,14 @@ function emitSelectIife(node, kwargs) {
     body.push({
       type: 'IfStatement',
       test: { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: branch.key } },
-      consequent: { type: 'ReturnStatement', argument: emitMft(branch.body, kwargs) },
+      consequent: { type: 'ReturnStatement', argument: emitMft(branch.body, makeSlotOverride(kwargs, node.name, vId)) },
     });
   }
 
   const otherBranch = node.branches.find((b) => b.key === 'other');
   body.push({
     type: 'ReturnStatement',
-    argument: emitMft(otherBranch.body, kwargs),
+    argument: emitMft(otherBranch.body, makeSlotOverride(kwargs, node.name, vId)),
   });
 
   return {
@@ -303,15 +346,25 @@ function emitSelectIife(node, kwargs) {
 }
 
 function pluralCategoryTest(category, vId) {
-  // English CLDR: one → count === 1
+  // English CLDR Phase A: only 'one' has a test; all others fall through to 'other'
   if (category === 'one') {
     return { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: 1 } };
   }
-  if (category === 'zero') {
-    return { type: 'BinaryExpression', operator: '===', left: vId, right: { type: 'Literal', value: 0 } };
-  }
-  // two, few, many — not used in English CLDR; emit no test (fall through to other)
   return null;
+}
+
+function countSlotReferences(nodes, counts = new Map()) {
+  for (const node of nodes) {
+    if (node.type === 'slot') {
+      counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+    } else if (node.type === 'plural' || node.type === 'select') {
+      counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+      for (const branch of node.branches) {
+        countSlotReferences(branch.body, counts);
+      }
+    }
+  }
+  return counts;
 }
 
 function makeSlotOverride(kwargs, name, replacement) {

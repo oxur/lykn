@@ -259,3 +259,97 @@ Deno.test("template-icu: tag with concat mode still works", () => {
   assertEquals(result.includes('html`'), true);
   assertEquals(result.includes('${content}'), true);
 });
+
+// --- Review regression tests (DD-54 review 2026-05-13) ---
+
+Deno.test("template-icu: nested plural same selector — no TDZ at runtime", async () => {
+  const src = '(template "{n, plural, one {{n, plural, one {a} other {b}}} other {c}}" :n n)';
+  const js = compile(read(src));
+  const fn = new Function('n', `"use strict"; return ${js.trim().replace(/;$/, '')}`);
+  assertEquals(fn(1), "a");
+  assertEquals(fn(2), "c");
+});
+
+Deno.test("template-icu: select inside plural same selector — no TDZ", async () => {
+  const src = '(template "{x, plural, one {one} other {{x, select, a {A} other {O}}}}" :x x)';
+  const js = compile(read(src));
+  const fn = new Function('x', `"use strict"; return ${js.trim().replace(/;$/, '')}`);
+  assertEquals(fn(1), "one");
+  assertEquals(fn("a"), "A");
+  assertEquals(fn("b"), "O");
+});
+
+Deno.test("template-icu: multi-use kwarg evaluates expression once", async () => {
+  const js = lykn('(template "{x}-{x}" :x (next-id))');
+  const matches = js.match(/nextId\(\)/g) ?? [];
+  assertEquals(matches.length, 1, `expected nextId() to appear once after hoisting, got ${matches.length}: ${js}`);
+});
+
+Deno.test("template-icu: simple identifier kwarg is NOT hoisted (no IIFE)", () => {
+  const js = lykn('(template "{x}-{x}" :x x)');
+  assertEquals(js, '`${x}-${x}`;');
+});
+
+Deno.test("template-icu: select branches use captured selector value", () => {
+  const js = lykn('(template "{role, select, owner {Owner: {role}} other {Guest: {role}}}" :role (lookup-role))');
+  const matches = js.match(/lookupRole\(\)/g) ?? [];
+  assertEquals(matches.length, 1, `expected lookupRole() called once; got ${matches.length}: ${js}`);
+});
+
+Deno.test("template-icu: =1 + one overlap → error", () => {
+  assertThrows(
+    () => lykn('(template "{n, plural, =1 {a} one {b} other {c}}" :n n)'),
+    Error,
+    "overlapping branches",
+  );
+});
+
+Deno.test("template-icu: one then =1 (reverse order) → error", () => {
+  assertThrows(
+    () => lykn('(template "{n, plural, one {b} =1 {a} other {c}}" :n n)'),
+    Error,
+    "overlapping branches",
+  );
+});
+
+Deno.test("template-icu: 'zero' category → error in English Phase A", () => {
+  assertThrows(
+    () => lykn('(template "{n, plural, zero {no} one {1} other {many}}" :n n)'),
+    Error,
+    "not valid under English plural rules",
+  );
+});
+
+Deno.test("template-icu: 'two' category → error in English Phase A", () => {
+  assertThrows(
+    () => lykn('(template "{n, plural, two {pair} other {many}}" :n n)'),
+    Error,
+    "not valid under English plural rules",
+  );
+});
+
+Deno.test("template-icu: 'few' category → error in English Phase A", () => {
+  assertThrows(
+    () => lykn('(template "{n, plural, few {a few} other {many}}" :n n)'),
+    Error,
+    "not valid under English plural rules",
+  );
+});
+
+Deno.test("template-icu: 'many' category → error in English Phase A", () => {
+  assertThrows(
+    () => lykn('(template "{n, plural, many {lots} other {some}}" :n n)'),
+    Error,
+    "not valid under English plural rules",
+  );
+});
+
+Deno.test("template-icu: error message has single 'template:' prefix", () => {
+  try {
+    lykn('(template "{a, plural, weird {x} other {y}}" :a 1)');
+    throw new Error("should have thrown");
+  } catch (e) {
+    const matches = e.message.match(/template:/g) ?? [];
+    assertEquals(matches.length, 0, `IcuParseError should not have 'template:' prefix; message: ${e.message}`);
+  }
+});
