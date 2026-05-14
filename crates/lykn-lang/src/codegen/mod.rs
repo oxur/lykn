@@ -26,6 +26,7 @@
 
 pub mod emit;
 pub mod format;
+pub mod icu;
 pub mod names;
 pub mod precedence;
 

@@ -7,6 +7,7 @@
 use crate::ast::sexpr::SExpr;
 
 use super::format::JsWriter;
+use super::icu::try_emit_template_icu;
 use super::names::{emit_atom, to_js_identifier};
 use super::precedence::precedence;
 
@@ -1074,6 +1075,10 @@ fn emit_spread(w: &mut JsWriter, args: &[SExpr]) {
 // ── Templates & regex ──────────────────────────────────────────────────
 
 fn emit_template(w: &mut JsWriter, args: &[SExpr]) {
+    // DD-54: try ICU mode first; fall through to concat if not applicable
+    if try_emit_template_icu(w, args) {
+        return;
+    }
     w.write("`");
     for arg in args {
         match arg {
