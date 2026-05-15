@@ -54,7 +54,14 @@ pub fn compile_file_with_dts(
     path: &Path,
     strip_assertions: bool,
     kernel_json_only: bool,
-) -> Result<(String, Option<String>, Vec<lykn_lang::diagnostics::Diagnostic>), CompileError> {
+) -> Result<
+    (
+        String,
+        Option<String>,
+        Vec<lykn_lang::diagnostics::Diagnostic>,
+    ),
+    CompileError,
+> {
     let source = std::fs::read_to_string(path).map_err(|e| CompileError::Io {
         path: path.to_path_buf(),
         source: e,
@@ -135,7 +142,14 @@ pub fn compile_source_with_dts(
     file_path: Option<&Path>,
     strip_assertions: bool,
     kernel_json_only: bool,
-) -> Result<(String, Option<String>, Vec<lykn_lang::diagnostics::Diagnostic>), CompileError> {
+) -> Result<
+    (
+        String,
+        Option<String>,
+        Vec<lykn_lang::diagnostics::Diagnostic>,
+    ),
+    CompileError,
+> {
     let forms = reader::read(source)?;
 
     let imports: Option<HashMap<String, String>> =
@@ -179,7 +193,7 @@ pub fn compile_source_with_dts(
     let js = if kernel_json_only {
         emitter::json::emit_module_json(&kernel)
     } else {
-        codegen::emit_module_js(&kernel)
+        codegen::emit_module_js(&kernel)?
     };
 
     let file_str = file_path

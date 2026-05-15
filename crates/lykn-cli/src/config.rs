@@ -482,6 +482,7 @@ mod tests {
         let meta = LyknMetadata {
             kind: PackageKind::Runtime,
             macro_entry: None,
+            emit_dts: None,
         };
         let json = serde_json::to_string(&meta).unwrap();
         assert!(!json.contains("macroEntry"));
@@ -492,6 +493,7 @@ mod tests {
         let meta = LyknMetadata {
             kind: PackageKind::MacroModule,
             macro_entry: Some("mod.lykn".to_string()),
+            emit_dts: None,
         };
         let json = serde_json::to_string(&meta).unwrap();
         assert!(json.contains("macroEntry"));

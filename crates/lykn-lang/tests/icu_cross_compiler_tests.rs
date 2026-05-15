@@ -67,9 +67,7 @@ fn eval_js(js: &str, bindings: &[(&str, &str)]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     let stripped = js.trim().trim_end_matches(';');
-    let script = format!(
-        r#"console.log((function({params}) {{ return {stripped}; }})({args}));"#,
-    );
+    let script = format!(r#"console.log((function({params}) {{ return {stripped}; }})({args}));"#,);
     let output = Command::new("deno")
         .arg("eval")
         .arg("--ext=js")
@@ -416,7 +414,10 @@ fn cross_error_unused_kwarg() {
 
 #[test]
 fn cross_error_duplicate_kwarg() {
-    assert_cross_error(r#"(template "{a}" :a 1 :a 2)"#, "duplicate keyword argument");
+    assert_cross_error(
+        r#"(template "{a}" :a 1 :a 2)"#,
+        "duplicate keyword argument",
+    );
 }
 
 #[test]

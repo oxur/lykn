@@ -190,10 +190,7 @@ impl<'a> IcuParser<'a> {
                 self.advance();
                 Ok(())
             }
-            Some(b) => Err(self.error(&format!(
-                "expected '{}', got '{}'",
-                ch as char, b as char
-            ))),
+            Some(b) => Err(self.error(&format!("expected '{}', got '{}'", ch as char, b as char))),
             None => Err(self.error(&format!("expected '{}', got end of input", ch as char))),
         }
     }
@@ -350,7 +347,10 @@ impl<'a> IcuParser<'a> {
             let raw_body = self.parse_branch_body(name)?;
             self.expect(b'}')?;
 
-            branches.push(PluralBranch { key, body: raw_body });
+            branches.push(PluralBranch {
+                key,
+                body: raw_body,
+            });
             self.skip_whitespace();
         }
 
@@ -507,10 +507,7 @@ pub enum IcuDispatch {
 /// Try ICU mode for a template form. Returns `Ok(IcuDispatch::Handled)` if
 /// ICU mode emitted, `Ok(IcuDispatch::NotIcu)` if the caller should use
 /// concat mode, or `Err(LyknError)` for malformed ICU forms.
-pub fn try_emit_template_icu(
-    w: &mut JsWriter,
-    args: &[SExpr],
-) -> Result<IcuDispatch, LyknError> {
+pub fn try_emit_template_icu(w: &mut JsWriter, args: &[SExpr]) -> Result<IcuDispatch, LyknError> {
     if args.is_empty() {
         return Ok(IcuDispatch::NotIcu);
     }
@@ -674,7 +671,9 @@ fn parse_and_validate_kwargs(
                     sorted_map_keys(&kwargs).join(", "),
                 ),
                 args[0].span(),
-                Some(format!("remove :{key}, or add a {{{key}}} slot to the template")),
+                Some(format!(
+                    "remove :{key}, or add a {{{key}}} slot to the template"
+                )),
             ));
         }
     }
@@ -882,7 +881,10 @@ fn emit_select_iife(
         if branch.key == "other" {
             continue;
         }
-        w.write(&format!(" if ({} === \"{}\") return ", var_name, branch.key));
+        w.write(&format!(
+            " if ({} === \"{}\") return ",
+            var_name, branch.key
+        ));
         let inner_kwargs = make_slot_override(kwargs, name, var_expr.clone());
         emit_mft(w, &branch.body, &inner_kwargs, counter)?;
         w.write(";");
@@ -931,11 +933,14 @@ mod tests {
     #[test]
     fn test_parse_slot_surrounded() {
         let result = parse_icu("Hello, {name}!").unwrap();
-        assert_eq!(result, vec![
-            MftNode::Literal("Hello, ".into()),
-            MftNode::Slot("name".into()),
-            MftNode::Literal("!".into()),
-        ]);
+        assert_eq!(
+            result,
+            vec![
+                MftNode::Literal("Hello, ".into()),
+                MftNode::Slot("name".into()),
+                MftNode::Literal("!".into()),
+            ]
+        );
     }
 
     #[test]
@@ -1017,9 +1022,10 @@ mod tests {
 
     #[test]
     fn test_collect_slot_names_nested() {
-        let nodes =
-            parse_icu("{role, select, owner {{n, plural, one {1 {unit}} other {# {unit}s}}} other {N/A}}")
-                .unwrap();
+        let nodes = parse_icu(
+            "{role, select, owner {{n, plural, one {1 {unit}} other {# {unit}s}}} other {N/A}}",
+        )
+        .unwrap();
         let names = collect_slot_names(&nodes);
         assert!(names.contains("role"));
         assert!(names.contains("n"));
@@ -1056,7 +1062,11 @@ mod tests {
         for cat in &["two", "few", "many"] {
             let input = format!("{{n, plural, {} {{x}} other {{y}}}}", cat);
             let err = parse_icu(&input).unwrap_err();
-            assert!(err.message.contains("not valid under English plural rules"), "{}", cat);
+            assert!(
+                err.message.contains("not valid under English plural rules"),
+                "{}",
+                cat
+            );
         }
     }
 
@@ -1101,7 +1111,10 @@ mod tests {
     // ── Emitter tests ─────────────────────────────────────────────
 
     fn mk(name: &str) -> SExpr {
-        SExpr::Atom { value: name.into(), span: Span::default() }
+        SExpr::Atom {
+            value: name.into(),
+            span: Span::default(),
+        }
     }
 
     fn emit_mft_str(mft: &[MftNode], kwargs: &HashMap<String, SExpr>) -> String {
@@ -1172,13 +1185,19 @@ mod tests {
     fn emit_dollar_in_literal_is_escaped() {
         let mft = parse_icu("$5").unwrap();
         let output = emit_mft_str(&mft, &HashMap::new());
-        assert!(output.contains("\\$"), "expected escaped \\$, got: {output}");
+        assert!(
+            output.contains("\\$"),
+            "expected escaped \\$, got: {output}"
+        );
     }
 
     #[test]
     fn emit_dollar_before_brace_is_escaped() {
         let mft = parse_icu("$'{'name'}'").unwrap();
         let output = emit_mft_str(&mft, &HashMap::new());
-        assert!(output.contains("\\$"), "expected escaped \\$, got: {output}");
+        assert!(
+            output.contains("\\$"),
+            "expected escaped \\$, got: {output}"
+        );
     }
 }

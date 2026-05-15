@@ -2567,7 +2567,7 @@ fn emit_class_member_form(
 const STATEMENT_FORM_HEADS: &[&str] = &[
     "if", "while", "for", "for-of", "for-in", "do-while", "switch", "throw", "return", "break",
     "continue", "label", "debugger", "block", "try", "catch", "finally", "var", "const", "let",
-    "func", "fn", "class", "type", "export", "import",
+    "func", "class", "type", "export", "import",
 ];
 
 fn is_statement_form(expr: &SExpr) -> bool {
@@ -2736,7 +2736,9 @@ fn kernel_child_profile(head: &str) -> KernelChildProfile {
         // for: init=Value, test=Value, update=Value, body=Statement
         "for" => KernelChildProfile::Positional(&[V, V, V, S]),
         // for-of/for-in/for-await-of: binding=Statement, iterable=Value, body...=Statement
-        "for-of" | "for-in" | "for-await-of" => KernelChildProfile::PositionalThenStatement(&[S, V]),
+        "for-of" | "for-in" | "for-await-of" => {
+            KernelChildProfile::PositionalThenStatement(&[S, V])
+        }
         // try: body=Statement, catch-clause=Statement, finally=Statement
         "try" => KernelChildProfile::AllParent,
         // switch: discriminant=Value, then variable-length case sub-lists=Statement

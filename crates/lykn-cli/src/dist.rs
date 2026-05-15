@@ -171,7 +171,11 @@ fn stage_tooling(
 /// Compile any `.lykn` source files in the package directory that don't
 /// have a corresponding `.js` file in `build_dir` (or whose `.js` is older
 /// than the source). Compiled output goes to `build_dir`, not next to source.
-fn compile_lykn_sources(pkg_path: &Path, build_dir: &Path, emit_dts: bool) -> Result<(), DistError> {
+fn compile_lykn_sources(
+    pkg_path: &Path,
+    build_dir: &Path,
+    emit_dts: bool,
+) -> Result<(), DistError> {
     let entries = fs::read_dir(pkg_path).map_err(|e| DistError::Io {
         path: pkg_path.to_path_buf(),
         source: e,
@@ -237,24 +241,23 @@ fn compile_lykn_sources(pkg_path: &Path, build_dir: &Path, emit_dts: bool) -> Re
                 }
                 let kernel =
                     lykn_lang::emitter::emit(&classified, &analysis_result.type_registry, false);
-                let js = lykn_lang::codegen::emit_module_js(&kernel)
-                    .map_err(|e| DistError::Io {
+                let js =
+                    lykn_lang::codegen::emit_module_js(&kernel).map_err(|e| DistError::Io {
                         path: js_path.clone(),
                         source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
                     })?;
                 fs::write(&js_path, js).map_err(|e| DistError::Io {
-                    path: js_path,
+                    path: js_path.clone(),
                     source: e,
                 })?;
 
                 if emit_dts {
                     let file_str = path.display().to_string();
-                    let (dts_content, dts_warnings) =
-                        lykn_lang::emitter::dts::emit_dts_module(
-                            &classified,
-                            &analysis_result.type_registry,
-                            &file_str,
-                        );
+                    let (dts_content, dts_warnings) = lykn_lang::emitter::dts::emit_dts_module(
+                        &classified,
+                        &analysis_result.type_registry,
+                        &file_str,
+                    );
                     for w in &dts_warnings {
                         eprintln!("{w}");
                     }

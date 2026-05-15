@@ -5,7 +5,7 @@
 //! is embedded into the binary at compile time and materialized to a known
 //! XDG-cache location at runtime.
 
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 use std::path::PathBuf;
 
 static PACKAGES_LANG: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../packages/lang");
@@ -30,10 +30,11 @@ pub fn materialize_packages() -> std::io::Result<PathBuf> {
     let root = embedded_cache_dir();
     let sentinel = root.join("_embedded").join(".lykn-version");
 
-    if let Ok(existing) = std::fs::read_to_string(&sentinel) {
-        if existing.trim() == EMBEDDED_VERSION && root.join("packages").join("lang").exists() {
-            return Ok(root);
-        }
+    if let Ok(existing) = std::fs::read_to_string(&sentinel)
+        && existing.trim() == EMBEDDED_VERSION
+        && root.join("packages").join("lang").exists()
+    {
+        return Ok(root);
     }
 
     std::fs::create_dir_all(&root)?;

@@ -259,13 +259,12 @@ fn cmd_compile(
     strip_assertions: bool,
     kernel_json: bool,
 ) {
-    if output.is_some() {
+    if let Some(out_path) = output {
         match compile::compile_file_with_dts(file, strip_assertions, kernel_json) {
             Ok((js, dts_opt, dts_warnings)) => {
                 for w in &dts_warnings {
                     eprintln!("{w}");
                 }
-                let out_path = output.unwrap();
                 if let Err(e) = std::fs::write(out_path, &js) {
                     eprintln!("error writing {}: {e}", out_path.display());
                     process::exit(1);

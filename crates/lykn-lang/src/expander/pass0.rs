@@ -405,17 +405,15 @@ fn process_single_import(
             SurfaceMacrosDirective::Valid { js_rel_path, span } => {
                 let registered_names =
                     deno.load_surface_macros(module_dir, &js_rel_path)
-                        .map_err(|e| {
-                            LyknError::Read {
-                                message: format!(
-                                    "{}\n  at {}:{}:{}",
-                                    e,
-                                    resolved.display(),
-                                    span.start.line,
-                                    span.start.column,
-                                ),
-                                location: span.start,
-                            }
+                        .map_err(|e| LyknError::Read {
+                            message: format!(
+                                "{}\n  at {}:{}:{}",
+                                e,
+                                resolved.display(),
+                                span.start.line,
+                                span.start.column,
+                            ),
+                            location: span.start,
                         })?;
                 for name in registered_names {
                     module_env.insert(
@@ -445,8 +443,7 @@ fn process_single_import(
         }
     }
 
-    let _remaining =
-        super::pass1::compile_local_macros(non_surface_forms, deno, &mut module_env)?;
+    let _remaining = super::pass1::compile_local_macros(non_surface_forms, deno, &mut module_env)?;
 
     // Cache the compiled macros for this module.
     cache.insert(canonical, module_env.clone());

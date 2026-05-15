@@ -57,8 +57,8 @@ fn find_project_json() -> Option<PathBuf> {
 }
 
 fn build_deno_command(script: &str, project_json: Option<&std::path::Path>) -> Command {
-    let materialized = super::embedded::materialize_packages()
-        .expect("materializing embedded packages failed");
+    let materialized =
+        super::embedded::materialize_packages().expect("materializing embedded packages failed");
     let mut cmd = Command::new("deno");
     cmd.current_dir(&materialized);
     cmd.arg("eval");
@@ -198,11 +198,7 @@ impl DenoSubprocess {
     }
 
     /// Evaluate a surface macro (loaded via `load_surface_macros`) by name.
-    pub fn eval_surface_macro(
-        &mut self,
-        name: &str,
-        args: &[SExpr],
-    ) -> Result<SExpr, LyknError> {
+    pub fn eval_surface_macro(&mut self, name: &str, args: &[SExpr]) -> Result<SExpr, LyknError> {
         let args_json: Vec<serde_json::Value> =
             args.iter().map(env::sexpr_to_protocol_json).collect();
         let req = serde_json::json!({
@@ -273,9 +269,7 @@ impl DenoSubprocess {
             .as_str()
             .map(PathBuf::from)
             .ok_or_else(|| LyknError::Read {
-                message: format!(
-                    "resolve-macro-source: missing 'moduleDir' field for {specifier}"
-                ),
+                message: format!("resolve-macro-source: missing 'moduleDir' field for {specifier}"),
                 location: SourceLoc::default(),
             })?;
         Ok(ResolvedMacroModule { source, module_dir })

@@ -7,13 +7,12 @@
 use crate::analysis::type_registry::TypeRegistry;
 use crate::ast::surface::{
     ArrayParamElement, Constructor, DestructuredField, FuncClause, ParamShape, SurfaceForm,
-    TypeAnnotation, TypedParam,
+    TypeAnnotation,
 };
 use crate::codegen::names::to_js_identifier;
 use crate::diagnostics::{Diagnostic, Severity};
-use crate::reader::source_loc::Span;
 
-pub fn lykn_type_to_ts(ann: &TypeAnnotation, registry: &TypeRegistry) -> String {
+pub fn lykn_type_to_ts(ann: &TypeAnnotation, _registry: &TypeRegistry) -> String {
     match ann.name.as_str() {
         "number" => "number".to_string(),
         "string" => "string".to_string(),
@@ -26,13 +25,7 @@ pub fn lykn_type_to_ts(ann: &TypeAnnotation, registry: &TypeRegistry) -> String 
         "any" => "unknown".to_string(),
         "void" => "void".to_string(),
         "promise" => "Promise<unknown>".to_string(),
-        name => {
-            if registry.lookup_type(name).is_some() {
-                name.to_string()
-            } else {
-                name.to_string()
-            }
-        }
+        name => name.to_string(),
     }
 }
 
@@ -111,7 +104,7 @@ pub fn emit_func_dts(
     clauses: &[FuncClause],
     exported: bool,
     registry: &TypeRegistry,
-    file_path: &str,
+    _file_path: &str,
     warnings: &mut Vec<Diagnostic>,
 ) -> String {
     let modifier = if exported { "export " } else { "declare " };
@@ -214,15 +207,21 @@ pub fn emit_dts_module(
     for form in forms {
         match form {
             SurfaceForm::Export { inner, .. } => match inner.as_ref() {
-                SurfaceForm::Func {
-                    name, clauses, ..
-                } => {
+                SurfaceForm::Func { name, clauses, .. } => {
                     out.push_str(&emit_func_dts(
-                        name, clauses, true, registry, file_path, &mut warnings,
+                        name,
+                        clauses,
+                        true,
+                        registry,
+                        file_path,
+                        &mut warnings,
                     ));
                 }
                 SurfaceForm::Bind {
-                    name, type_ann, value, ..
+                    name,
+                    type_ann,
+                    value,
+                    ..
                 } => {
                     if let Some(ann) = type_ann {
                         if let Some(n) = name.as_atom() {
@@ -312,7 +311,11 @@ fn format_sexpr_brief(expr: &crate::ast::sexpr::SExpr) -> String {
             format!("({})", inner.join(" "))
         }
         SExpr::Cons { car, cdr, .. } => {
-            format!("({} . {})", format_sexpr_brief(car), format_sexpr_brief(cdr))
+            format!(
+                "({} . {})",
+                format_sexpr_brief(car),
+                format_sexpr_brief(cdr)
+            )
         }
     }
 }
@@ -321,6 +324,7 @@ fn format_sexpr_brief(expr: &crate::ast::sexpr::SExpr) -> String {
 mod tests {
     use super::*;
     use crate::analysis::type_registry::TypeRegistry;
+    use crate::ast::surface::TypedParam;
     use crate::reader::source_loc::Span;
 
     fn s() -> Span {
@@ -535,31 +539,58 @@ mod tests {
 
     #[test]
     fn test_emit_bind_inferred_string() {
-        let val = crate::ast::sexpr::SExpr::String { value: "hello".to_string(), span: s() };
-        assert_eq!(emit_bind_inferred_dts("NAME", &val, true), "export const NAME: string;\n");
+        let val = crate::ast::sexpr::SExpr::String {
+            value: "hello".to_string(),
+            span: s(),
+        };
+        assert_eq!(
+            emit_bind_inferred_dts("NAME", &val, true),
+            "export const NAME: string;\n"
+        );
     }
 
     #[test]
     fn test_emit_bind_inferred_number() {
-        let val = crate::ast::sexpr::SExpr::Number { value: 42.0, span: s() };
-        assert_eq!(emit_bind_inferred_dts("COUNT", &val, true), "export const COUNT: number;\n");
+        let val = crate::ast::sexpr::SExpr::Number {
+            value: 42.0,
+            span: s(),
+        };
+        assert_eq!(
+            emit_bind_inferred_dts("COUNT", &val, true),
+            "export const COUNT: number;\n"
+        );
     }
 
     #[test]
     fn test_emit_bind_inferred_boolean() {
-        let val = crate::ast::sexpr::SExpr::Bool { value: true, span: s() };
-        assert_eq!(emit_bind_inferred_dts("ENABLED", &val, true), "export const ENABLED: boolean;\n");
+        let val = crate::ast::sexpr::SExpr::Bool {
+            value: true,
+            span: s(),
+        };
+        assert_eq!(
+            emit_bind_inferred_dts("ENABLED", &val, true),
+            "export const ENABLED: boolean;\n"
+        );
     }
 
     #[test]
     fn test_emit_bind_inferred_null_to_unknown() {
         let val = crate::ast::sexpr::SExpr::Null { span: s() };
-        assert_eq!(emit_bind_inferred_dts("NOTHING", &val, true), "export const NOTHING: unknown;\n");
+        assert_eq!(
+            emit_bind_inferred_dts("NOTHING", &val, true),
+            "export const NOTHING: unknown;\n"
+        );
     }
 
     #[test]
     fn test_emit_bind_inferred_computed_to_unknown() {
-        let val = crate::ast::sexpr::SExpr::List { values: vec![], span: s() };
-        assert_eq!(emit_bind_inferred_dts("COMPUTED", &val, true), "export const COMPUTED: unknown;\n");
+        let val = crate::ast::sexpr::SExpr::List {
+            values: vec![],
+            span: s(),
+        };
+        assert_eq!(
+            emit_bind_inferred_dts("COMPUTED", &val, true),
+            "export const COMPUTED: unknown;\n"
+        );
     }
 }

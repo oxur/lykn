@@ -8,7 +8,7 @@ use crate::ast::sexpr::SExpr;
 use crate::error::LyknError;
 
 use super::format::JsWriter;
-use super::icu::{try_emit_template_icu, IcuDispatch};
+use super::icu::{IcuDispatch, try_emit_template_icu};
 use super::names::{emit_atom, to_js_identifier};
 use super::precedence::precedence;
 
@@ -1014,7 +1014,12 @@ fn emit_compound_assign(w: &mut JsWriter, op: &str, args: &[SExpr]) -> Result<()
 
 // ── Binary / n-ary ─────────────────────────────────────────────────────
 
-fn emit_binary(w: &mut JsWriter, op: &str, args: &[SExpr], parent_prec: u8) -> Result<(), LyknError> {
+fn emit_binary(
+    w: &mut JsWriter,
+    op: &str,
+    args: &[SExpr],
+    parent_prec: u8,
+) -> Result<(), LyknError> {
     let my_prec = precedence(op);
     let needs_parens = my_prec < parent_prec;
 
