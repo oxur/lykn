@@ -6,7 +6,8 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
-| 0056 | M10 Pre-DD Inventory — `.d.ts` Generation from `:type` Annotations | Active | 2026-05-13 |
+| 0057 | Cohesive Fix Across Compiler, Docs, Guides, Book, Skill | Active | 2026-05-14 |
+| 0056 | `.d.ts` Generation from `:type` Annotations | Active | 2026-05-13 |
 | 0055 | `template` Macro Redesign — ICU MessageFormat & i18n Foundation | Final | 2026-05-13 |
 | 0054 | Binary Self-Containment: Embed `packages/lang/` in the Lykn Binary | Final | 2026-05-13 |
 | 0053 | V-08 Sibling-Fetch for Surface-macros | Final | 2026-05-13 |
@@ -73,6 +74,7 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
+- [0057 - Cohesive Fix Across Compiler, Docs, Guides, Book, Skill](05-active/0057-cohesive-fix-across-compiler-docs-guides-book-skill.md)
 - [0056 - M10 Pre-DD Inventory — `.d.ts` Generation from `:type` Annotations](05-active/0056-m10-pre-dd-inventory-.d.ts-generation-from-type-annotations.md)
 - [0030 - Pure Rust Kernel→JS Codegen](05-active/0030-pure-rust-kerneljs-codegen.md)
 - [0029 - DD-18.1: Method Calls in Threading Macros](05-active/0029-dd-18.1-method-calls-in-threading-macros.md)

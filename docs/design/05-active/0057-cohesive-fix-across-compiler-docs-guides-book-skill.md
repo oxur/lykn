@@ -1,18 +1,18 @@
 ---
 number: 57
-title: "Phase 3 — Synthesis Plan: Cohesive Fix Across Compiler, Docs, Guides, Book, Skill"
+title: "Cohesive Fix Across Compiler, Docs, Guides, Book, Skill"
 author: "the audit"
 component: All
 tags: [change-me]
 created: 2026-05-14
 updated: 2026-05-14
-state: Final
+state: Active
 supersedes: null
 superseded-by: null
 version: 1.0
 ---
 
-# Phase 3 — Synthesis Plan: Cohesive Fix Across Compiler, Docs, Guides, Book, Skill
+# Synthesis Plan: Cohesive Fix Across Compiler, Docs, Guides, Book, Skill
 
 **Date:** 2026-05-14
 **Status:** Draft for Duncan's review; first complete pass.
