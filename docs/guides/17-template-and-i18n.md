@@ -141,7 +141,7 @@ shipped.
 
 ### Missing keyword argument
 
-```lykn
+```lykn,compile-fail
 (template "Hello, {name}!")
 ;; ERROR: template: no binding for slot {name}
 ;;   hint: add :name <value> to the template call
@@ -149,7 +149,7 @@ shipped.
 
 ### Unused keyword argument
 
-```lykn
+```lykn,compile-fail
 (template "Hello, {name}!" :name n :extra v)
 ;; ERROR: template: unused keyword argument :extra
 ;;   hint: remove :extra, or add a {extra} slot to the template
@@ -157,21 +157,21 @@ shipped.
 
 ### Duplicate keyword argument
 
-```lykn
+```lykn,compile-fail
 (template "{a}" :a x :a y)
 ;; ERROR: template: duplicate keyword argument :a
 ```
 
 ### Missing `other` branch
 
-```lykn
+```lykn,compile-fail
 (template "{n, plural, one {x}}" :n count)
 ;; ERROR: template: plural block for {n} missing required 'other' branch
 ```
 
 ### Overlapping branches
 
-```lykn
+```lykn,compile-fail
 (template "{n, plural, =1 {a} one {b} other {c}}" :n count)
 ;; ERROR: template: plural block for {n} has overlapping branches
 ;;   '=1' and 'one' both match count == 1 under English plural rules.
@@ -179,7 +179,7 @@ shipped.
 
 ### Non-English plural categories
 
-```lykn
+```lykn,compile-fail
 (template "{n, plural, zero {none} other {many}}" :n count)
 ;; ERROR: template: plural category 'zero' is not valid under English plural rules.
 ;;   hint: use '=0 {none}' for the n=0 case
