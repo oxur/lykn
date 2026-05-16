@@ -103,9 +103,11 @@ function buildTypeCheck(paramNode, typeKw, funcName, label) {
 	const dispFunc = jsFuncName !== funcName && hasPunct(funcName) ? `${jsFuncName} (${funcName})` : jsFuncName;
 	const jsParamName = toJsIdentifier(paramName);
 	const dispParam = jsParamName !== paramName && hasPunct(paramName) ? `${jsParamName} (${paramName})` : jsParamName;
-	const msgText = label
-		? `${dispFunc}: ${label} '${dispParam}' expected ${typeName}, got `
-		: `${dispFunc} '${dispParam}': expected ${typeName}, got `;
+	const msgText = label === "return"
+		? `${dispFunc}: return value expected ${typeName}, got `
+		: label
+			? `${dispFunc}: ${label} '${dispParam}' expected ${typeName}, got `
+			: `${dispFunc} '${dispParam}': expected ${typeName}, got `;
 	const msg = {
 		type: "string",
 		value: msgText,

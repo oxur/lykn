@@ -93,10 +93,15 @@ export function compileBoth(source) {
       .join("\n")
       .trim();
 
-    // Normalize whitespace for comparison: collapse runs of whitespace,
-    // strip trailing semicolons differences, etc.
+    // Normalize for comparison: collapse whitespace, strip trailing
+    // semicolons, and canonicalize gensym counters (JS and Rust gensym
+    // sequences may diverge because the JS compiler's counter is
+    // process-global across tests).
     const normalize = (s) =>
-      s.replace(/\s+/g, " ").replace(/;\s*}/g, "; }").trim();
+      s.replace(/\s+/g, " ")
+        .replace(/;\s*}/g, "; }")
+        .replace(/__gensym\d+/g, "__gensymN")
+        .trim();
 
     if (normalize(jsOut) !== normalize(rustOut)) {
       throw new Error(

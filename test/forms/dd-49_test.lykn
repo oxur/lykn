@@ -1,5 +1,5 @@
 (import-macros "testing" (test test-compiles is-equal ok includes))
-(import "testing/helpers.js" (compile))
+(import "testing/helpers.js" (compile compile-both))
 
 ;; ── V-02 / V-03 regressions ─────────────────────────────────────
 
@@ -119,3 +119,16 @@
   (bind r (compile "(func valid? :args (:any x) :returns :boolean :body true)"))
   (includes r "isValid (valid?): return")
   (includes r "expected boolean"))
+
+;; ── Finding #4: return-type-check uses "return value" not gensym ──
+
+(test
+  "DD-49 Finding #4: return-type-check says 'return value', not gensym name"
+  (bind r (compile "(func f :args (:any x) :returns :boolean :body x)"))
+  (includes r "return value expected boolean")
+  (ok (not (r:includes "result__gensym"))))
+
+(test
+  "DD-49 Finding #4: return-type-check cross-compiler convergence"
+  (bind r (compile-both "(func f :args (:any x) :returns :boolean :body x)"))
+  (includes r "return value expected boolean"))
