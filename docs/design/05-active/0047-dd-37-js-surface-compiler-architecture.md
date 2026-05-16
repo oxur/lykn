@@ -14,14 +14,52 @@ version: 1.0
 
 # DD-37: JS Surface Compiler Architecture
 
-**Status**: Draft
-**Date**: 2026-04-18
-**Session**: Post-0.5.0 QA analysis — kernel/surface boundary
+**Status**: Active (amendments 2026-05-15)
+**Date**: 2026-04-18 (original); 2026-05-15 (three amendments per the
+DD-37 readiness review at `workbench/2026-05-15-dd-37-readiness-review.md`)
+**Session**: Post-0.5.0 QA analysis — kernel/surface boundary; revisited
+during the compiler-architecture-coherence thread
 **Depends on**: DD-13 (macro expansion pipeline), DD-15 (language
-architecture), DD-20 (Rust surface compiler architecture), DD-36
-(kernel/surface compiler split — this is its JS-side Phase 0
-prerequisite)
-**Targets**: 0.6.0 (same release as DD-36)
+architecture), DD-20 (Rust surface compiler architecture).
+**Complements**: DD-58 (kernel/surface separation — `kernel:<form>`
+escape syntax, closed surface namespace). DD-36's analysis is preserved
+as historical record; DD-58 supersedes its direction with the
+2026-05-15 syntax-and-namespace-model decisions.
+**Targets**: 0.6.0 (same release as DD-58)
+
+## Acceptance state and Phase 0 criterion (2026-05-15)
+
+DD-37's promotion to `05-active/` reflects that the architectural
+direction is settled. Promotion to implementation, however, is gated
+by **Phase 0** — three concrete prerequisites that translate the DD's
+"investigate bundle-size cost before committing to the full
+architecture" caveat into operational discipline:
+
+1. **Baseline measurement landed.** A reproducible script (`make
+   bundle-size` or equivalent) that builds the JS toolchain into a
+   minified bundle and reports the gzipped size at `HEAD`. The
+   measurement is recorded in this DD's refinement log.
+2. **CI guard wired up.** A CI step (or `make` target invoked in CI)
+   that fails on PR-introduced bundle growth above per-PR thresholds.
+   Proposed thresholds, translating the project's "+1KB acceptable /
+   +20KB investigate / +100KB unacceptable" guidance into per-PR
+   units: **+2KB gzipped is a warning, +5KB gzipped is a hard fail
+   without explicit sign-off.**
+3. **One full-pipeline migration prototyped.** Pick the smallest
+   surface form (suggested candidates: `not`, `reset!`), migrate it
+   end-to-end through the new architecture, measure the delta, and
+   extrapolate to ~20 forms. Result recorded in this DD as Phase 0
+   evidence.
+
+Until all three are in place, the per-form migration work (Phase 3 of
+the migration sequence below) does not begin. The CI guard exists
+specifically so subsequent per-form PRs are self-measuring against the
+budget — if any of them crosses the +5KB hard-fail threshold, the
+escape valve is "Alt C" (classifier-only) per the rejected-alternatives
+section below.
+
+This is "we know what we're building; we don't yet know what it
+costs." Phase 0 is how we find out.
 
 ## Summary
 
@@ -61,15 +99,24 @@ of what exists.
 
 ## Context: what the JS compiler is today
 
-The lang package is 5,551 lines of JS across five files:
+The lang package is 6,627 lines of JS across six files (snapshot
+2026-05-15; original DD-37 reasoned from 5,551 lines / 5 files on
+2026-04-18):
 
 | File | Lines | Role |
 |------|------:|------|
 | `mod.js` | 19 | Public entry: `lykn(source) = compile(expand(read(source)))` |
 | `reader.js` | 320 | S-expression reader — six node types, includes cons cells |
-| `expander.js` | 1,350 | Macro system: DD-13 three-pass pipeline, surface macro registration, quasiquote, `new Function()` evaluation |
-| `surface.js` | 2,262 | All surface forms as macros, registered into the expander's environment |
-| `compiler.js` | 1,600 | Kernel compiler: `macros` dispatch table → ESTree via `compileExpr` |
+| `expander.js` | 1,494 | Macro system: DD-13 three-pass pipeline, surface macro registration, quasiquote, `new Function()` evaluation |
+| `surface.js` | 2,315 | All surface forms as macros, registered into the expander's environment |
+| `compiler.js` | 2,117 | Kernel compiler: `macros` dispatch table → ESTree via `compileExpr` |
+| `icu-parser.js` | 362 | ICU MessageFormat parser (added by DD-55 i18n work, post-original-draft) |
+
+Growth since 2026-04-18: total +1,076 lines (+19%); `compiler.js`
+alone is +517 lines (+32%) reflecting M7's DD-49 identifier-mapping
+algorithm and DD-50 position-aware compilation work, with DD-50.6 +
+DD-50.7 also landing. The growth strengthens DD-37's case: there is
+more debt to strip than the original estimate, not less.
 
 The public entry `lykn(source)` composes `read → expand → compile`.
 Compiled output flows through `astring` (npm dependency mapped
@@ -112,15 +159,16 @@ form name" from "actual surface form input." The Rust compiler
 sidesteps this via the classifier + typed AST; the JS compiler
 sidesteps it with a boolean tag on a tree node.
 
-A second symptom: `compiler.js` has grown to 1,600 lines with a
-single `macros` dispatch table conflating kernel primitives (`const`,
+A second symptom: `compiler.js` has grown to 2,117 lines (1,600 at
+original DD-37 drafting; +32% since) with a single `macros` dispatch
+table conflating kernel primitives (`const`,
 `=>`, `function`), syntactic sugar (`.`, `get`), and kernel
 operators. There is no structural boundary between "things that
 compile directly to one ESTree node" and "things that are small
 transforms of other forms." Adding a new kernel primitive requires
 editing the same table as adding a new operator shortcut.
 
-A third symptom: `surface.js` is 2,262 lines of macros that share
+A third symptom: `surface.js` is 2,315 lines of macros that share
 state with user macros (the same `macroEnv`) and have no type
 discipline. Every surface form independently re-validates its
 argument shapes. Any mistake in a surface macro can silently produce
@@ -219,6 +267,60 @@ decisions below: (a) no analysis module, (b) macro expander is
 smaller and does not shell out to a subprocess, (c) kernel compiler
 is a distinct module because the JS side emits ESTree + astring
 rather than stopping at kernel SExpr.
+
+### Relationship to DD-58 (kernel/surface separation) — 2026-05-15
+
+DD-37 and DD-58 are **complementary, not sequential dependencies** —
+they describe different facets of the same restructuring:
+
+- **DD-58** defines the syntactic split: `.lyk` for kernel, `.lykn`
+  for surface, `(kernel:<form> ...)` as the escape hatch from surface
+  into kernel, and a **closed surface namespace** (every form a user
+  writes in surface code is unambiguously a surface form; there is
+  no auto-promotion of kernel forms into surface).
+- **DD-37** defines the JS-side architecture that *makes* the
+  separation enforceable: a typed surface AST, static surface
+  transforms (not macros), a kernel emitter module, and a kernel
+  compiler that refuses surface-only forms.
+
+DD-37's classifier is the implementation surface for DD-58's split:
+it dispatches every surface-position atom into a typed node (rich
+surface form, thin-wrapper surface form, or `kernel:`-escape). DD-37
+ships first (the architecture has to exist before the rules can be
+enforced); DD-58's strict enforcement turns on once the classifier
+is in place.
+
+The "auto-promoted set" framing in the original DD-36 (which would
+have allowed bare kernel forms like `+`, `array`, `if` to be
+recognised in surface code without prefix) is **superseded** by
+DD-58's closed-namespace model:
+
+- **Surface-only forms** have no kernel namesake: `bind`, `func`,
+  `match`, `obj`, `cell`, `if-let`, threading macros, `set!`,
+  `swap!`, `reset!`, etc.
+- **Thin-wrapper surface forms** share a name with a kernel form
+  and emit a literal passthrough: `+`, `-`, `*`, `array`, `object`,
+  `template`, `get`, etc.
+- **Rich namesake-sharing surface forms** share a name with a kernel
+  form but emit elaborated behaviour: surface `if` (position-aware
+  ternary/IIFE per DD-50), surface `try` (value-producing per D-2
+  from the 2026-05-14 handoff), etc.
+- **Kernel-only forms not exposed in surface** are reachable only
+  via `(kernel:foo ...)`: e.g. `quote`, `quasiquote`, raw
+  JS-statement constructs not idiomatic in surface.
+
+DD-37's classifier dispatches uniformly across the first three
+categories; the fourth is recognised via the `kernel:` prefix. There
+is no fall-through path. The schema decision flows directly into
+DD-56 (form catalog): surface entries (with i18n hooks) enumerate
+the user-facing namespace; kernel entries (without i18n hooks)
+enumerate the JS-language vocabulary; thin-wrapper surface entries
+carry an `expands_to` field pointing at the same-named kernel form.
+
+This relationship supersedes DD-36's original sequencing claim that
+"DD-37 is Phase 0 of DD-36." DD-58 replaces DD-36's direction;
+DD-36's analysis is preserved as a historical record of the design
+exploration that led here.
 
 ### Surface AST as tagged object literals
 
@@ -437,7 +539,7 @@ have to change to add it; the decision is scoping, not capability.
 
 **Decision**: `compiler.js` becomes the **kernel compiler** only. It
 accepts kernel SExpr, produces ESTree, and does nothing else. The
-current 1,600-line file shrinks as surface forms move out.
+current 2,117-line file shrinks as surface forms move out.
 
 Public shape:
 
@@ -547,60 +649,78 @@ tables are the JS analogue of `crates/lykn-lang/src/classifier/
 dispatch.rs`:
 
 ```js
-// classifier.js
+// classifier.js — schema reflects DD-58's closed-namespace model
+// (2026-05-15 amendment; supersedes the DD-36 dispatch sketch)
+
+// Every surface form a user writes in surface code goes here.
+// Three implementation flavors (rich/thin-wrapper/namesake-sharing);
+// classifier treats them uniformly, emitter dispatches on flavor.
 const SURFACE_FORMS = new Set([
+  // --- Rich, surface-unique ---
   'bind', 'func', 'genfunc', 'genfn', 'fn', 'lambda',
   'match', 'type',
   'obj', 'cell', 'express',
-  'swap!', 'reset!', 'set!', 'set-symbol!',  // set-symbol! retires per DD-36
+  'swap!', 'reset!', 'set!',
   '->', '->>', 'some->', 'some->>',
   'if-let', 'when-let',
   'and', 'or', 'not',
   '=', '!=',
   'macro', 'import-macros',
   'conj', 'assoc', 'dissoc',
-]);
-
-const KERNEL_FORMS = new Set([
-  'var', 'const', 'let',
-  'function', 'function*', '=>', 'lambda',
-  'if', 'block', 'while', 'for', 'for-of', 'for-in', 'for-await-of',
-  'do-while', 'try', 'throw', 'return', 'break', 'continue',
-  'switch', 'label', 'seq', 'debugger',
+  'do',
+  // --- Rich, namesake-sharing (elaborated semantics on top of a
+  // kernel namesake) ---
+  'if',   // position-aware ternary/IIFE per DD-50
+  'try',  // value-producing per D-2 (2026-05-14 handoff)
+  // --- Thin wrappers (literal passthrough to same-named kernel) ---
+  '+', '-', '*', '/', '%', '**',
+  '===', '!==', '==', '<', '>', '<=', '>=',
+  '&&', '||', '??',
+  '&', '|', '^', '<<', '>>', '>>>', '~',
+  '++', '--', '+=', '-=', '*=', '/=', '%=', '**=',
+  '<<=', '>>=', '>>>=', '&=', '|=', '^=', '&&=', '||=', '??=',
   'array', 'object', 'get', 'spread', 'rest', 'default', 'alias',
   'template', 'tag', 'regex',
   'new', 'delete', 'typeof', 'instanceof', 'in', 'void',
+]);
+
+// Kernel forms not exposed in surface, reachable only via
+// (kernel:foo ...). Surface code never has these in head position.
+const KERNEL_ONLY_FORMS = new Set([
+  'var', 'const', 'let',
+  'function', 'function*', '=>',
+  'block', 'while', 'for', 'for-of', 'for-in', 'for-await-of',
+  'do-while', 'throw', 'return', 'break', 'continue',
+  'switch', 'label', 'seq', 'debugger',
   'yield', 'yield*', 'await', 'async', 'dynamic-import',
   'class', 'class-expr',
   'import', 'export',
   'quote', 'quasiquote',
-  // arithmetic, comparison, bitwise, logical, update operators listed
-  // explicitly (matching the Rust side):
-  '+', '-', '*', '/', '%', '**',
-  '===', '!==', '==', '!=', '<', '>', '<=', '>=',
-  '&&', '||', '??',
-  '&', '|', '^', /* etc. — full list mirrors dispatch.rs */
-  '=', '?',  // note: '=' overlaps with surface (DD-36 cleanup)
+  '?',
 ]);
 ```
 
-Per DD-36, these sets will be disjoint after the kernel/surface
-split lands. Today's overlaps (`=`, `!=`, `macro`, `import-macros`)
-are explicitly called out in DD-36 for cleanup.
+The two sets are **disjoint by construction** (DD-58's closed-namespace
+discipline). Where a kernel form is exposed in surface, surface has a
+form of the same name in `SURFACE_FORMS`; the kernel-side recognition
+is purely for the `(kernel:<form> ...)` escape path. No
+fall-through; no auto-promotion.
 
 Dispatch logic:
 
-- Head atom in `SURFACE_FORMS` → call the variant-specific parser
-  (e.g., `parseFunc(args, span)` returns a `Func` node).
-- Head atom in `KERNEL_FORMS` → wrap as `KernelPassthrough`.
-- Head atom is `kernel:<form>` (DD-36 escape hatch) → strip prefix,
-  validate `<form>` against `KERNEL_FORMS`, wrap as
-  `KernelPassthrough`. (Alt B in DD-36 would replace this with the
-  reader-level `#k(...)` tag; under that variant, the reader
-  produces a `KernelTag` node directly and the classifier just
-  accepts it.)
-- Unknown head atom → `FunctionCall` (literal function call; may
-  resolve to a user macro at expansion time).
+- Head atom in `SURFACE_FORMS` → call the flavor-appropriate parser
+  (rich-surface-unique forms get full structural validation;
+  namesake-sharing forms get the elaborated parser; thin-wrapper
+  forms get a minimal parser that records a typed
+  `ThinWrapper(name, args)` node for the emitter to pass through).
+- Head atom is `kernel:<form>` (DD-58 escape hatch) → strip prefix,
+  validate `<form>` against the union `KERNEL_ONLY_FORMS ∪
+  {names of thin-wrapper/namesake-sharing forms}`, wrap as
+  `KernelPassthrough`. The split between "always escaped" and
+  "available bare in surface" lives in DD-56 (form catalog).
+- Unknown head atom in surface position → `FunctionCall` (literal
+  function call; may resolve to a user macro at expansion time, or
+  fail at expansion if no such macro exists).
 
 Surface form parsers perform structural validation: a malformed
 `func` produces a diagnostic with source location, not a silent
@@ -687,9 +807,9 @@ paths drift apart. DD-20 specifies the format; DD-37 ratifies it on
 the JS side and adds the constructors that make it easy to produce
 correctly.
 
-### Kernel-only compilation path (DD-36 integration)
+### Kernel-only compilation path (DD-58 integration)
 
-**Decision**: `.lyk` files (DD-36) compile through a direct path
+**Decision**: `.lyk` files (DD-58) compile through a direct path
 that skips classification and expansion entirely:
 
 ```
@@ -736,8 +856,8 @@ if a `.lyk` file contains `(bind x 42)`, compilation fails with a
 diagnostic pointing at the offending form and suggesting either
 renaming to `.lykn` or converting to `(const x 42)`.
 
-**Rationale**: This is the contract DD-36 depends on. Without a
-clean kernel-only path, DD-36's extension gating has nowhere to
+**Rationale**: This is the contract DD-58 depends on. Without a
+clean kernel-only path, DD-58's extension gating has nowhere to
 land. The bypass is also a performance win — kernel files skip the
 entire surface pipeline.
 
@@ -1000,7 +1120,8 @@ specific final shape.
 | `.lyk` file with only kernel forms | Kernel path; no classifier involvement |
 | `.lyk` file containing a surface form | Diagnostic: "surface form '<name>' not permitted in kernel file" |
 | `.lykn` file with `(kernel:if c t e)` (or `#k(if c t e)`) | Classifier recognises prefix/tag, emits `KernelPassthrough` |
-| `.lykn` file with bare `(if c t e)` | Depends on DD-36 decision for auto-promoted set: if `if` is in the set, classifier rewrites to `KernelPassthrough`; otherwise diagnostic |
+| `.lykn` file with bare `(if c t e)` | Surface `if` is in `SURFACE_FORMS` (rich, namesake-sharing); classifier produces a `surface:if` typed node; emitter handles position-aware ternary/IIFE per DD-50. No auto-promotion. |
+| `.lykn` file with bare `(+ a b)` | Surface `+` is in `SURFACE_FORMS` (thin wrapper); classifier produces a `ThinWrapper("+", [a, b])` typed node; emitter passes through to kernel `+`. |
 | User macro expanding to surface form | Classified after expansion; produces typed AST |
 | User macro expanding to kernel form | Classified after expansion; produces `KernelPassthrough` |
 | User macro expanding to another macro call | Re-expanded until fixed point; classifier is idempotent |
@@ -1018,9 +1139,17 @@ specific final shape.
   surface form semantics that the classifier and emitter implement.
   DD-20 — sibling DD on the Rust side; this DD is its JS counterpart.
   DD-34 — cross-package `import-macros` resolution is the expander's
-  concern. DD-36 — the kernel/surface split that this DD enables.
-- **Affects**: DD-36 directly — this DD is the Phase 0 prerequisite
-  called out there. Future DDs: browser-path features, JS linter,
+  concern.
+- **Complements**: DD-58 — the kernel/surface separation. DD-37
+  provides the JS-side classifier and typed-AST infrastructure;
+  DD-58 defines the syntactic split (`.lyk`/`.lykn`,
+  `(kernel:<form> ...)` escape, closed surface namespace) that the
+  classifier enforces. *(DD-36 was the original framing of this
+  work; DD-58 supersedes its direction and preserves its analysis
+  as historical record.)*
+- **Affects**: DD-56 (form catalog) consumes DD-37's classifier
+  output as the schema for surface-side entries. Future DDs:
+  browser-path features, JS linter (cdc/dep-ergonomics M11/M12),
   JS formatter.
 
 ## Open questions
@@ -1080,16 +1209,23 @@ All file references verified against the current workspace.
   compile(expand(read(source)))`.
 - `packages/lang/reader.js` — 320 lines; six node types
   (`atom`/`string`/`number`/`list`/`cons`, plus keyword handling).
-- `packages/lang/expander.js` — 1,350 lines. Public entry `expand`
+- `packages/lang/expander.js` — 1,494 lines (1,350 at original DD-37
+  drafting). Public entry `expand`
   at line 1,341. `_kernel` marker at line 731. `MAX_EXPAND_ITERATIONS
   = 1000` at line 40. Three-pass pipeline: `pass0ImportMacros` at
   line 1,122, `pass1RegisterMacros` at line 856, `pass2ExpandAll`
   at line 944.
-- `packages/lang/surface.js` — 2,262 lines. `kernelArray()` helper
+- `packages/lang/surface.js` — 2,315 lines (2,262 at original DD-37
+  drafting). `kernelArray()` helper
   at line 24 (used at lines 1026, 1133, 1148, 1167, 1181).
   `registerSurfaceMacros()` export at line 893.
-- `packages/lang/compiler.js` — 1,600 lines. `macros` dispatch table
-  at line 148. `compileExpr` at line 1,139. `compile` at line 1,593.
+- `packages/lang/compiler.js` — 2,117 lines (1,600 at original DD-37
+  drafting; +32% reflecting M7's DD-49/DD-50 work). `macros`
+  dispatch table at line 148. `compileExpr` and `compile` exports
+  preserved; per-line offsets within the file have shifted as the
+  module grew.
+- `packages/lang/icu-parser.js` — 362 lines (new since original DD-37
+  drafting; ICU MessageFormat parser for DD-55's template/i18n work).
 - `packages/browser/mod.js` — re-exports compile/run/load from
   lang via `compiler.js` wrapper.
 - `docs/design/06-final/0025-dd-20-rust-surface-compiler-architecture.md`
@@ -1103,7 +1239,7 @@ All file references verified against the current workspace.
   of `expander.js` and `compiler.js`, the `macros` dispatch table
   header in `compiler.js`, and `surface.js` top-level exports and
   `registerSurfaceMacros` signature. I did **not** read the full
-  2,262 lines of `surface.js`; my claims about its shape are
+  2,315 lines of `surface.js`; my claims about its shape are
   extrapolated from its exports and the grep results for
   `kernelArray`/`_kernel`.
 - The proposed file layout (`surface/bind.js`, `surface/func.js`,
@@ -1113,3 +1249,73 @@ All file references verified against the current workspace.
 - The migration sequence is a design proposal, not a worked plan.
   Step-by-step PR sizing requires reading each surface form's
   current implementation to estimate extraction cost.
+
+## Refinement log
+
+### 2026-05-15 — three amendments + closed-namespace correction
+
+Applied as part of the compiler-architecture-coherence thread (see
+`workbench/2026-05-10-compiler-coherence-thread-opening.md` and the
+readiness review at `workbench/2026-05-15-dd-37-readiness-review.md`).
+
+**Amendment 1 — Phase 0 acceptance criterion.** Added a new section
+"Acceptance state and Phase 0 criterion" immediately after the header.
+Defines the three prerequisites (baseline measurement, CI guard
+wired with +2KB warning / +5KB hard-fail thresholds, one-form pilot)
+that gate the per-form migration work. Promotion to `05-active/`
+reflects settled direction; promotion to implementation is gated by
+Phase 0.
+
+**Amendment 2 — Relationship to DD-58.** Added a new subsection
+"Relationship to DD-58 (kernel/surface separation)" after the
+"Six-module decomposition" decision. Frames DD-37 and DD-58 as
+complementary (not sequentially dependent), names the four
+form-disposition categories under the closed-namespace model, and
+explains the surface-side three-flavor classification (rich /
+thin-wrapper / namesake-sharing).
+
+**Amendment 3 — Header rewording.** "Depends on" line stripped of
+DD-36 reference; new "Complements" line names DD-58 with the
+2026-05-15 syntax-and-namespace-model decision. "Targets" line
+updated. Header "Status" line updated to "Active (amendments
+2026-05-15)" matching frontmatter `state: Active`.
+
+**Substantive correction — closed-namespace model.** The original
+DD-36-derived sketch in the "Classifier module" decision used
+overlapping `SURFACE_FORMS` and `KERNEL_FORMS` sets with `=`, `!=`,
+`macro`, `import-macros` in both (planned to be cleaned up by
+DD-36). Replaced with disjoint `SURFACE_FORMS` (organised by
+implementation flavor: rich-unique / rich-namesake-sharing /
+thin-wrapper) and `KERNEL_ONLY_FORMS` (forms reachable only via
+`(kernel:foo ...)`). The classifier dispatch logic now reflects
+the closed-namespace rule: no fall-through, no auto-promotion. The
+edge-cases table row for "`.lykn` file with bare `(if c t e)`" was
+also updated, plus a new row added for thin-wrapper case.
+
+**Stale line counts updated.** The Context section's source-tree
+table now reflects 2026-05-15 snapshot (6,627 lines across 6 files;
+original was 5,551 across 5). `compiler.js` is +32% reflecting M7's
+DD-49 + DD-50 work. `icu-parser.js` is new (DD-55 i18n work).
+
+**Citations updated.** All file/line references updated to reflect
+current source. Note: per-line offsets within `compiler.js` have
+shifted with the file's growth; spot-references retained where
+they still resolve, replaced with module-level descriptions where
+they don't.
+
+**Dependencies section updated.** "Depends on" stripped of DD-36;
+"Complements" line added for DD-58; "Affects" line names DD-56
+(form catalog) as downstream consumer.
+
+What's *not* changed by these amendments:
+
+- The architectural direction (six-module decomposition, typed
+  surface AST, static surface transforms not macros, no-static-
+  analysis trade-off) is unchanged. All amendments were either
+  refinements or corrections of stale references.
+- The bundle-size estimate band (+8–20KB gzipped) is unchanged;
+  Phase 0's pilot measurement will replace it with an empirical
+  number.
+- The Alt C ("classifier-only") fallback is unchanged; it remains
+  the escape valve if Phase 0's pilot pushes the architecture past
+  the +20KB band.
