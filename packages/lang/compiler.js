@@ -72,7 +72,6 @@ function toClassKey(name) {
  *  Concat-mode and ICU-mode agree on this. */
 function makeTemplateElement(raw, tail) {
   const escaped = raw
-    .replaceAll('\\', '\\\\')
     .replaceAll('`', '\\`')
     .replaceAll('$', '\\$');
   return {
