@@ -1,0 +1,13 @@
+(import-macros "testing" (test includes ok))
+(import "testing/helpers.js" (compile-both))
+
+;; D-2: template content escape convergence.
+;; Both compilers must produce the same template literal content for
+;; backslash sequences. Rust was fixed in C-6b; JS still double-escapes.
+;; Source "\\\\n" → reader produces \n (backslash + n, 2 chars) → template
+;; should emit \n inside backticks, not \\n.
+
+(test
+  "D-2: template backslash content converges across compilers"
+  (bind r (compile-both "(template \"\\\\n\")"))
+  (includes r "`"))
