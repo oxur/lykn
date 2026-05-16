@@ -1789,6 +1789,15 @@ mod tests {
     }
 
     #[test]
+    fn test_arrow_single_param_no_parens() {
+        // Single identifier param: x => x (no parens, matching JS/astring)
+        let params = list(vec![atom("x")]);
+        let body = atom("x");
+        let expr = list(vec![atom("=>"), params, body]);
+        assert_eq!(emit_to_string(&expr), "x => x");
+    }
+
+    #[test]
     fn test_function_declaration() {
         // (function add (a b) (return (+ a b)))
         let ret = list(vec![
