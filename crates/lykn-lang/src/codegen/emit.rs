@@ -426,8 +426,15 @@ fn emit_arrow(w: &mut JsWriter, args: &[SExpr], is_async: bool) -> Result<(), Ly
         return Ok(());
     }
 
-    // Params.
-    emit_params(w, &args[0])?;
+    // Params — single simple identifier omits parens (matching JS/astring).
+    if let SExpr::List { values, .. } = &args[0]
+        && values.len() == 1
+        && values[0].as_atom().is_some()
+    {
+        emit_expr(w, &values[0], 0)?;
+    } else {
+        emit_params(w, &args[0])?;
+    }
     w.write(" => ");
 
     let body = &args[1..];
