@@ -6,6 +6,8 @@ This index is automatically generated. Do not edit manually.
 
 | Number | Title | State | Updated |
 |--------|-------|-------|----------|
+| 0059 | DD-37 Readiness Review — Preparatory Notes | Active | 2026-05-15 |
+| 0058 | Compiler Architecture Coherence — Thread Opening | Active | 2026-05-15 |
 | 0057 | Cohesive Fix Across Compiler, Docs, Guides, Book, Skill | Active | 2026-05-14 |
 | 0056 | `.d.ts` Generation from `:type` Annotations | Active | 2026-05-13 |
 | 0055 | `template` Macro Redesign — ICU MessageFormat & i18n Foundation | Final | 2026-05-13 |
@@ -68,6 +70,8 @@ This index is automatically generated. Do not edit manually.
 
 ### Active
 
+- [0059 - DD-37 Readiness Review — Preparatory Notes](05-active/0059-dd-37-readiness-review-preparatory-notes.md)
+- [0058 - Compiler Architecture Coherence — Thread Opening](05-active/0058-compiler-architecture-coherence-thread-opening.md)
 - [0057 - Cohesive Fix Across Compiler, Docs, Guides, Book, Skill](05-active/0057-cohesive-fix-across-compiler-docs-guides-book-skill.md)
 - [0056 - M10 Pre-DD Inventory — `.d.ts` Generation from `:type` Annotations](05-active/0056-m10-pre-dd-inventory-.d.ts-generation-from-type-annotations.md)
 - [0047 - DD-37: JS Surface Compiler Architecture](05-active/0047-dd-37-js-surface-compiler-architecture.md)
