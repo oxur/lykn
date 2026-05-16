@@ -1,16 +1,16 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "default: in arrow params"
-  (bind result (compile "(const f (=> ((default x 0)) x))"))
+  (bind result (compile-both "(const f (=> ((default x 0)) x))"))
   (includes result "x = 0"))
 
 (test "default: in function params"
-  (bind result (compile "(function greet ((default name \"world\")) (return name))"))
+  (bind result (compile-both "(function greet ((default name \"world\")) (return name))"))
   (includes result "name = \"world\""))
 
 (test "default: multiple defaults"
-  (bind result (compile "(=> ((default x 0) (default y 0)) (+ x y))"))
+  (bind result (compile-both "(=> ((default x 0) (default y 0)) (+ x y))"))
   (includes result "x = 0")
   (includes result "y = 0"))
