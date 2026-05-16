@@ -1,33 +1,33 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "params: object destructuring in arrow"
-  (bind result (compile "(const f (=> ((object name age)) (console:log name)))"))
+  (bind result (compile-both "(const f (=> ((object name age)) (console:log name)))"))
   (includes result "{name, age}")
   (includes result "=>"))
 
 (test "params: object destructuring in function"
-  (bind result (compile "(function greet ((object name)) (return name))"))
+  (bind result (compile-both "(function greet ((object name)) (return name))"))
   (includes result "{name}")
   (includes result "function greet"))
 
 (test "params: mixed regular and destructured"
-  (bind result (compile "(function handle (req (object data)) (return data))"))
+  (bind result (compile-both "(function handle (req (object data)) (return data))"))
   (includes result "req")
   (includes result "data"))
 
 (test "params: default + destructuring"
-  (bind result (compile "(=> ((default x 0) (object name)) (+ x name))"))
+  (bind result (compile-both "(=> ((default x 0) (object name)) (+ x name))"))
   (includes result "x = 0")
   (includes result "name"))
 
 (test "params: rest parameter"
-  (bind result (compile "(function f (a b (rest args)) (return args))"))
+  (bind result (compile-both "(function f (a b (rest args)) (return args))"))
   (includes result "...args"))
 
 (test "params: array destructuring in for-of"
-  (bind result (compile "(for-of (array key value) entries (console:log key))"))
+  (bind result (compile-both "(for-of (array key value) entries (console:log key))"))
   (includes result "[key, value]"))
 
 (test-compiles "backward compat: const with plain binding"
@@ -37,9 +37,11 @@
   "(const my-var 42)" "const myVar = 42;")
 
 (test "backward compat: function with plain params"
-  (bind result (compile "(function add (a b) (return (+ a b)))"))
+  (bind result (compile-both "(function add (a b) (return (+ a b)))"))
   (includes result "function add(a, b)"))
 
+;; Single-param arrow: Rust emits (x) =>, JS emits x =>. Both valid JS;
+;; cosmetic divergence tracked for future codegen alignment.
 (test "backward compat: arrow with plain params"
   (bind result (compile "(const f (=> (x) (* x 2)))"))
   (includes result "x"))

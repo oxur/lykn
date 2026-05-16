@@ -1,17 +1,20 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "async: wraps function declaration"
-  (bind result (compile "(async (function fetch-data () (return 1)))"))
+  (bind result (compile-both "(async (function fetch-data () (return 1)))"))
   (includes result "async function fetchData"))
 
+;; Surface compiler divergence: JS expands (lambda ...) to function
+;; expression, Rust expands to arrow (=>). Different this-binding
+;; semantics. Tracked for DD-58 resolution.
 (test "async: wraps lambda"
   (bind result (compile "(const f (async (lambda () (return 1))))"))
   (includes result "async function"))
 
 (test "async: wraps arrow"
-  (bind result (compile "(const f (async (=> () 1)))"))
+  (bind result (compile-both "(const f (async (=> () 1)))"))
   (includes result "async"))
 
 (test "async: rejects non-function"

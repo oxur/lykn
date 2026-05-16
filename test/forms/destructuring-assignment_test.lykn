@@ -1,6 +1,12 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
+
+;; DD-58 deferral: kernel = is context-dependent (equality at top-level,
+;; assignment inside blocks). The Rust compiler emits === unconditionally
+;; for surface =. These tests use compile (JS-only) until DD-58 resolves
+;; the = context-dependence properly.
+;; per workbench/m16-formatting-divergences-diagnosis-cdc-review-2026-05-16.md
 
 (test "assignment: object destructuring"
   (bind result (compile "(= (object a b) obj)"))
@@ -8,7 +14,7 @@
   (includes result "= obj"))
 
 (test "assignment: array destructuring"
-  (bind result (compile "(= (array x y) pair)"))
+  (bind result (compile-both "(= (array x y) pair)"))
   (includes result "[x, y]"))
 
 (test-compiles "assignment: regular (non-destructuring) still works"

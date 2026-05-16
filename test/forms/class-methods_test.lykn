@@ -1,30 +1,36 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
+;; DD-58 deferral: original (= this:x x) → (set! this:x x)
+;; per workbench/m16-formatting-divergences-diagnosis-cdc-review-2026-05-16.md
+;; The kernel = form is context-dependent (equality at top-level,
+;; assignment inside blocks). The Rust compiler emits === unconditionally
+;; for surface =. DD-58's separation will resolve this properly.
 (test "class method: constructor"
-  (bind result (compile "(class Foo () (constructor (x) (= this:x x)))"))
+  (bind result (compile-both "(class Foo () (constructor (x) (set! this:x x)))"))
   (includes result "constructor(x)")
   (includes result "this.x = x"))
 
 (test "class method: getter"
-  (bind result (compile "(class C () (get area () (return 42)))"))
+  (bind result (compile-both "(class C () (get area () (return 42)))"))
   (includes result "get area"))
 
+;; DD-58 deferral: same = issue in setter body
 (test "class method: setter"
-  (bind result (compile "(class C () (set radius (r) (= this:r r)))"))
+  (bind result (compile-both "(class C () (set radius (r) (set! this:r r)))"))
   (includes result "set radius"))
 
 (test "class method: static method"
-  (bind result (compile "(class C () (static (create () (return (new C)))))"))
+  (bind result (compile-both "(class C () (static (create () (return (new C)))))"))
   (includes result "static")
   (includes result "create"))
 
 (test "class method: static field"
-  (bind result (compile "(class C () (static (field count 0)))"))
+  (bind result (compile-both "(class C () (static (field count 0)))"))
   (includes result "static")
   (includes result "count"))
 
 (test "class method: camelCase method name"
-  (bind result (compile "(class C () (get-data () (return 1)))"))
+  (bind result (compile-both "(class C () (get-data () (return 1)))"))
   (includes result "getData"))

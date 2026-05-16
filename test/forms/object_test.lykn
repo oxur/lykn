@@ -1,25 +1,25 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "object: grouped pairs"
-  (bind result (compile "(object (name \"Duncan\") (age 42))"))
+  (bind result (compile-both "(object (name \"Duncan\") (age 42))"))
   (includes result "name")
   (includes result "\"Duncan\"")
   (includes result "age")
   (includes result "42"))
 
 (test "object: shorthand"
-  (bind result (compile "(object name age)"))
+  (bind result (compile-both "(object name age)"))
   (includes result "name")
   (includes result "age"))
 
 (test "object: spread"
-  (bind result (compile "(object (name \"x\") (spread defaults))"))
+  (bind result (compile-both "(object (name \"x\") (spread defaults))"))
   (includes result "...defaults"))
 
 (test "object: camelCase keys"
-  (bind result (compile "(object (my-name \"Duncan\"))"))
+  (bind result (compile-both "(object (my-name \"Duncan\"))"))
   (includes result "myName"))
 
 (test-compiles "object: empty"
@@ -29,14 +29,14 @@
   (is-thrown (compile "(object (name))") Error))
 
 (test "object: computed key"
-  (bind result (compile "(object ((computed key) \"value\"))"))
+  (bind result (compile-both "(object ((computed key) \"value\"))"))
   (includes result "[key]"))
 
 (test "object: string key"
-  (bind result (compile "(object (\"content-type\" \"text/plain\"))"))
+  (bind result (compile-both "(object (\"content-type\" \"text/plain\"))"))
   (includes result "\"content-type\""))
 
 (test "object: mixed shorthand and pairs"
-  (bind result (compile "(object (name \"Duncan\") age)"))
+  (bind result (compile-both "(object (name \"Duncan\") age)"))
   (includes result "\"Duncan\"")
   (includes result "age"))
