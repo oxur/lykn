@@ -49,25 +49,6 @@ pub fn compile_file(
     compile_source(&source, Some(path), strip_assertions, kernel_json_only)
 }
 
-/// Compile a lykn file and also produce .d.ts content.
-pub fn compile_file_with_dts(
-    path: &Path,
-    strip_assertions: bool,
-    kernel_json_only: bool,
-) -> Result<
-    (
-        String,
-        Option<String>,
-        Vec<lykn_lang::diagnostics::Diagnostic>,
-    ),
-    CompileError,
-> {
-    let source = std::fs::read_to_string(path).map_err(|e| CompileError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
-    compile_source_with_dts(&source, Some(path), strip_assertions, kernel_json_only)
-}
 
 /// Compile lykn source text through the full pipeline.
 ///
