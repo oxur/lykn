@@ -58,13 +58,59 @@ export function compileAll(source) {
 }
 
 /**
- * Compile via BOTH compilers (JS and Rust) and verify convergence.
- * The Rust compiler is invoked via the `lykn` binary with
- * `--source-context-path` set to `Deno.cwd()` so that relative imports
- * in source resolve from the project root regardless of the temp file's
- * location.
+ * Compile via BOTH compilers (JS and Rust) and verify convergent output.
+ *
+ * Compiles `source` through the JS pipeline (reader → expander →
+ * compiler → astring) and independently through the Rust binary
+ * (`lykn compile`). Normalizes both outputs and asserts equality.
+ * Returns the JS output on success; throws on divergence.
+ *
+ * ## Source-context-path mechanism
+ *
+ * The Rust compiler is invoked with `--source-context-path` set to
+ * `Deno.cwd()`. This tells the Rust compiler to resolve relative
+ * imports (e.g., `(import-macros "./packages/testing" ...)`) from
+ * the project root rather than from the temp file's directory.
+ *
+ * ASSUMPTION: callers MUST invoke from the project root (the
+ * directory containing `project.json`). `lykn test` always sets
+ * cwd to the project root, so this holds for all standard test
+ * invocations.
+ *
+ * ## Normalizer
+ *
+ * The comparison normalizes known-benign differences between the
+ * two compilers' outputs. See the normalizer policy comment above
+ * the `normalize` function for the full list of transformations,
+ * rationales, and the forbidden-extension policy.
+ *
+ * Default action on a new divergence: FIX the divergence in one
+ * compiler, do not extend the normalizer. A normalizer extension
+ * hides a real difference; a compiler fix eliminates it. Normalizer
+ * extensions require explicit rationale in the policy comment AND
+ * a reference to the closing-report that surfaced the need.
+ *
+ * ## Known reliable convergence
+ *
+ * compileBoth reliably converges on:
+ * - Simple kernel forms (for, while, if, try, etc.)
+ * - Surface forms (bind, func, match, type, etc.)
+ * - Sources using (import-macros ...) with runtime-import
+ *   declarations (as of the runtime-import Rust fix)
+ * - Destructuring (object, array, nested)
+ * - Class expressions, class fields, class async methods
+ * - Export, import, colon-syntax, camelCase conversion
+ *
+ * Known divergence classes (formatting, not semantic) that prevent
+ * compileBoth for some forms as of M16-2:
+ * - Tagged templates, generators, some async wrapping patterns,
+ *   certain object literal / class method formatting, default
+ *   parameters with multiple defaults, some destructuring-
+ *   assignment patterns. These are tracked for resolution.
+ *
  * @param {string} source - lykn source text
- * @returns {string} compiled JavaScript (from JS compiler; Rust verified to match)
+ * @returns {string} compiled JavaScript (from JS compiler; Rust
+ *   verified to match)
  */
 export function compileBoth(source) {
   const jsOut = lykn(source).trim();
@@ -96,10 +142,40 @@ export function compileBoth(source) {
       .join("\n")
       .trim();
 
-    // Normalize for comparison: collapse whitespace, strip trailing
-    // semicolons, and canonicalize gensym counters (JS and Rust gensym
-    // sequences may diverge because the JS compiler's counter is
-    // process-global across tests).
+    // ── Normalizer — cross-compiler output comparison ──
+    //
+    // Each transformation below exists because the JS and Rust compilers
+    // produce structurally equivalent but textually different output in
+    // specific, understood ways. The normalizer makes these known-benign
+    // differences invisible to the equality check.
+    //
+    // Transformations (each with rationale):
+    //
+    // 1. Whitespace collapse (\s+ → " "): the two codegen backends
+    //    (astring for JS, emit.rs for Rust) use different indentation
+    //    and newline strategies. The compiled JS is semantically
+    //    identical regardless of whitespace.
+    //
+    // 2. Trailing-semicolon canonicalization (;\s*} → "; }"): astring
+    //    sometimes omits the semicolon before a closing brace; Rust's
+    //    codegen always includes it. Both are valid JS.
+    //
+    // 3. Gensym-counter canonicalization (__gensymN): the JS compiler's
+    //    gensym counter is process-global (increments across tests in a
+    //    single Deno process), while Rust's resets per invocation. The
+    //    generated names are internal and never user-visible.
+    //
+    // ── Normalizer extension policy ──
+    //
+    // Default action: FIX the divergence in one compiler, do not extend
+    // the normalizer. A normalizer extension hides a real difference;
+    // a compiler fix eliminates it.
+    //
+    // Any new normalizer transformation MUST be added with:
+    // (a) an explicit rationale comment in this list, AND
+    // (b) a reference to the closing-report or fast-follow note that
+    //     surfaced the need.
+    //
     const normalize = (s) =>
       s.replace(/\s+/g, " ")
         .replace(/;\s*}/g, "; }")
