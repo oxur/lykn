@@ -1109,10 +1109,22 @@ fn emit_object(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
                         }
                     }
                     _ => {
-                        // Check if the key is a list (computed property).
+                        // Computed property: (key-expr value-expr) where
+                        // key-expr is a list. The kernel form is
+                        // ((computed key) value) — unwrap the computed
+                        // marker and emit just the key expression.
                         if values[0].is_list() {
                             w.write("[");
-                            emit_expr(w, &values[0], 0)?;
+                            if let SExpr::List { values: inner, .. } = &values[0] {
+                                let key_expr = if inner.first().and_then(|e| e.as_atom()) == Some("computed")
+                                    && inner.len() >= 2
+                                {
+                                    &inner[1]
+                                } else {
+                                    &values[0]
+                                };
+                                emit_expr(w, key_expr, 0)?;
+                            }
                             w.write("]");
                         } else {
                             emit_expr(w, &values[0], 0)?;
@@ -1294,6 +1306,10 @@ fn emit_class_expr(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
 }
 
 fn emit_class_body(w: &mut JsWriter, members: &[SExpr]) -> Result<(), LyknError> {
+    if members.is_empty() {
+        w.write("{}");
+        return Ok(());
+    }
     w.write("{");
     w.newline();
     w.indent();
