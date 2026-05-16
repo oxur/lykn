@@ -777,7 +777,6 @@ fn emit_template_text_icu(w: &mut JsWriter, value: &str) {
     for ch in value.chars() {
         match ch {
             '`' => w.write("\\`"),
-            '\\' => w.write("\\\\"),
             // '$' is always escaped to '\$' so that user text never accidentally
             // forms a `${...}` template-literal interpolation in the emitted JS.
             '$' => w.write("\\$"),

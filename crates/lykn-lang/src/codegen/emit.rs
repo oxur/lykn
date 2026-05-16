@@ -85,8 +85,18 @@ pub fn emit_statement(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
         emit_list(w, values, 0)?;
         return Ok(());
     }
-    // Expression statement.
+    // Expression statement — wrap in (...) if the expression's leading
+    // token could be parsed as the start of a different statement kind.
+    let needs_parens = if let SExpr::List { values, .. } = expr {
+        values.first().and_then(|e| e.as_atom()).is_some_and(|h| {
+            matches!(h, "object" | "=>" | "async" | "tag")
+        })
+    } else {
+        false
+    };
+    if needs_parens { w.write("("); }
     emit_expr(w, expr, 0)?;
+    if needs_parens { w.write(")"); }
     w.semicolon();
     Ok(())
 }
@@ -124,10 +134,14 @@ fn emit_template_text(w: &mut JsWriter, value: &str) {
     // '$' is always escaped to '\$' so that user text never accidentally
     // forms a `${...}` template-literal interpolation in the emitted JS.
     // Concat-mode and ICU-mode agree on this.
+    //
+    // Backslashes pass through unescaped: template literal text in JS
+    // interprets escape sequences (e.g., \n → newline). The string value
+    // at this point already contains the intended escapes from the reader;
+    // double-escaping would produce spurious literal backslashes.
     for ch in value.chars() {
         match ch {
             '`' => w.write("\\`"),
-            '\\' => w.write("\\\\"),
             '$' => w.write("\\$"),
             c => w.write_char(c),
         }
@@ -2079,6 +2093,17 @@ mod tests {
             str_lit("!"),
         ]);
         assert_eq!(emit_to_string(&expr), "`Hello, ${name}!`");
+    }
+
+    #[test]
+    fn test_template_backslash_passthrough() {
+        let val = "\\n";
+        assert_eq!(val.len(), 2, "rust string literal \\\\n is 2 chars");
+        assert_eq!(val.chars().collect::<Vec<_>>(), vec!['\\', 'n']);
+        let expr = list(vec![atom("template"), str_lit(val)]);
+        let result = emit_to_string(&expr);
+        assert_eq!(result.len(), 4, "expected `\\n` (4 chars: ` \\ n `)");
+        assert_eq!(result, "`\\n`");
     }
 
     #[test]
