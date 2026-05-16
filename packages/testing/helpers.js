@@ -59,8 +59,10 @@ export function compileAll(source) {
 
 /**
  * Compile via BOTH compilers (JS and Rust) and verify convergence.
- * The Rust compiler is invoked via the `lykn` binary. If the binary is
- * not available, throws a clear error.
+ * The Rust compiler is invoked via the `lykn` binary with
+ * `--source-context-path` set to `Deno.cwd()` so that relative imports
+ * in source resolve from the project root regardless of the temp file's
+ * location.
  * @param {string} source - lykn source text
  * @returns {string} compiled JavaScript (from JS compiler; Rust verified to match)
  */
@@ -72,8 +74,9 @@ export function compileBoth(source) {
   try {
     Deno.writeTextFileSync(tmpPath, source);
     const lyknBin = Deno.env.get("LYKN_BIN") || "./bin/lykn";
+    const projectRoot = Deno.cwd();
     const proc = new Deno.Command(lyknBin, {
-      args: ["compile", tmpPath],
+      args: ["compile", "--source-context-path", projectRoot, tmpPath],
       stdout: "piped",
       stderr: "piped",
     }).outputSync();

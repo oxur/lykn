@@ -357,4 +357,22 @@ mod tests {
         // Stripped version should be shorter (no type check)
         assert!(without.len() <= with.len());
     }
+
+    #[test]
+    fn compile_source_context_path_synthetic_parent() {
+        // Verify that a synthetic path's parent() is what the expander
+        // uses for relative-path resolution. This is the mechanism
+        // --source-context-path relies on: the CLI builds a synthetic
+        // path like context_dir/__compileBoth__.lykn and passes it as
+        // file_path. The basename is irrelevant; only the parent matters.
+        let context_dir = std::env::temp_dir();
+        let synthetic = context_dir.join("__compileBoth__.lykn");
+        assert_eq!(synthetic.parent().unwrap(), context_dir.as_path());
+
+        // compile_source with a synthetic path compiles normally
+        let source = "(bind x 42)";
+        let result = compile_source(source, Some(&synthetic), false, true).unwrap();
+        assert!(result.contains("const"));
+        assert!(result.contains("42"));
+    }
 }

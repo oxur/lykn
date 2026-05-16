@@ -48,6 +48,12 @@ enum Commands {
         /// Output kernel JSON instead of JS
         #[arg(long)]
         kernel_json: bool,
+        /// Resolve relative imports as if the source lives at this path
+        /// instead of its actual location. Used by cross-compiler testing
+        /// (compileBoth) where source is in a temp file but should resolve
+        /// imports relative to the project root.
+        #[arg(long, value_name = "PATH")]
+        source_context_path: Option<PathBuf>,
     },
     /// Run a .lykn or .js file
     Run {
@@ -138,7 +144,8 @@ fn main() {
             output,
             strip_assertions,
             kernel_json,
-        } => cmd_compile(&file, output.as_deref(), strip_assertions, kernel_json),
+            source_context_path,
+        } => cmd_compile(&file, output.as_deref(), strip_assertions, kernel_json, source_context_path.as_deref()),
         Commands::Run { file, args } => cmd_run(&file, &args),
         Commands::Test {
             patterns,
@@ -258,9 +265,24 @@ fn cmd_compile(
     output: Option<&std::path::Path>,
     strip_assertions: bool,
     kernel_json: bool,
+    source_context_path: Option<&std::path::Path>,
 ) {
+    // When --source-context-path is set, read from the actual file but
+    // resolve imports as if the source lives in the context directory.
+    let resolve_path: std::path::PathBuf = match source_context_path {
+        Some(ctx) => ctx.join("__compileBoth__.lykn"),
+        None => file.to_path_buf(),
+    };
+
     if let Some(out_path) = output {
-        match compile::compile_file_with_dts(file, strip_assertions, kernel_json) {
+        let source = match std::fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error reading {}: {e}", file.display());
+                process::exit(1);
+            }
+        };
+        match compile::compile_source_with_dts(&source, Some(&resolve_path), strip_assertions, kernel_json) {
             Ok((js, dts_opt, dts_warnings)) => {
                 for w in &dts_warnings {
                     eprintln!("{w}");
@@ -283,7 +305,14 @@ fn cmd_compile(
             }
         }
     } else {
-        match compile::compile_file(file, strip_assertions, kernel_json) {
+        let source = match std::fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error reading {}: {e}", file.display());
+                process::exit(1);
+            }
+        };
+        match compile::compile_source(&source, Some(&resolve_path), strip_assertions, kernel_json) {
             Ok(result) => {
                 if std::io::stdout().is_terminal() {
                     eprintln!("note: compiled output is going to stdout. Use `-o <file>` to write");

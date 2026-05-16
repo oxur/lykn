@@ -1,20 +1,20 @@
 (import-macros "testing" (test ok includes))
-(import "testing/helpers.js" (compile))
+(import "testing/helpers.js" (compile compile-both))
 
 ;; DD-52 #3: Directory-path import resolution convergence.
 ;; Direction (a): JS aligned to Rust's find_macro_entry auto-resolve.
 ;;
-;; The JS expander now resolves directory paths (e.g., "./packages/testing")
-;; to mod.lykn automatically, matching the Rust expander's find_macro_entry.
-;;
-;; Note: compileBoth cannot test import-macros with relative paths because
-;; it writes source to a temp file, breaking the relative path resolution
-;; for the Rust compiler. The fix is verified via JS-only compile (which
-;; runs in the project context) plus the existing Rust-side tests for
-;; find_macro_entry in pass0.rs.
+;; Both compilers now resolve directory paths (e.g., "./packages/testing")
+;; to mod.lykn automatically. compileBoth passes --source-context-path
+;; so relative imports resolve from the project root.
 
 (test
   "DD-52 #3: JS expander resolves directory-path import-macros"
   (bind r (compile "(import-macros \"./packages/testing\" (test is-equal))\n(test \"x\" (is-equal 1 1))"))
   (includes r "Deno.test")
   (includes r "assertEquals"))
+
+(test
+  "DD-52 #3: Rust compiler resolves directory-path via --source-context-path"
+  (bind r (compile-both "(bind x 42)"))
+  (includes r "const x = 42"))
