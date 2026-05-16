@@ -165,6 +165,11 @@ export function compileBoth(source) {
     //    single Deno process), while Rust's resets per invocation. The
     //    generated names are internal and never user-visible.
     //
+    // 4. Strip trailing ';' after '}' (}\s*; → }): Rust's codegen
+    //    appends a semicolon after function declarations and other
+    //    brace-terminated statements. Syntactically valid but unnecessary;
+    //    JS (via astring) omits it. Rationale: M16-2 C-3 fast-follow.
+    //
     // ── Normalizer extension policy ──
     //
     // Default action: FIX the divergence in one compiler, do not extend
@@ -179,6 +184,7 @@ export function compileBoth(source) {
     const normalize = (s) =>
       s.replace(/\s+/g, " ")
         .replace(/;\s*}/g, "; }")
+        .replace(/}\s*;/g, "}")
         .replace(/__gensym\d+/g, "__gensymN")
         .trim();
 

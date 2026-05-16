@@ -87,10 +87,25 @@ pub fn emit_statement(w: &mut JsWriter, expr: &SExpr) -> Result<(), LyknError> {
     }
     // Expression statement — wrap in (...) if the expression's leading
     // token could be parsed as the start of a different statement kind.
+    // - "object": bare {..} at statement level is parsed as a block
+    // - "=>": bare arrow at statement level needs disambiguation
+    // - "async" wrapping "=>": async arrow expression needs parens;
+    //   async function declarations do NOT (they're unambiguous)
     let needs_parens = if let SExpr::List { values, .. } = expr {
-        values.first().and_then(|e| e.as_atom()).is_some_and(|h| {
-            matches!(h, "object" | "=>" | "async" | "tag")
-        })
+        match values.first().and_then(|e| e.as_atom()) {
+            Some("object" | "=>") => true,
+            Some("async") => {
+                // async wrapping an arrow needs parens; async function does not
+                values.get(1).and_then(|e| {
+                    if let SExpr::List { values: inner, .. } = e {
+                        inner.first().and_then(|h| h.as_atom())
+                    } else {
+                        None
+                    }
+                }) == Some("=>")
+            }
+            _ => false,
+        }
     } else {
         false
     };
@@ -1070,11 +1085,16 @@ fn emit_binary(
 // ── Object / Array ─────────────────────────────────────────────────────
 
 fn emit_object(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
+    if args.is_empty() {
+        w.write("{}");
+        return Ok(());
+    }
     w.write("{");
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
-            w.write(", ");
+            w.write(",");
         }
+        w.write(" ");
         match arg {
             SExpr::Atom { value, .. } => {
                 // Shorthand property.
@@ -1107,7 +1127,7 @@ fn emit_object(w: &mut JsWriter, args: &[SExpr]) -> Result<(), LyknError> {
             _ => emit_expr(w, arg, 0)?,
         }
     }
-    w.write("}");
+    w.write(" }");
     Ok(())
 }
 
@@ -2072,7 +2092,7 @@ mod tests {
         let name_pair = list(vec![atom("name"), str_lit("x")]);
         let spread = list(vec![atom("spread"), atom("rest")]);
         let expr = list(vec![atom("object"), name_pair, atom("age"), spread]);
-        assert_eq!(emit_to_string(&expr), "{name: \"x\", age, ...rest}");
+        assert_eq!(emit_to_string(&expr), "{ name: \"x\", age, ...rest }");
     }
 
     #[test]
@@ -2355,7 +2375,7 @@ mod tests {
         // (object ((sym) "value"))
         let computed = list(vec![list(vec![atom("sym")]), str_lit("value")]);
         let expr = list(vec![atom("object"), computed]);
-        assert_eq!(emit_to_string(&expr), "{[sym()]: \"value\"}");
+        assert_eq!(emit_to_string(&expr), "{ [sym()]: \"value\" }");
     }
 
     // ── Class expressions ──────────────────────────────────────────
