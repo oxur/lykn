@@ -267,8 +267,21 @@ fn cmd_compile(
     kernel_json: bool,
     source_context_path: Option<&std::path::Path>,
 ) {
-    // When --source-context-path is set, read from the actual file but
-    // resolve imports as if the source lives in the context directory.
+    // Synthetic-path routing for --source-context-path.
+    //
+    // The expander resolves relative imports via file_path.parent()
+    // (see pass0.rs resolve_specifier, Tier 3). When source lives in a
+    // temp file (e.g., compileBoth writes to $TMPDIR), its parent is the
+    // wrong directory for relative import resolution.
+    //
+    // When --source-context-path is set, we construct a synthetic path
+    // whose parent() is the context directory. The basename
+    // (__compileBoth__.lykn) is irrelevant — only the parent matters
+    // because pass0's file_path.parent().unwrap_or(Path::new(".")) is
+    // what determines the resolution base.
+    //
+    // When source_context_path is None, the actual file's path is used
+    // unchanged — default behaviour preserved.
     let resolve_path: std::path::PathBuf = match source_context_path {
         Some(ctx) => ctx.join("__compileBoth__.lykn"),
         None => file.to_path_buf(),
