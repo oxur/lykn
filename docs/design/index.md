@@ -16,8 +16,8 @@ This index is automatically generated. Do not edit manually.
 | 0050 | Position-Aware Compilation of Conditional and Block Forms | Final | 2026-05-13 |
 | 0049 | Identifier Mapping (lykn → JS) | Final | 2026-05-13 |
 | 0048 | Import-Macros JSR/npm Cache Resolution (V-08 fix) | Final | 2026-05-03 |
-| 0047 | DD-37: JS Surface Compiler Architecture | Draft | 2026-04-18 |
-| 0046 | DD-36: Kernel / Surface Compiler Split | Draft | 2026-04-18 |
+| 0047 | DD-37: JS Surface Compiler Architecture | Active | 2026-05-15 |
+| 0046 | DD-36: Kernel / Surface Compiler Split | Active | 2026-05-15 |
 | 0045 | DD-35: Testing Strategy for the Publishing Pipeline | Final | 2026-05-03 |
 | 0044 | DD-34: Cross-Package `import-macros` Resolution | Final | 2026-04-17 |
 | 0043 | DD-33: Package Publishing and the `dist/` Boundary | Final | 2026-04-17 |
@@ -35,7 +35,7 @@ This index is automatically generated. Do not edit manually.
 | 0031 | DD-22: Surface Equality and Logical Operators | Final | 2026-04-12 |
 | 0030 | Pure Rust Kernel→JS Codegen | Active | 2026-04-05 |
 | 0029 | DD-18.1: Method Calls in Threading Macros | Active | 2026-04-05 |
-| 0028 | Fix `lykn compile` Rust CLI Bugs | Draft | 2026-04-05 |
+| 0028 | Fix `lykn compile` Rust CLI Bugs | Active | 2026-05-15 |
 | 0027 | lykn v0.3.0 — Implementation Plan | Final | 2026-04-04 |
 | 0026 | DD-21: Type Analysis and Exhaustiveness | Final | 2026-04-04 |
 | 0025 | DD-20: Rust Surface Compiler Architecture | Final | 2026-04-04 |
@@ -66,18 +66,15 @@ This index is automatically generated. Do not edit manually.
 
 ## Documents by State
 
-### Draft
-
-- [0047 - DD-37: JS Surface Compiler Architecture](01-draft/0047-dd-37-js-surface-compiler-architecture.md)
-- [0046 - DD-36: Kernel / Surface Compiler Split](01-draft/0046-dd-36-kernel-surface-compiler-split.md)
-- [0028 - Fix `lykn compile` Rust CLI Bugs](01-draft/0028-fix-lykn-compile-rust-cli-bugs.md)
-
 ### Active
 
 - [0057 - Cohesive Fix Across Compiler, Docs, Guides, Book, Skill](05-active/0057-cohesive-fix-across-compiler-docs-guides-book-skill.md)
 - [0056 - M10 Pre-DD Inventory — `.d.ts` Generation from `:type` Annotations](05-active/0056-m10-pre-dd-inventory-.d.ts-generation-from-type-annotations.md)
+- [0047 - DD-37: JS Surface Compiler Architecture](05-active/0047-dd-37-js-surface-compiler-architecture.md)
+- [0046 - DD-36: Kernel / Surface Compiler Split](05-active/0046-dd-36-kernel-surface-compiler-split.md)
 - [0030 - Pure Rust Kernel→JS Codegen](05-active/0030-pure-rust-kerneljs-codegen.md)
 - [0029 - DD-18.1: Method Calls in Threading Macros](05-active/0029-dd-18.1-method-calls-in-threading-macros.md)
+- [0028 - Fix `lykn compile` Rust CLI Bugs](05-active/0028-fix-lykn-compile-rust-cli-bugs.md)
 
 ### Final
 
