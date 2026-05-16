@@ -147,3 +147,18 @@ Deno.test("DD-52 regression: DD-50.7 patterns still compile correctly (Rust)", (
   assertEquals(r.includes("COMPILE_ERROR"), false);
   assertStringIncludes(r, "if (item === null)");
 });
+
+// ── A-3: bad-form fixture validation ────────────────────────────────
+
+Deno.test("DD-52 (Rust): bad-form surface-macros directive produces validation error", () => {
+  const src = `(import-macros "${CWD}/test/regression/surface-macros/bad-form" ())`;
+  const tmpPath = Deno.makeTempFileSync({ dir: "test", suffix: ".lykn" });
+  try {
+    Deno.writeTextFileSync(tmpPath, src);
+    const result = tryCompileRustFile(tmpPath);
+    assertEquals(result.success, false);
+    assertStringIncludes(result.stderr, "surface-macros");
+  } finally {
+    try { Deno.removeSync(tmpPath); } catch { /* ignore */ }
+  }
+});
