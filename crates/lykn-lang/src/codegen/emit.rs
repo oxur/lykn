@@ -2159,6 +2159,24 @@ mod tests {
     }
 
     #[test]
+    fn test_template_icu_backslash_passthrough() {
+        // ICU-mode template (single string arg) must escape the same way
+        // as regular template — backslashes pass through unescaped.
+        // This test guards against re-introducing double-escape in the
+        // ICU path (the original C-6b duplication bug).
+        let expr = list(vec![atom("template"), str_lit("hello\\nworld")]);
+        let result = emit_to_string(&expr);
+        assert!(
+            result.contains("\\n"),
+            "template should contain \\n (backslash + n), got: {result}"
+        );
+        assert!(
+            !result.contains("\\\\n"),
+            "template should NOT double-escape to \\\\n, got: {result}"
+        );
+    }
+
+    #[test]
     fn test_regex_with_flags() {
         let expr = list(vec![atom("regex"), str_lit("^hello"), str_lit("gi")]);
         assert_eq!(emit_to_string(&expr), "/^hello/gi");
