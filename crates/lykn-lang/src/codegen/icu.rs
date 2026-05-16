@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use super::emit::emit_expr;
+use super::emit::{emit_expr, emit_template_text};
 use super::format::JsWriter;
 use super::names::to_js_identifier;
 use crate::ast::sexpr::SExpr;
@@ -737,7 +737,7 @@ fn emit_mft(
         w.write("`");
         for node in nodes {
             if let MftNode::Literal(s) = node {
-                emit_template_text_icu(w, s);
+                emit_template_text(w, s);
             }
         }
         w.write("`");
@@ -747,7 +747,7 @@ fn emit_mft(
     w.write("`");
     for node in nodes {
         match node {
-            MftNode::Literal(s) => emit_template_text_icu(w, s),
+            MftNode::Literal(s) => emit_template_text(w, s),
             MftNode::Slot(name) => {
                 w.write("${");
                 if let Some(expr) = kwargs.get(name) {
@@ -771,18 +771,6 @@ fn emit_mft(
     }
     w.write("`");
     Ok(())
-}
-
-fn emit_template_text_icu(w: &mut JsWriter, value: &str) {
-    for ch in value.chars() {
-        match ch {
-            '`' => w.write("\\`"),
-            // '$' is always escaped to '\$' so that user text never accidentally
-            // forms a `${...}` template-literal interpolation in the emitted JS.
-            '$' => w.write("\\$"),
-            c => w.write_char(c),
-        }
-    }
 }
 
 fn make_slot_override(

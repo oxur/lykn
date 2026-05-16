@@ -145,7 +145,7 @@ fn emit_string_literal(w: &mut JsWriter, value: &str) {
     w.write("\"");
 }
 
-fn emit_template_text(w: &mut JsWriter, value: &str) {
+pub(crate) fn emit_template_text(w: &mut JsWriter, value: &str) {
     // '$' is always escaped to '\$' so that user text never accidentally
     // forms a `${...}` template-literal interpolation in the emitted JS.
     // Concat-mode and ICU-mode agree on this.
