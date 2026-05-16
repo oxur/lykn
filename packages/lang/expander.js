@@ -1240,11 +1240,16 @@ function resolveImportMacrosSpecifier(specifier, filePath) {
 
   // Tier 3: Filesystem path (current behavior)
   if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    const baseDir = filePath ? _dirname(filePath) : (typeof Deno !== 'undefined' ? Deno.cwd() : '.');
+    const resolved = _resolve(baseDir, specifier);
+    try {
+      const stat = Deno.statSync(resolved);
+      if (stat.isDirectory) return findMacroEntry(resolved);
+    } catch { /* not found as directory, fall through */ }
     if (!specifier.endsWith('.lykn') && !specifier.endsWith('.lyk')) {
       throw new Error(`import-macros path must end with .lykn or .lyk: "${specifier}"`);
     }
-    const baseDir = filePath ? _dirname(filePath) : (typeof Deno !== 'undefined' ? Deno.cwd() : '.');
-    return _resolve(baseDir, specifier);
+    return resolved;
   }
 
   throw new Error(
