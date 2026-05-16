@@ -1,0 +1,12 @@
+(import-macros "testing" (test ok includes))
+(import "testing/helpers.js" (compile-both))
+
+;; import-macros output convergence: both compilers emit runtime imports
+;; from macro modules. Direction (a): Rust aligned to JS.
+
+(test
+  "import-macros convergence: both compilers emit runtime imports"
+  (bind r (compile-both "(import-macros \"./packages/testing\" (test is-equal))\n(test \"x\" (is-equal 1 1))"))
+  (includes r "assertEquals")
+  (includes r "Deno.test")
+  (includes r "jsr:@std/assert"))

@@ -1,18 +1,28 @@
 //! Module cache for compiled macro environments.
 //!
 //! When `import-macros` loads and compiles macros from an external `.lykn`
-//! file, the resulting [`MacroEnv`] is cached by canonical path so that
-//! repeated imports of the same module skip recompilation.
+//! file, the resulting [`MacroEnv`] and runtime imports are cached by
+//! canonical path so that repeated imports of the same module skip
+//! recompilation.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use super::MacroEnv;
+use crate::ast::sexpr::SExpr;
+
+/// A cached macro module: its compiled macros plus any runtime imports
+/// that must be emitted into consuming files.
+#[derive(Debug, Clone)]
+pub struct CachedModule {
+    pub macros: MacroEnv,
+    pub runtime_imports: Vec<SExpr>,
+}
 
 /// Cache of already-compiled macro modules, keyed by file path.
 #[derive(Debug, Default)]
 pub struct ModuleCache {
-    entries: HashMap<PathBuf, MacroEnv>,
+    entries: HashMap<PathBuf, CachedModule>,
 }
 
 impl ModuleCache {
@@ -22,13 +32,13 @@ impl ModuleCache {
     }
 
     /// Look up a previously compiled module.
-    pub fn get(&self, path: &PathBuf) -> Option<&MacroEnv> {
+    pub fn get(&self, path: &PathBuf) -> Option<&CachedModule> {
         self.entries.get(path)
     }
 
-    /// Store a compiled module's macro environment.
-    pub fn insert(&mut self, path: PathBuf, env: MacroEnv) {
-        self.entries.insert(path, env);
+    /// Store a compiled module.
+    pub fn insert(&mut self, path: PathBuf, module: CachedModule) {
+        self.entries.insert(path, module);
     }
 }
 
@@ -58,11 +68,11 @@ mod tests {
             },
         );
 
-        cache.insert(path.clone(), env);
+        cache.insert(path.clone(), CachedModule { macros: env, runtime_imports: vec![] });
 
         let retrieved = cache.get(&path).expect("should find cached module");
-        assert!(retrieved.contains_key("when"));
-        assert_eq!(retrieved["when"].name, "when");
+        assert!(retrieved.macros.contains_key("when"));
+        assert_eq!(retrieved.macros["when"].name, "when");
     }
 
     #[test]
@@ -78,7 +88,7 @@ mod tests {
                 js_body: "v1".to_string(),
             },
         );
-        cache.insert(path.clone(), env1);
+        cache.insert(path.clone(), CachedModule { macros: env1, runtime_imports: vec![] });
 
         let mut env2 = MacroEnv::new();
         env2.insert(
@@ -88,10 +98,10 @@ mod tests {
                 js_body: "v2".to_string(),
             },
         );
-        cache.insert(path.clone(), env2);
+        cache.insert(path.clone(), CachedModule { macros: env2, runtime_imports: vec![] });
 
         let retrieved = cache.get(&path).unwrap();
-        assert!(!retrieved.contains_key("a"));
-        assert!(retrieved.contains_key("b"));
+        assert!(!retrieved.macros.contains_key("a"));
+        assert!(retrieved.macros.contains_key("b"));
     }
 }

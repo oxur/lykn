@@ -45,7 +45,7 @@ pub fn process_import_macros(
 
     for form in forms {
         if is_import_macros(&form) {
-            process_single_import(
+            let runtime_imports = process_single_import(
                 &form,
                 file_path,
                 deno,
@@ -54,6 +54,7 @@ pub fn process_import_macros(
                 env,
                 imports,
             )?;
+            remaining.extend(runtime_imports);
         } else {
             remaining.push(form);
         }
@@ -104,6 +105,33 @@ fn is_import_macros(form: &SExpr) -> bool {
         return value == "import-macros";
     }
     false
+}
+
+fn is_runtime_import(form: &SExpr) -> bool {
+    if let SExpr::List { values, .. } = form
+        && let Some(SExpr::Atom { value, .. }) = values.first()
+    {
+        return value == "runtime-import";
+    }
+    false
+}
+
+/// Convert `(runtime-import "path" (bindings...))` to `(import "path" (bindings...))`.
+fn convert_runtime_import(form: SExpr) -> SExpr {
+    if let SExpr::List { values, span } = form {
+        let mut new_values = Vec::with_capacity(values.len());
+        new_values.push(SExpr::Atom {
+            value: "import".to_string(),
+            span,
+        });
+        new_values.extend(values.into_iter().skip(1));
+        SExpr::List {
+            values: new_values,
+            span,
+        }
+    } else {
+        form
+    }
 }
 
 /// Validate an `(import-macros "path" (name1 name2 ...))` form and extract
@@ -324,7 +352,7 @@ fn process_single_import(
     compilation_stack: &[PathBuf],
     env: &mut MacroEnv,
     imports: Option<&HashMap<String, String>>,
-) -> Result<(), LyknError> {
+) -> Result<Vec<SExpr>, LyknError> {
     let values = form.as_list().ok_or_else(|| LyknError::Read {
         message: "import-macros: expected list form".to_string(),
         location: SourceLoc::default(),
@@ -359,9 +387,9 @@ fn process_single_import(
     }
 
     // If the module is already cached, pull from the cache.
-    if let Some(cached_macros) = cache.get(&canonical) {
+    if let Some(cached) = cache.get(&canonical) {
         for name in &binding_names {
-            if let Some(m) = cached_macros.get(name) {
+            if let Some(m) = cached.macros.get(name) {
                 env.insert(name.clone(), m.clone());
             } else {
                 return Err(LyknError::Read {
@@ -370,7 +398,7 @@ fn process_single_import(
                 });
             }
         }
-        return Ok(());
+        return Ok(cached.runtime_imports.clone());
     }
 
     // Load the source file.
@@ -443,10 +471,25 @@ fn process_single_import(
         }
     }
 
-    let _remaining = super::pass1::compile_local_macros(non_surface_forms, deno, &mut module_env)?;
+    // Extract (runtime-import ...) forms before compiling local macros.
+    // These are converted to (import ...) and emitted in the consuming file.
+    let mut runtime_imports = Vec::new();
+    let mut macro_forms = Vec::new();
+    for form in non_surface_forms {
+        if is_runtime_import(&form) {
+            runtime_imports.push(convert_runtime_import(form));
+        } else {
+            macro_forms.push(form);
+        }
+    }
 
-    // Cache the compiled macros for this module.
-    cache.insert(canonical, module_env.clone());
+    let _remaining = super::pass1::compile_local_macros(macro_forms, deno, &mut module_env)?;
+
+    // Cache the compiled macros and runtime imports for this module.
+    cache.insert(canonical, super::cache::CachedModule {
+        macros: module_env.clone(),
+        runtime_imports: runtime_imports.clone(),
+    });
 
     // Register the requested macros.
     for name in &binding_names {
@@ -460,7 +503,7 @@ fn process_single_import(
         }
     }
 
-    Ok(())
+    Ok(runtime_imports)
 }
 
 /// Extract binding names from the import binding list.
