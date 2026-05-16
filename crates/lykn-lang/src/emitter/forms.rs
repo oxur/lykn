@@ -350,11 +350,11 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
                     || head_name == "class-expr"
                 {
                     // This subexpression is a surface form — classify and emit it.
-                    // Nested surface forms are always in Value position (they need
-                    // to produce a result for the enclosing expression).
-                    let saved_ctx = ctx.expr_context;
-                    ctx.expr_context = ExprContext::Value;
-                    let result = match crate::classifier::classify_expr(expr) {
+                    // Each per-form emitter sets the child context it needs (e.g.,
+                    // emit_func_single sets Statement for function bodies). Forms
+                    // that produce expressions (obj, assoc, arithmetic, etc.) emit
+                    // expression-form AST regardless of the enclosing context.
+                    match crate::classifier::classify_expr(expr) {
                         Ok(surface_form) => {
                             let emitted = emit_form(&surface_form, ctx, registry);
                             if emitted.len() == 1 {
@@ -362,16 +362,13 @@ fn emit_expr(expr: &SExpr, ctx: &mut EmitterContext, registry: &TypeRegistry) ->
                             } else if emitted.is_empty() {
                                 expr.clone()
                             } else {
-                                // Multiple forms (e.g. type block) — wrap in block
                                 let mut items = vec![atom("block")];
                                 items.extend(emitted);
                                 list(items)
                             }
                         }
                         Err(_) => expr.clone(),
-                    };
-                    ctx.expr_context = saved_ctx;
-                    result
+                    }
                 } else if head_name == "if"
                     && matches!(ctx.expr_context, ExprContext::Value | ExprContext::Tail)
                 {
