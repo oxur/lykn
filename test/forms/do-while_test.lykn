@@ -1,9 +1,9 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "do-while: basic"
-  (bind result (compile "(do-while (> x 0) (-= x 1))"))
+  (bind result (compile-both "(do-while (> x 0) (-= x 1))"))
   (includes result "do")
   (includes result "while")
   (includes result "x > 0"))

@@ -1,18 +1,18 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "try: catch only"
-  (bind result (compile "(try (do-something) (catch e (handle e)))"))
+  (bind result (compile-both "(try (do-something) (catch e (handle e)))"))
   (includes result "try")
   (includes result "catch"))
 
 (test "try: finally only"
-  (bind result (compile "(try (do-something) (finally (cleanup)))"))
+  (bind result (compile-both "(try (do-something) (finally (cleanup)))"))
   (includes result "finally"))
 
 (test "try: catch + finally"
-  (bind result (compile "(try (do-something) (catch e (handle e)) (finally (cleanup)))"))
+  (bind result (compile-both "(try (do-something) (catch e (handle e)) (finally (cleanup)))"))
   (includes result "catch")
   (includes result "finally"))
 

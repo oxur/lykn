@@ -1,9 +1,9 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "for-in: basic"
-  (bind result (compile "(for-in key obj (console:log key))"))
+  (bind result (compile-both "(for-in key obj (console:log key))"))
   (includes result "for (const key in obj)"))
 
 (test "for-in: missing args throws"

@@ -1,12 +1,12 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "class-expr: basic"
-  (bind result (compile "(const MyClass (class-expr () (constructor () (return))))"))
+  (bind result (compile-both "(const MyClass (class-expr () (constructor () (return))))"))
   (includes result "class")
   (includes result "constructor"))
 
 (test "class-expr: with extends"
-  (bind result (compile "(const Sub (class-expr (Base) (constructor () (super))))"))
+  (bind result (compile-both "(const Sub (class-expr (Base) (constructor () (super))))"))
   (includes result "extends Base"))

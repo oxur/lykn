@@ -1,6 +1,6 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test-compiles "function: basic declaration"
   "(function add (a b) (return (+ a b)))"
@@ -15,7 +15,7 @@
   "function init() {\n  return 42;\n}")
 
 (test "function: multi-statement body"
-  (bind result (compile "(function setup () (const x 1) (const y 2) (return (+ x y)))"))
+  (bind result (compile-both "(function setup () (const x 1) (const y 2) (return (+ x y)))"))
   (includes result "const x = 1;")
   (includes result "const y = 2;")
   (includes result "return x + y;"))

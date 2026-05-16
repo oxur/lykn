@@ -1,6 +1,6 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test-compiles "import: side-effect"
   "(import \"mod\")" "import \"mod\";")
@@ -9,23 +9,23 @@
   "(import \"express\" express)" "import express from \"express\";")
 
 (test "import: named"
-  (bind result (compile "(import \"fs\" (read-file write-file))"))
+  (bind result (compile-both "(import \"fs\" (read-file write-file))"))
   (includes result "readFile")
   (includes result "writeFile")
   (includes result "\"fs\""))
 
 (test "import: named with alias"
-  (bind result (compile "(import \"mod\" ((alias foo bar)))"))
+  (bind result (compile-both "(import \"mod\" ((alias foo bar)))"))
   (includes result "foo as bar"))
 
 (test "import: default + named"
-  (bind result (compile "(import \"react\" React (use-state use-effect))"))
+  (bind result (compile-both "(import \"react\" React (use-state use-effect))"))
   (includes result "React")
   (includes result "useState")
   (includes result "useEffect"))
 
 (test "import: camelCase on names not paths"
-  (bind result (compile "(import \"node:fs\" (read-file-sync))"))
+  (bind result (compile-both "(import \"node:fs\" (read-file-sync))"))
   (includes result "readFileSync")
   (includes result "\"node:fs\""))
 

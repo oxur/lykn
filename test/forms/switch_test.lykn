@@ -1,9 +1,9 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test "switch: basic with default"
-  (bind result (compile "(switch x (\"a\" (do-a) (break)) (\"b\" (do-b) (break)) (default (do-default)))"))
+  (bind result (compile-both "(switch x (\"a\" (do-a) (break)) (\"b\" (do-b) (break)) (default (do-default)))"))
   (includes result "switch")
   (includes result "case \"a\"")
   (includes result "default:"))

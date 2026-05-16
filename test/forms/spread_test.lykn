@@ -1,6 +1,6 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test-compiles "spread: in array"
   "(array 1 2 (spread rest))" "[1, 2, ...rest];")

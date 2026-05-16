@@ -1,6 +1,6 @@
 (import-macros "testing"
   (test test-compiles is-equal is-thrown includes))
-(import "testing/helpers.js" ((alias compile-kernel compile)))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
 
 (test-compiles "template: string only"
   "(template \"hello\")" "`hello`;")
@@ -33,5 +33,5 @@
   "(template \"Result: \" (compute x))" "`Result: ${compute(x)}`;")
 
 (test "template: nested template"
-  (bind result (compile "(template \"outer \" (template \"inner \" x) \" end\")"))
+  (bind result (compile-both "(template \"outer \" (template \"inner \" x) \" end\")"))
   (includes result "`outer ${`inner ${x}`} end`"))
