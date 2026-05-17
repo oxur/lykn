@@ -189,6 +189,25 @@ pub fn is_kernel_only_form(name: &str) -> bool {
     )
 }
 
+/// All kernel-form atoms recognised by the Rust codegen. Single source of
+/// truth consumed by both `is_kernel_form` and `closest_kernel_form`.
+pub const KERNEL_FORMS: &[&str] = &[
+    "const", "let", "var", "function", "function*", "=>",
+    "if", "block", "return", "throw", "try",
+    "while", "do-while", "for", "for-of", "for-in", "for-await-of",
+    "switch", "break", "continue",
+    "new", "delete", "typeof", "instanceof", "in", "void",
+    "yield", "yield*", "label", "seq", "debugger",
+    "import", "export", "dynamic-import", "async", "await", "get",
+    "=", "array", "object", "spread", "rest", "default", "alias",
+    "template", "tag", "regex", "?", "quote", "quasiquote",
+    "+", "-", "*", "/", "%", "**",
+    "===", "!==", "==", "!=", "<", ">", "<=", ">=",
+    "&&", "||", "??", "&", "|", "^", "<<", ">>", ">>>", "!", "~",
+    "++", "--", "+=", "-=", "*=", "/=", "%=", "**=",
+    "<<=", ">>=", ">>>=", "&=", "|=", "^=", "&&=", "||=", "??=",
+];
+
 pub fn is_kernel_form(name: &str) -> bool {
     matches!(
         name,
@@ -285,4 +304,19 @@ pub fn is_kernel_form(name: &str) -> bool {
             | "||="
             | "??="
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kernel_forms_consistency_with_is_kernel_form() {
+        for &form in KERNEL_FORMS {
+            assert!(
+                is_kernel_form(form),
+                "KERNEL_FORMS contains '{form}' but is_kernel_form(\"{form}\") returns false"
+            );
+        }
+    }
 }
