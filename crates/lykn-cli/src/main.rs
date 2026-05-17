@@ -582,6 +582,35 @@ fn compile_lykn_test_files(files: &[PathBuf], out_dir: Option<&Path>) -> Vec<Pat
             process::exit(1);
         }
 
+        // DD-58 M19-4: strict-mode validation for .lykn test files.
+        // Parse and classify with strict mode ON before JS compilation.
+        // Rejects kernel-only forms (const, let, var, function, etc.)
+        // at the test-file source level without the kernel: prefix.
+        if let Ok(source) = std::fs::read_to_string(lykn_path) {
+            if let Ok(forms) = lykn_lang::reader::read(&source) {
+                let imports: Option<std::collections::HashMap<String, String>> =
+                    crate::config::read_project_config_optional()
+                        .map(|c| c.imports.into_iter().collect());
+                if let Ok(expanded) =
+                    lykn_lang::expander::expand(forms, Some(lykn_path.as_path()), imports.as_ref())
+                {
+                    let opts = lykn_lang::classifier::ClassifierOptions { strict: true };
+                    if let Err(diags) =
+                        lykn_lang::classifier::classify_with_options(&expanded, opts)
+                    {
+                        for d in &diags {
+                            eprintln!("{d}");
+                        }
+                        eprintln!(
+                            "error: {} failed DD-58 strict-mode validation",
+                            lykn_path.display()
+                        );
+                        process::exit(1);
+                    }
+                }
+            }
+        }
+
         let config = find_config();
         let lykn_str = lykn_path.to_string_lossy();
         let js_str = js_path.to_string_lossy();

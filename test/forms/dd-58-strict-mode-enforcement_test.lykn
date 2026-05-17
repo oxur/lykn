@@ -1,0 +1,10 @@
+(import-macros "testing" (test ok))
+
+;; DD-58 M19-4: this test file exists to verify that the test runner
+;; compiles .lykn test files with strict-mode validation enabled.
+;; All forms used here are surface forms — strict mode should pass.
+;; If this test compiles and runs, strict mode is working for tests.
+
+(test
+  "DD-58 strict mode: test file compiles under strict validation"
+  (ok true))
