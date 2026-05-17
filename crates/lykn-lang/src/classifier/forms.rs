@@ -5200,4 +5200,28 @@ mod tests {
             other => panic!("expected Class, got {other:?}"),
         }
     }
+
+    // ── DD-58 kernel: prefix tests (M17-3) ─────────────────────────
+
+    #[test]
+    fn test_kernel_prefix_routes_to_kernel_passthrough() {
+        // (kernel:if c t e) should classify as KernelPassthrough with
+        // the prefix stripped — the raw SExpr has "if" as head, not "kernel:if"
+        let expr = list(vec![atom("kernel:if"), atom("c"), atom("t"), atom("e")]);
+        let result = classify_form(&expr).unwrap();
+        match result {
+            SurfaceForm::KernelPassthrough { raw, .. } => {
+                if let SExpr::List { values, .. } = &raw {
+                    assert_eq!(
+                        values[0].as_atom(),
+                        Some("if"),
+                        "kernel: prefix should be stripped from head"
+                    );
+                } else {
+                    panic!("expected list in KernelPassthrough.raw");
+                }
+            }
+            other => panic!("expected KernelPassthrough, got {other:?}"),
+        }
+    }
 }
