@@ -5229,6 +5229,61 @@ mod tests {
         }
     }
 
+    // ── DD-58 strict mode tests (M18) ────────────────────────────
+
+    #[test]
+    fn test_strict_mode_rejects_kernel_only_form() {
+        // (const x 42) in strict mode should produce a diagnostic
+        let expr = list(vec![atom("const"), atom("x"), num(42.0)]);
+        let result = super::classify_form_strict(&expr);
+        assert!(result.is_err(), "strict mode should reject bare 'const'");
+        let diag = result.unwrap_err();
+        assert!(
+            diag.message.contains("const"),
+            "diagnostic should name the form, got: {}",
+            diag.message
+        );
+        assert!(
+            diag.message.contains("kernel:const") || diag.message.contains("bind"),
+            "diagnostic should suggest alternative, got: {}",
+            diag.message
+        );
+    }
+
+    #[test]
+    fn test_strict_mode_accepts_surface_form() {
+        // (bind x 42) should classify correctly under strict mode
+        let expr = list(vec![atom("bind"), atom("x"), num(42.0)]);
+        let result = super::classify_form_strict(&expr);
+        assert!(result.is_ok(), "strict mode should accept 'bind'");
+    }
+
+    #[test]
+    fn test_strict_mode_accepts_passthrough_form() {
+        // (+ a b) should classify as KernelPassthrough under strict mode
+        let expr = list(vec![atom("+"), atom("a"), atom("b")]);
+        let result = super::classify_form_strict(&expr);
+        assert!(result.is_ok(), "strict mode should accept '+'");
+    }
+
+    #[test]
+    fn test_strict_mode_kernel_escape_still_works() {
+        // (kernel:const x 42) should work under strict mode
+        let expr = list(vec![atom("kernel:const"), atom("x"), num(42.0)]);
+        let result = super::classify_form_strict(&expr);
+        assert!(result.is_ok(), "kernel: escape should work under strict");
+        match result.unwrap() {
+            SurfaceForm::KernelPassthrough { raw, .. } => {
+                if let SExpr::List { values, .. } = &raw {
+                    assert_eq!(values[0].as_atom(), Some("const"));
+                } else {
+                    panic!("expected list");
+                }
+            }
+            other => panic!("expected KernelPassthrough, got {other:?}"),
+        }
+    }
+
     // ── DD-58 kernel: prefix tests (M17-3, M17-4) ──────────────────
 
     #[test]
