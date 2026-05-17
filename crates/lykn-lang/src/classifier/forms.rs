@@ -5229,7 +5229,26 @@ mod tests {
         }
     }
 
-    // ── DD-58 kernel: prefix tests (M17-3) ─────────────────────────
+    // ── DD-58 kernel: prefix tests (M17-3, M17-4) ──────────────────
+
+    #[test]
+    fn test_kernel_prefix_invalid_form_produces_diagnostic() {
+        // (kernel:nonexistent ...) should produce a diagnostic error
+        let expr = list(vec![atom("kernel:nonexistent"), atom("x")]);
+        let result = classify_form(&expr);
+        assert!(result.is_err(), "expected error for invalid kernel form");
+        let diag = result.unwrap_err();
+        assert!(
+            diag.message.contains("nonexistent"),
+            "diagnostic should name the invalid form, got: {}",
+            diag.message
+        );
+        assert!(
+            diag.message.contains("kernel"),
+            "diagnostic should mention kernel, got: {}",
+            diag.message
+        );
+    }
 
     #[test]
     fn test_kernel_prefix_routes_to_kernel_passthrough() {
