@@ -1,6 +1,6 @@
 ---
 number: 59
-title: "DD-58: Kernel/Surface Separation — Closed Surface Namespace with `(kernel:<form> ...)` Escape"
+title: "Kernel/Surface Separation"
 author: "** CDC (cdc/compiler-coherence thread)"
 component: All
 tags: [change-me]
