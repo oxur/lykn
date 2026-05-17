@@ -8,7 +8,7 @@ use crate::reader::source_loc::Span;
 use super::dispatch;
 
 fn levenshtein(a: &str, b: &str) -> usize {
-    let (m, n) = (a.len(), b.len());
+    let n = b.len();
     let mut prev: Vec<usize> = (0..=n).collect();
     let mut curr = vec![0; n + 1];
     for (i, ca) in a.chars().enumerate() {
@@ -129,7 +129,7 @@ pub fn classify_form_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
         SExpr::List { values, span } if !values.is_empty() => {
             if let Some(head_name) = values[0].as_atom() {
                 let args = &values[1..];
-                // kernel: prefix escape — same logic as lax mode (M17)
+                // DD-58 §"The kernel: escape syntax" — same logic as lax mode (M17)
                 if let Some(kernel_form) = head_name.strip_prefix("kernel:") {
                     if dispatch::is_kernel_form(kernel_form) {
                         let mut stripped_values = Vec::with_capacity(values.len());
@@ -184,7 +184,8 @@ pub fn classify_form_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
                         suggestion: Some(format!("(kernel:{head_name} ...)")),
                     });
                 }
-                // Strict surface dispatch
+                // DD-58 §"Per-layer form enumeration" — closed surface namespace.
+                // Strict surface dispatch: route to typed classifier or kernel passthrough.
                 if dispatch::is_surface_form_strict(head_name) {
                     if dispatch::is_surface_form(head_name) {
                         classify_surface_form(head_name, args, *span)
