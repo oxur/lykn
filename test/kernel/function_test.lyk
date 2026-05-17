@@ -1,0 +1,10 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
+
+(test "function: named declaration"
+  (const result (compile-both "(function greet (name) (return name))"))
+  (includes result "function greet(name)"))
+
+(test "function: with body statements"
+  (const result (compile "(function add (a b) (return (+ a b)))"))
+  (includes result "function add(a, b)"))

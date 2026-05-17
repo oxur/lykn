@@ -1,0 +1,6 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
+
+(test "let: basic declaration"
+  (const result (compile-both "(let x 0)"))
+  (includes result "let x = 0"))

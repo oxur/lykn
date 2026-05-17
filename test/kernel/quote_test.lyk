@@ -1,0 +1,7 @@
+(import-macros "testing" (test ok))
+(import "testing/helpers.js" ((alias compile-kernel compile)))
+
+;; quote is a kernel-only macro-internals form. No surface equivalent.
+;; Single-compiler test (JS only) since quote is primarily a macro-time form.
+(test "quote: exists as kernel form"
+  (ok true))

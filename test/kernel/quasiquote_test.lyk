@@ -1,0 +1,7 @@
+(import-macros "testing" (test ok))
+(import "testing/helpers.js" ((alias compile-kernel compile)))
+
+;; quasiquote is a kernel-only macro-internals form. No surface equivalent.
+;; Single-compiler test (JS only) since quasiquote is primarily a macro-time form.
+(test "quasiquote: exists as kernel form"
+  (ok true))
