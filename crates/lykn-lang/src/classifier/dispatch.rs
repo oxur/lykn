@@ -36,6 +36,153 @@ pub fn is_surface_form(name: &str) -> bool {
     )
 }
 
+/// DD-58 strict-mode surface namespace (closed).
+/// Returns true for atoms in DD-58's surface namespace:
+/// flavor (a) rich-unique, flavor (b) passthrough, flavor (c) namesake-sharing.
+/// Per DD-58 §"Per-layer form enumeration" (2026-05-17 design decisions).
+pub fn is_surface_form_strict(name: &str) -> bool {
+    matches!(
+        name,
+        // ── Flavor (a) — Rich, surface-unique ──
+        "bind"
+            | "func"
+            | "genfunc"
+            | "genfn"
+            | "fn"
+            | "lambda"
+            | "match"
+            | "type"
+            | "obj"
+            | "cell"
+            | "express"
+            | "swap!"
+            | "reset!"
+            | "set!"
+            | "set-symbol!"
+            | "->"
+            | "->>"
+            | "some->"
+            | "some->>"
+            | "if-let"
+            | "when-let"
+            | "conj"
+            | "assoc"
+            | "dissoc"
+            | "macro"
+            | "import-macros"
+            | "do"
+            | "and"
+            | "or"
+            | "not"
+            // ── Flavor (b) — Passthrough surface forms ──
+            // Arithmetic
+            | "+"
+            | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "**"
+            // Strict comparison
+            | "==="
+            | "!=="
+            // Order comparison
+            | "<"
+            | ">"
+            | "<="
+            | ">="
+            // Bitwise
+            | "&"
+            | "|"
+            | "^"
+            | "<<"
+            | ">>"
+            | ">>>"
+            | "~"
+            // Update/compound assignment
+            | "++"
+            | "--"
+            | "+="
+            | "-="
+            | "*="
+            | "/="
+            | "%="
+            | "**="
+            | "<<="
+            | ">>="
+            | ">>>="
+            | "&="
+            | "|="
+            | "^="
+            | "&&="
+            | "||="
+            | "??="
+            // Logical (kernel passthrough for raw JS short-circuit)
+            | "&&"
+            | "||"
+            | "??"
+            // Literal constructors
+            | "array"
+            | "object"
+            | "get"
+            | "template"
+            | "tag"
+            | "regex"
+            // Destructuring helpers
+            | "spread"
+            | "rest"
+            | "default"
+            | "alias"
+            // Type/identity ops
+            | "new"
+            | "delete"
+            | "typeof"
+            | "instanceof"
+            | "in"
+            | "void"
+            // Async ops
+            | "await"
+            | "yield"
+            | "yield*"
+            // Module forms
+            | "import"
+            | "export"
+            // Control flow
+            | "block"
+            | "while"
+            | "do-while"
+            | "for"
+            | "for-of"
+            | "for-in"
+            | "for-await-of"
+            | "switch"
+            | "break"
+            | "continue"
+            | "return"
+            | "throw"
+            | "label"
+            | "seq"
+            | "debugger"
+            // Arrow function (lexical this)
+            | "=>"
+            // ── Flavor (c) — Rich, namesake-sharing ──
+            | "if"
+            | "try"
+            | "="
+            | "!="
+            | "class"
+            | "class-expr"
+    )
+}
+
+/// DD-58 kernel-only forms — reachable only via `kernel:` escape.
+/// Per DD-58 §"Kernel-only namespace" (2026-05-17 design decisions).
+pub fn is_kernel_only_form(name: &str) -> bool {
+    matches!(
+        name,
+        "function" | "function*" | "const" | "let" | "var" | "quote" | "quasiquote"
+    )
+}
+
 pub fn is_kernel_form(name: &str) -> bool {
     matches!(
         name,
