@@ -217,6 +217,53 @@ pub fn classify_form_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
     }
 }
 
+/// DD-58 kernel-only classification for `.lyk` files. Post-expansion,
+/// only `is_kernel_form()` atoms are accepted as form heads. Surface forms
+/// produce a diagnostic suggesting the `.lykn` extension or kernel equivalent.
+pub fn classify_form_kernel_only(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
+    match expr {
+        SExpr::List { values, span } if !values.is_empty() => {
+            if let Some(head_name) = values[0].as_atom() {
+                if dispatch::is_kernel_form(head_name) {
+                    Ok(SurfaceForm::KernelPassthrough {
+                        raw: expr.clone(),
+                        span: *span,
+                    })
+                } else if dispatch::is_surface_form(head_name)
+                    || dispatch::is_surface_form_strict(head_name)
+                {
+                    Err(Diagnostic {
+                        message: format!(
+                            "'{head_name}' is a surface form; use .lykn for surface code, \
+                             or use the equivalent kernel form in .lyk files"
+                        ),
+                        severity: Severity::Error,
+                        span: *span,
+                        suggestion: None,
+                    })
+                } else {
+                    // Function call (user-defined or runtime)
+                    Ok(SurfaceForm::FunctionCall {
+                        head: values[0].clone(),
+                        args: values[1..].to_vec(),
+                        span: *span,
+                    })
+                }
+            } else {
+                Ok(SurfaceForm::FunctionCall {
+                    head: values[0].clone(),
+                    args: values[1..].to_vec(),
+                    span: *span,
+                })
+            }
+        }
+        _ => Ok(SurfaceForm::KernelPassthrough {
+            raw: expr.clone(),
+            span: expr.span(),
+        }),
+    }
+}
+
 /// Classify `(export ...)`. If the inner form is a surface form, classify it
 /// recursively and wrap it in `SurfaceForm::Export`. Otherwise treat the whole
 /// thing as a `KernelPassthrough`.

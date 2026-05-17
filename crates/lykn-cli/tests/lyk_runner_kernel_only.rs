@@ -20,7 +20,7 @@ fn project_root() -> std::path::PathBuf {
 #[test]
 fn lyk_file_rejects_surface_form_at_top_level() {
     let root = project_root();
-    let fixture = root.join("test/kernel/fixtures/surface-form-in-lyk.lyk");
+    let fixture = root.join("test/kernel/fixtures/surface_form_reject_test.lyk");
     fs::create_dir_all(fixture.parent().unwrap()).unwrap();
     fs::write(&fixture, "(bind x 42)\n").unwrap();
 
@@ -32,6 +32,9 @@ fn lyk_file_rejects_surface_form_at_top_level() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let _ = fs::remove_file(&fixture);
+    // Also clean up any compiled .js from the test runner
+    let js_fixture = fixture.with_extension("js");
+    let _ = fs::remove_file(&js_fixture);
 
     assert!(
         !output.status.success(),
@@ -48,7 +51,7 @@ fn lyk_file_rejects_surface_form_at_top_level() {
 #[test]
 fn lykn_file_rejects_bare_kernel_only_form() {
     let root = project_root();
-    let fixture = root.join("test/kernel/fixtures/kernel-only-in-lykn.lykn");
+    let fixture = root.join("test/kernel/fixtures/kernel_only_reject_test.lykn");
     fs::create_dir_all(fixture.parent().unwrap()).unwrap();
     fs::write(&fixture, "(const x 42)\n").unwrap();
 
@@ -60,6 +63,9 @@ fn lykn_file_rejects_bare_kernel_only_form() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let _ = fs::remove_file(&fixture);
+    // Also clean up any compiled .js from the test runner
+    let js_fixture = fixture.with_extension("js");
+    let _ = fs::remove_file(&js_fixture);
 
     assert!(
         !output.status.success(),

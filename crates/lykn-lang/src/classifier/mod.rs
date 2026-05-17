@@ -13,6 +13,10 @@ pub struct ClassifierOptions {
     /// forms without the `kernel:` prefix produce a diagnostic.
     /// Default: false (lax mode — existing behaviour preserved).
     pub strict: bool,
+    /// When true, enforce kernel-only classification: surface forms
+    /// at the top level produce a diagnostic. Used for `.lyk` files.
+    /// Default: false.
+    pub kernel_only: bool,
 }
 
 pub fn classify(forms: &[SExpr]) -> Result<Vec<SurfaceForm>, Vec<Diagnostic>> {
@@ -27,7 +31,9 @@ pub fn classify_with_options(
     let mut errors = Vec::new();
 
     for form in forms {
-        let result = if opts.strict {
+        let result = if opts.kernel_only {
+            classify_expr_kernel_only(form)
+        } else if opts.strict {
             classify_expr_strict(form)
         } else {
             classify_expr(form)
@@ -51,4 +57,8 @@ pub fn classify_expr(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
 
 pub fn classify_expr_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
     forms::classify_form_strict(expr)
+}
+
+pub fn classify_expr_kernel_only(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
+    forms::classify_form_kernel_only(expr)
 }

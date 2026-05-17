@@ -582,10 +582,11 @@ fn compile_lykn_test_files(files: &[PathBuf], out_dir: Option<&Path>) -> Vec<Pat
             process::exit(1);
         }
 
-        // DD-58 M19-4: strict-mode validation for .lykn test files.
-        // Parse and classify with strict mode ON before JS compilation.
-        // Rejects kernel-only forms (const, let, var, function, etc.)
-        // at the test-file source level without the kernel: prefix.
+        // DD-58 classifier validation for test files:
+        // - .lykn files: strict-mode (M19-4) — rejects kernel-only forms
+        //   without kernel: prefix
+        // - .lyk files: kernel-only mode (M20-3) — rejects surface forms
+        //   at the top level
         if let Ok(source) = std::fs::read_to_string(lykn_path) {
             if let Ok(forms) = lykn_lang::reader::read(&source) {
                 let imports: Option<std::collections::HashMap<String, String>> =
@@ -594,15 +595,21 @@ fn compile_lykn_test_files(files: &[PathBuf], out_dir: Option<&Path>) -> Vec<Pat
                 if let Ok(expanded) =
                     lykn_lang::expander::expand(forms, Some(lykn_path.as_path()), imports.as_ref())
                 {
-                    let opts = lykn_lang::classifier::ClassifierOptions { strict: true };
+                    let is_lyk = lykn_path.extension().is_some_and(|e| e == "lyk");
+                    let opts = lykn_lang::classifier::ClassifierOptions {
+                        strict: !is_lyk,
+                        kernel_only: is_lyk,
+                        ..Default::default()
+                    };
                     if let Err(diags) =
                         lykn_lang::classifier::classify_with_options(&expanded, opts)
                     {
                         for d in &diags {
                             eprintln!("{d}");
                         }
+                        let mode = if is_lyk { "kernel-only" } else { "strict-mode" };
                         eprintln!(
-                            "error: {} failed DD-58 strict-mode validation",
+                            "error: {} failed DD-58 {mode} validation",
                             lykn_path.display()
                         );
                         process::exit(1);
