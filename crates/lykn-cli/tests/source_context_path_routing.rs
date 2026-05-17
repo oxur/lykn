@@ -72,6 +72,30 @@ fn with_context_path_resolves_from_context_directory() {
     );
 }
 
+// M17-5: kernel: prefix compiles correctly via the Rust binary
+#[test]
+fn kernel_prefix_compiles_to_correct_js() {
+    let tmp = std::env::temp_dir().join("lykn_kernel_prefix_test.lykn");
+    fs::write(&tmp, "(kernel:const x 42)").expect("write temp file");
+
+    let output = Command::new(lykn_bin())
+        .args(["compile", tmp.to_str().unwrap()])
+        .output()
+        .expect("failed to run lykn compile");
+
+    let _ = fs::remove_file(&tmp);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "kernel:const should compile successfully"
+    );
+    assert!(
+        stdout.contains("const x = 42"),
+        "should emit const declaration, got: {stdout}"
+    );
+}
+
 // A-1: Without --source-context-path, relative imports resolve from the file's
 // own directory (which is /tmp, so the import will fail)
 #[test]

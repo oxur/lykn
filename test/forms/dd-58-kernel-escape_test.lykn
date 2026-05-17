@@ -1,0 +1,19 @@
+(import-macros "testing" (test includes ok))
+(import "testing/helpers.js" (compile))
+
+;; DD-58 Phase 1a: kernel: escape syntax tests.
+;;
+;; M17-5 compile-both skip-rationale:
+;; The JS compiler does NOT handle the kernel: prefix (treats it as
+;; member access: kernel.const(x, 42)). JS-side kernel: recognition
+;; is M18+ scope and requires DD-37's Phase 3+ classifier to recognize
+;; kernel: as a namespace prefix.
+;; per docs/design/05-active/0059-dd-58-*.md §"Phase 2 — JS classifier"
+;;
+;; Rust-side kernel: prefix is tested via:
+;; - Unit tests in crates/lykn-lang/src/classifier/forms.rs (M17-3, M17-4)
+;; - Unit test in crates/lykn-lang/src/reader/parser.rs (M17-2)
+;; - Integration test in crates/lykn-cli/tests/ (via lykn compile binary)
+;;
+;; This file exists to document the M17-5 honest disposition and to
+;; hold future compile-both tests once JS-side support lands.
