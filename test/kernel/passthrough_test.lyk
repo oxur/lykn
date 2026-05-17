@@ -1,0 +1,35 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
+
+;; Representative flavor (b) passthrough tests — one per category.
+;; See CONVENTIONS.md for the sample selection rationale.
+
+;; Arithmetic
+(test "passthrough: + (arithmetic)"
+  (const result (compile-both "(+ 1 2)"))
+  (includes result "1 + 2"))
+
+;; Control flow
+(test "passthrough: while (control flow)"
+  (const result (compile-both "(while (> x 0) (-= x 1))"))
+  (includes result "while"))
+
+;; Module
+(test "passthrough: import (module)"
+  (const result (compile "(import \"./mod.js\" (foo))"))
+  (includes result "import"))
+
+;; Async
+(test "passthrough: await (async)"
+  (const result (compile-both "(const data (await (fetch url)))"))
+  (includes result "await"))
+
+;; Literal constructor
+(test "passthrough: array (literal constructor)"
+  (const result (compile-both "(array 1 2 3)"))
+  (includes result "[1, 2, 3]"))
+
+;; Comparison
+(test "passthrough: === (strict comparison)"
+  (const result (compile-both "(=== a b)"))
+  (includes result "a === b"))
