@@ -611,4 +611,23 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("unexpected '.'"), "got: {msg}");
     }
+
+    #[test]
+    fn parse_kernel_prefix_as_single_atom() {
+        // DD-58 M17-2: reader preserves kernel:if as a single atom.
+        // The colon is an ordinary character in atoms (per DD-01);
+        // the compiler splits on it later, not the reader.
+        let forms = parse_str("(kernel:if c t e)");
+        assert_eq!(forms.len(), 1);
+        if let SExpr::List { values, .. } = &forms[0] {
+            assert_eq!(values.len(), 4);
+            assert!(
+                matches!(&values[0], SExpr::Atom { value, .. } if value == "kernel:if"),
+                "head should be single atom 'kernel:if', got: {:?}",
+                &values[0]
+            );
+        } else {
+            panic!("expected list");
+        }
+    }
 }
