@@ -12,6 +12,34 @@ pub fn classify_form(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
         SExpr::List { values, span } if !values.is_empty() => {
             if let Some(head_name) = values[0].as_atom() {
                 let args = &values[1..];
+                // DD-58: kernel: prefix escape — strip prefix, validate
+                // against kernel whitelist, emit KernelPassthrough with
+                // the stripped form. Takes precedence over all other dispatch.
+                if let Some(kernel_form) = head_name.strip_prefix("kernel:") {
+                    if dispatch::is_kernel_form(kernel_form) {
+                        let mut stripped_values = Vec::with_capacity(values.len());
+                        stripped_values.push(SExpr::Atom {
+                            value: kernel_form.to_string(),
+                            span: values[0].span(),
+                        });
+                        stripped_values.extend(values[1..].iter().cloned());
+                        return Ok(SurfaceForm::KernelPassthrough {
+                            raw: SExpr::List {
+                                values: stripped_values,
+                                span: *span,
+                            },
+                            span: *span,
+                        });
+                    }
+                    return Err(Diagnostic {
+                        message: format!(
+                            "unknown kernel form '{kernel_form}' in (kernel:{kernel_form} ...)"
+                        ),
+                        severity: Severity::Error,
+                        span: *span,
+                        suggestion: None,
+                    });
+                }
                 if dispatch::is_surface_form(head_name) {
                     classify_surface_form(head_name, args, *span)
                 } else if head_name == "export" {
