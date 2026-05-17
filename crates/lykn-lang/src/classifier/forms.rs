@@ -24,14 +24,64 @@ fn levenshtein(a: &str, b: &str) -> usize {
 
 fn closest_kernel_form(name: &str) -> Option<&'static str> {
     const KERNEL_FORMS: &[&str] = &[
-        "const", "let", "var", "function", "function*", "=>", "if", "block",
-        "return", "throw", "try", "while", "do-while", "for", "for-of",
-        "for-in", "for-await-of", "switch", "break", "continue", "new",
-        "delete", "typeof", "instanceof", "in", "void", "yield", "yield*",
-        "label", "seq", "debugger", "import", "export", "dynamic-import",
-        "async", "await", "get", "=", "array", "object", "spread", "rest",
-        "default", "alias", "template", "tag", "regex", "?", "quote",
-        "quasiquote", "+", "-", "*", "/", "%", "**", "===", "!==",
+        "const",
+        "let",
+        "var",
+        "function",
+        "function*",
+        "=>",
+        "if",
+        "block",
+        "return",
+        "throw",
+        "try",
+        "while",
+        "do-while",
+        "for",
+        "for-of",
+        "for-in",
+        "for-await-of",
+        "switch",
+        "break",
+        "continue",
+        "new",
+        "delete",
+        "typeof",
+        "instanceof",
+        "in",
+        "void",
+        "yield",
+        "yield*",
+        "label",
+        "seq",
+        "debugger",
+        "import",
+        "export",
+        "dynamic-import",
+        "async",
+        "await",
+        "get",
+        "=",
+        "array",
+        "object",
+        "spread",
+        "rest",
+        "default",
+        "alias",
+        "template",
+        "tag",
+        "regex",
+        "?",
+        "quote",
+        "quasiquote",
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "**",
+        "===",
+        "!==",
     ];
     let (mut best, mut best_dist) = (None, usize::MAX);
     for &form in KERNEL_FORMS {
@@ -5438,23 +5488,40 @@ mod tests {
     fn test_strict_mode_diagnostic_const_class() {
         let expr = list(vec![atom("const"), atom("x"), num(42.0)]);
         let diag = super::classify_form_strict(&expr).unwrap_err();
-        assert!(diag.message.contains("bind"), "const should suggest bind, got: {}", diag.message);
+        assert!(
+            diag.message.contains("bind"),
+            "const should suggest bind, got: {}",
+            diag.message
+        );
     }
 
     #[test]
     fn test_strict_mode_diagnostic_function_class() {
-        let expr = list(vec![atom("function"), atom("f"), list(vec![]), atom("body")]);
+        let expr = list(vec![
+            atom("function"),
+            atom("f"),
+            list(vec![]),
+            atom("body"),
+        ]);
         let diag = super::classify_form_strict(&expr).unwrap_err();
-        assert!(diag.message.contains("'func'") || diag.message.contains("'fn'") || diag.message.contains("'lambda'"),
-            "function should suggest 'func'/'fn'/'lambda', got: {}", diag.message);
+        assert!(
+            diag.message.contains("'func'")
+                || diag.message.contains("'fn'")
+                || diag.message.contains("'lambda'"),
+            "function should suggest 'func'/'fn'/'lambda', got: {}",
+            diag.message
+        );
     }
 
     #[test]
     fn test_strict_mode_diagnostic_quote_class() {
         let expr = list(vec![atom("quote"), atom("x")]);
         let diag = super::classify_form_strict(&expr).unwrap_err();
-        assert!(diag.message.contains("no surface alternative"),
-            "quote should note no surface alternative, got: {}", diag.message);
+        assert!(
+            diag.message.contains("no surface alternative"),
+            "quote should note no surface alternative, got: {}",
+            diag.message
+        );
     }
 
     // A-2: did-you-mean for invalid kernel: forms
@@ -5462,27 +5529,44 @@ mod tests {
     fn test_kernel_prefix_did_you_mean_close_match() {
         let expr = list(vec![atom("kernel:functoin"), atom("x")]);
         let diag = classify_form(&expr).unwrap_err();
-        assert!(diag.message.contains("function"),
-            "should suggest 'function' for typo 'functoin', got: {}", diag.message);
+        assert!(
+            diag.message.contains("function"),
+            "should suggest 'function' for typo 'functoin', got: {}",
+            diag.message
+        );
     }
 
     #[test]
     fn test_kernel_prefix_did_you_mean_no_close_match() {
         let expr = list(vec![atom("kernel:absolutelynothing"), atom("x")]);
         let diag = classify_form(&expr).unwrap_err();
-        assert!(!diag.message.contains("did you mean"),
-            "should NOT suggest for very distant form, got: {}", diag.message);
+        assert!(
+            !diag.message.contains("did you mean"),
+            "should NOT suggest for very distant form, got: {}",
+            diag.message
+        );
     }
 
     // A-3: async under strict mode — must NOT classify as FunctionCall
     #[test]
     fn test_strict_mode_async_classifies_correctly() {
-        let inner = list(vec![atom("function"), atom("f"), list(vec![]), list(vec![atom("return"), num(1.0)])]);
+        let inner = list(vec![
+            atom("function"),
+            atom("f"),
+            list(vec![]),
+            list(vec![atom("return"), num(1.0)]),
+        ]);
         let expr = list(vec![atom("async"), inner]);
         let result = super::classify_form_strict(&expr);
-        assert!(result.is_ok(), "strict mode should accept (async ...), got: {:?}", result.err());
-        assert!(!matches!(result.as_ref().unwrap(), SurfaceForm::FunctionCall { .. }),
-            "async should NOT be classified as FunctionCall under strict; got FunctionCall");
+        assert!(
+            result.is_ok(),
+            "strict mode should accept (async ...), got: {:?}",
+            result.err()
+        );
+        assert!(
+            !matches!(result.as_ref().unwrap(), SurfaceForm::FunctionCall { .. }),
+            "async should NOT be classified as FunctionCall under strict; got FunctionCall"
+        );
     }
 
     // A-4: ternary (?) under strict mode — must route to KernelPassthrough
@@ -5490,19 +5574,45 @@ mod tests {
     fn test_strict_mode_ternary_classifies_correctly() {
         let expr = list(vec![atom("?"), atom("cond"), atom("t"), atom("e")]);
         let result = super::classify_form_strict(&expr);
-        assert!(result.is_ok(), "strict mode should accept (? ...), got: {:?}", result.err());
-        assert!(matches!(result.as_ref().unwrap(), SurfaceForm::KernelPassthrough { .. }),
-            "? should classify as KernelPassthrough under strict, got: {:?}", result.unwrap());
+        assert!(
+            result.is_ok(),
+            "strict mode should accept (? ...), got: {:?}",
+            result.err()
+        );
+        assert!(
+            matches!(
+                result.as_ref().unwrap(),
+                SurfaceForm::KernelPassthrough { .. }
+            ),
+            "? should classify as KernelPassthrough under strict, got: {:?}",
+            result.unwrap()
+        );
     }
 
     // A-5: dynamic-import under strict mode — must route to KernelPassthrough
     #[test]
     fn test_strict_mode_dynamic_import_classifies_correctly() {
-        let expr = list(vec![atom("dynamic-import"), SExpr::String { value: "module-path".to_string(), span: s() }]);
+        let expr = list(vec![
+            atom("dynamic-import"),
+            SExpr::String {
+                value: "module-path".to_string(),
+                span: s(),
+            },
+        ]);
         let result = super::classify_form_strict(&expr);
-        assert!(result.is_ok(), "strict mode should accept (dynamic-import ...), got: {:?}", result.err());
-        assert!(matches!(result.as_ref().unwrap(), SurfaceForm::KernelPassthrough { .. }),
-            "dynamic-import should classify as KernelPassthrough under strict, got: {:?}", result.unwrap());
+        assert!(
+            result.is_ok(),
+            "strict mode should accept (dynamic-import ...), got: {:?}",
+            result.err()
+        );
+        assert!(
+            matches!(
+                result.as_ref().unwrap(),
+                SurfaceForm::KernelPassthrough { .. }
+            ),
+            "dynamic-import should classify as KernelPassthrough under strict, got: {:?}",
+            result.unwrap()
+        );
     }
 
     // B-1: empty kernel: form name
@@ -5519,10 +5629,16 @@ mod tests {
         let expr = list(vec![atom("kernel:if"), atom("c"), atom("t"), atom("e")]);
         // Lax mode
         let lax = classify_form(&expr).unwrap();
-        assert!(matches!(lax, SurfaceForm::KernelPassthrough { .. }), "lax: expected KernelPassthrough");
+        assert!(
+            matches!(lax, SurfaceForm::KernelPassthrough { .. }),
+            "lax: expected KernelPassthrough"
+        );
         // Strict mode
         let strict = super::classify_form_strict(&expr).unwrap();
-        assert!(matches!(strict, SurfaceForm::KernelPassthrough { .. }), "strict: expected KernelPassthrough");
+        assert!(
+            matches!(strict, SurfaceForm::KernelPassthrough { .. }),
+            "strict: expected KernelPassthrough"
+        );
     }
 
     // B-3: user macro invocation under strict mode (unknown head → FunctionCall, not rejection)
@@ -5530,9 +5646,12 @@ mod tests {
     fn test_strict_mode_unknown_head_is_function_call_not_rejection() {
         let expr = list(vec![atom("my-custom-macro"), atom("arg1"), atom("arg2")]);
         let result = super::classify_form_strict(&expr);
-        assert!(result.is_ok(), "unknown head in strict mode should be FunctionCall, not error");
+        assert!(
+            result.is_ok(),
+            "unknown head in strict mode should be FunctionCall, not error"
+        );
         match result.unwrap() {
-            SurfaceForm::FunctionCall { .. } => {},
+            SurfaceForm::FunctionCall { .. } => {}
             other => panic!("expected FunctionCall for unknown head, got: {other:?}"),
         }
     }

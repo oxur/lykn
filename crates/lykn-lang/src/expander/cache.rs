@@ -68,7 +68,13 @@ mod tests {
             },
         );
 
-        cache.insert(path.clone(), CachedModule { macros: env, runtime_imports: vec![] });
+        cache.insert(
+            path.clone(),
+            CachedModule {
+                macros: env,
+                runtime_imports: vec![],
+            },
+        );
 
         let retrieved = cache.get(&path).expect("should find cached module");
         assert!(retrieved.macros.contains_key("when"));
@@ -88,7 +94,13 @@ mod tests {
                 js_body: "v1".to_string(),
             },
         );
-        cache.insert(path.clone(), CachedModule { macros: env1, runtime_imports: vec![] });
+        cache.insert(
+            path.clone(),
+            CachedModule {
+                macros: env1,
+                runtime_imports: vec![],
+            },
+        );
 
         let mut env2 = MacroEnv::new();
         env2.insert(
@@ -98,7 +110,13 @@ mod tests {
                 js_body: "v2".to_string(),
             },
         );
-        cache.insert(path.clone(), CachedModule { macros: env2, runtime_imports: vec![] });
+        cache.insert(
+            path.clone(),
+            CachedModule {
+                macros: env2,
+                runtime_imports: vec![],
+            },
+        );
 
         let retrieved = cache.get(&path).unwrap();
         assert!(!retrieved.macros.contains_key("a"));

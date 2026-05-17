@@ -486,10 +486,13 @@ fn process_single_import(
     let _remaining = super::pass1::compile_local_macros(macro_forms, deno, &mut module_env)?;
 
     // Cache the compiled macros and runtime imports for this module.
-    cache.insert(canonical, super::cache::CachedModule {
-        macros: module_env.clone(),
-        runtime_imports: runtime_imports.clone(),
-    });
+    cache.insert(
+        canonical,
+        super::cache::CachedModule {
+            macros: module_env.clone(),
+            runtime_imports: runtime_imports.clone(),
+        },
+    );
 
     // Register the requested macros.
     for name in &binding_names {

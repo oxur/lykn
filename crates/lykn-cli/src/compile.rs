@@ -49,7 +49,6 @@ pub fn compile_file(
     compile_source(&source, Some(path), strip_assertions, kernel_json_only)
 }
 
-
 /// Compile lykn source text through the full pipeline.
 ///
 /// This is the core compilation function. `file_path` is used for macro

@@ -145,7 +145,13 @@ fn main() {
             strip_assertions,
             kernel_json,
             source_context_path,
-        } => cmd_compile(&file, output.as_deref(), strip_assertions, kernel_json, source_context_path.as_deref()),
+        } => cmd_compile(
+            &file,
+            output.as_deref(),
+            strip_assertions,
+            kernel_json,
+            source_context_path.as_deref(),
+        ),
         Commands::Run { file, args } => cmd_run(&file, &args),
         Commands::Test {
             patterns,
@@ -295,7 +301,12 @@ fn cmd_compile(
                 process::exit(1);
             }
         };
-        match compile::compile_source_with_dts(&source, Some(&resolve_path), strip_assertions, kernel_json) {
+        match compile::compile_source_with_dts(
+            &source,
+            Some(&resolve_path),
+            strip_assertions,
+            kernel_json,
+        ) {
             Ok((js, dts_opt, dts_warnings)) => {
                 for w in &dts_warnings {
                     eprintln!("{w}");
