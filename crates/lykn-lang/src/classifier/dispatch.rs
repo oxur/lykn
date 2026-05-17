@@ -164,6 +164,12 @@ pub fn is_surface_form_strict(name: &str) -> bool {
             | "debugger"
             // Arrow function (lexical this)
             | "=>"
+            // Ternary (kernel passthrough)
+            | "?"
+            // Async wrapper
+            | "async"
+            // Dynamic import
+            | "dynamic-import"
             // ── Flavor (c) — Rich, namesake-sharing ──
             | "if"
             | "try"

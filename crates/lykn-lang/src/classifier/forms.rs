@@ -7,6 +7,43 @@ use crate::reader::source_loc::Span;
 
 use super::dispatch;
 
+fn levenshtein(a: &str, b: &str) -> usize {
+    let (m, n) = (a.len(), b.len());
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr = vec![0; n + 1];
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[n]
+}
+
+fn closest_kernel_form(name: &str) -> Option<&'static str> {
+    const KERNEL_FORMS: &[&str] = &[
+        "const", "let", "var", "function", "function*", "=>", "if", "block",
+        "return", "throw", "try", "while", "do-while", "for", "for-of",
+        "for-in", "for-await-of", "switch", "break", "continue", "new",
+        "delete", "typeof", "instanceof", "in", "void", "yield", "yield*",
+        "label", "seq", "debugger", "import", "export", "dynamic-import",
+        "async", "await", "get", "=", "array", "object", "spread", "rest",
+        "default", "alias", "template", "tag", "regex", "?", "quote",
+        "quasiquote", "+", "-", "*", "/", "%", "**", "===", "!==",
+    ];
+    let (mut best, mut best_dist) = (None, usize::MAX);
+    for &form in KERNEL_FORMS {
+        let d = levenshtein(name, form);
+        if d < best_dist {
+            best_dist = d;
+            best = Some(form);
+        }
+    }
+    if best_dist <= 2 { best } else { None }
+}
+
 pub fn classify_form(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
     match expr {
         SExpr::List { values, span } if !values.is_empty() => {
@@ -31,13 +68,16 @@ pub fn classify_form(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
                             span: *span,
                         });
                     }
+                    let hint = closest_kernel_form(kernel_form)
+                        .map(|s| format!("; did you mean '{s}'?"))
+                        .unwrap_or_default();
                     return Err(Diagnostic {
                         message: format!(
-                            "unknown kernel form '{kernel_form}' in (kernel:{kernel_form} ...)"
+                            "unknown kernel form '{kernel_form}' in (kernel:{kernel_form} ...){hint}"
                         ),
                         severity: Severity::Error,
                         span: *span,
-                        suggestion: None,
+                        suggestion: closest_kernel_form(kernel_form).map(|s| format!("kernel:{s}")),
                     });
                 }
                 if dispatch::is_surface_form(head_name) {
@@ -106,22 +146,39 @@ pub fn classify_form_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
                             span: *span,
                         });
                     }
+                    let hint = closest_kernel_form(kernel_form)
+                        .map(|s| format!("; did you mean '{s}'?"))
+                        .unwrap_or_default();
                     return Err(Diagnostic {
                         message: format!(
-                            "unknown kernel form '{kernel_form}' in (kernel:{kernel_form} ...)"
+                            "unknown kernel form '{kernel_form}' in (kernel:{kernel_form} ...){hint}"
                         ),
                         severity: Severity::Error,
                         span: *span,
-                        suggestion: None,
+                        suggestion: closest_kernel_form(kernel_form).map(|s| format!("kernel:{s}")),
                     });
                 }
-                // Strict-mode rejection: kernel-only forms without prefix
+                // DD-58 §"Per-layer form enumeration" — kernel-only namespace.
+                // Strict-mode rejection: kernel-only forms without prefix.
+                // Diagnostic is specialized per form-class.
                 if dispatch::is_kernel_only_form(head_name) {
-                    return Err(Diagnostic {
-                        message: format!(
+                    let msg = match head_name {
+                        "const" | "let" | "var" => format!(
                             "'{head_name}' is a kernel-only form; use 'bind' for surface binding, \
                              or '(kernel:{head_name} ...)' to access the kernel form explicitly"
                         ),
+                        "function" | "function*" => format!(
+                            "'{head_name}' is a kernel-only form; use 'func', 'fn', or 'lambda' \
+                             for surface functions, or '(kernel:{head_name} ...)' to access the \
+                             kernel form explicitly"
+                        ),
+                        _ => format!(
+                            "'{head_name}' is a kernel-only form with no surface alternative; \
+                             use '(kernel:{head_name} ...)' to access it explicitly"
+                        ),
+                    };
+                    return Err(Diagnostic {
+                        message: msg,
                         severity: Severity::Error,
                         span: *span,
                         suggestion: Some(format!("(kernel:{head_name} ...)")),
