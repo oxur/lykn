@@ -312,10 +312,12 @@ same-named kernel):
 | Literal constructors | `array`, `object`, `get`, `template`, `tag`, `regex` |
 | Destructuring helpers | `spread`, `rest`, `default`, `alias` |
 | Type/identity ops | `new`, `delete`, `typeof`, `instanceof`, `in`, `void` |
-| Async ops | `await`, `yield`, `yield*` |
-| Module forms | `import`, `export` |
+| Async ops | `await`, `yield`, `yield*`, `async` |
+| Module forms | `import`, `export`, `dynamic-import` |
 | Control flow | `block`, `while`, `do-while`, `for`, `for-of`, `for-in`, `for-await-of`, `switch`, `break`, `continue`, `return`, `throw`, `label`, `seq`, `debugger` |
+| Conditional expression | `?` — ternary expression (passthrough to kernel `?:`). Distinct from surface `if` (flavor (c), position-aware). |
 | Arrow function | `=>` — surface arrow function with lexical `this`. Passthrough to kernel `=>`. Provides modern-JS arrow ergonomics for users who specifically want lexical-`this` semantics (vs. `fn`/`lambda` which emit kernel `function` with dynamic `this`). |
+| Macro / quoting | `quote`, `quasiquote`, `unquote`, `unquote-splicing` — produced by reader macros `'expr`, `` `expr ``, `,expr`, `,@expr` respectively. Surface users invoke these implicitly through the reader-macro sugar; the post-reader AST contains `(quote ...)` / `(quasiquote ...)` / etc. lists. These are surface-accessible forms (not kernel-only) because the reader emits them from surface source. Macro expansion processes `quasiquote`/`unquote`/`unquote-splicing` at compile-time; `quote` produces a literal datum. |
 
 **Flavor (c) — Rich, namesake-sharing** (elaborated semantics on a
 same-named kernel atom):
@@ -337,11 +339,17 @@ surface provides richer alternatives.**
 | Form | Surface alternative | Notes |
 |------|---------------------|-------|
 | `function` | `func`, `fn`, `lambda` | Not exposed in surface — Duncan 2026-05-17 |
+| `function*` | `func`, `fn`, `lambda` with `*` generator forms | Generator kernel form; surface variants emit it |
 | `const` | `bind` | No specific surface use case; kernel-only |
 | `let` | `bind` + `cell` for mutability | Kernel-only |
 | `var` | `bind` + `cell` for mutability | Legacy JS; kernel-only |
-| `quote` | n/a | Reader / macro internals; not idiomatic surface |
-| `quasiquote` | n/a | Same as `quote` |
+
+**Note:** `quote` and `quasiquote` were initially listed here in
+the 2026-05-17 revisions but were re-classified as flavor (b)
+surface passthrough in the 2026-05-17 quote/quasiquote correction
+(see refinement-log entry). They are surface-accessible — the
+reader macros `'expr` and `` `expr `` produce them from user-
+written source.
 
 **Why these JS declaration / binding constructs are kernel-only:**
 
@@ -729,6 +737,24 @@ or in a future amendment.
 
 ---
 
+## Test discipline
+
+The kernel-layer test coverage spec (M20, Phase 1.5):
+
+- **Kernel-only forms** (`function`, `function*`, `const`, `let`,
+  `var`): exhaustive — one `.lyk` test file per form in
+  `test/kernel/`.
+- **Flavor (b) passthroughs**: representative sample (~8 tests)
+  covering one per category (arithmetic, control flow, module,
+  async, literal constructor, comparison, macro/quoting).
+- **compileBoth**: used for kernel forms both compilers implement.
+- **Strict-mode enforcement**: `.lykn` test files validated with
+  `ClassifierOptions { strict: true }` at compile time.
+- **Kernel-only enforcement**: `.lyk` test files validated with
+  `ClassifierOptions { kernel_only: true }` at compile time.
+
+---
+
 ## Verification notes
 
 Claims in this DD drawn from direct reads of the source:
@@ -852,3 +878,126 @@ Changes Inventory #3 (lambda divergence migration path now uses
 surface `=>`), the "Note on lambda, fn, and =>" subsection, and
 Resolved Questions #5. Remaining Open Questions #3 (about
 surface `=>` for 0.7.0) is removed — resolved here.
+
+### 2026-05-17 (Phase 1 polish — `?`, `async`, `dynamic-import` confirmed as flavor (b))
+
+The DD-58 Phase 1 polish work (closing report
+`workbench/2026-05-17-dd58-phase1-polish-closing-report.md`) added
+three forms to the strict-mode surface dispatch table that were
+present in the lax classifier but missing from `is_surface_form_strict()`.
+Empirical verification during the polish (item A-3) confirmed that
+`async` was being misclassified as `FunctionCall` under strict mode
+prior to the fix — the same failure shape applied to `dynamic-import`
+and (less consequentially) `?`. All three are now in
+`is_surface_form_strict()` and routed to their respective kernel
+passthroughs.
+
+Per-form disposition:
+
+- **`?` (ternary)** — flavor (b) passthrough to kernel `?:`. CDC
+  reviewed the IIFE-wrap alternative and confirmed passthrough is
+  the right shape: surface `if` already covers position-aware
+  IIFE-wrap (flavor (c)); `?` exists for users who want raw JS
+  ternary semantics with no expression-position wrapping. The two
+  forms cover distinct ergonomic niches without overlap.
+- **`async`** — flavor (b) passthrough. Async function modifier; no
+  surface-elaboration use case beyond what the underlying kernel
+  form already provides.
+- **`dynamic-import`** — flavor (b) passthrough. Maps to JS
+  `import()` expression; aligns with the static `import`/`export`
+  module forms (also flavor (b)).
+
+Flavor (b) table updated to include all three:
+
+- `async` added to **Async ops**.
+- `dynamic-import` added to **Module forms**.
+- `?` added as a new **Conditional expression** row, with a note
+  distinguishing it from surface `if`.
+
+This refinement is **enumeration completeness only** — no change to
+the closed-namespace rule, no change to the kernel-only list, no
+change to migration sequencing. The polish work surfaced the gap;
+this entry records the resolution in DD-58's enumeration so future
+classifier audits don't re-discover it.
+
+CDC self-correction noted: my M18 review hedged about whether
+`async` was actually broken under strict (I read the
+`else if head_name == "async"` branch in `classify_form_strict`
+and concluded async was handled, but missed that the branch was
+nested inside an `is_surface_form_strict(head_name)` check, and
+`async` wasn't in `is_surface_form_strict()` at that point). The
+methodology learning — "when CDC review identifies a potentially-
+broken-but-uncertain behaviour, require an empirical check in the
+follow-up milestone rather than just flagging 'worth verifying'" —
+is captured in the polish CDC review at
+`workbench/dd58-phase1-polish-closing-cdc-review-2026-05-17.md`.
+
+### 2026-05-17 (quote/quasiquote correction — moved from kernel-only to flavor (b) passthrough)
+
+**Correction of CDC framing error.** The 2026-05-17 second
+revision listed `quote` and `quasiquote` in the kernel-only
+namespace with the rationale "Reader / macro internals; not
+idiomatic surface." That framing was wrong, surfaced during M20
+audit work when CC's compile-string audit found zero occurrences
+of `(quote ...)` / `(quasiquote ...)` literal forms — a finding
+Duncan correctly challenged because `quote`/`quasiquote` are
+required anywhere macros are needed, including surface code.
+
+**The bug:** `packages/lang/reader.js` has Lisp reader macros that
+produce `quote`/`quasiquote`/`unquote`/`unquote-splicing` lists
+from surface user input:
+
+- `'expr` → `(quote expr)`
+- `` `expr `` → `(quasiquote expr)`
+- `,expr` → `(unquote expr)`
+- `,@expr` → `(unquote-splicing expr)`
+
+Every surface lykn user who reaches for the apostrophe or backtick
+sugar produces `(quote ...)` / `(quasiquote ...)` lists in the
+post-reader AST. Under the (incorrect) kernel-only classification,
+those lists would be rejected by `classify_form_strict` with the
+"kernel-only form; no surface alternative" diagnostic — breaking
+the entire Lisp-quote idiom for surface code.
+
+**The correction:**
+
+- `quote` and `quasiquote` are moved OUT of the kernel-only
+  namespace table.
+- Both are added to flavor (b) passthrough under a new "Macro /
+  quoting" category, alongside `unquote` and `unquote-splicing`
+  (the latter two were already classified as `FunctionCall`-path
+  user-macro candidates, but the canonical enumeration is now
+  recorded for completeness).
+- Kernel-only namespace shrinks from 6 forms to 5: `function`,
+  `function*`, `const`, `let`, `var`. The unifying property of the
+  kernel-only set is now "JS declaration / binding constructs" —
+  uniformly. The earlier inclusion of `quote`/`quasiquote` broke
+  this unifying property (they're not declaration/binding forms).
+
+**Ripple changes:**
+
+- `crates/lykn-lang/src/classifier/dispatch.rs` —
+  `is_kernel_only_form` drops `"quote" | "quasiquote"` from its
+  matches!; `is_surface_form_strict` adds them.
+- `crates/lykn-lang/src/classifier/forms.rs` — the polish-era
+  test `test_strict_mode_diagnostic_quote_class` (which asserted
+  quote IS rejected) is inverted (now asserts quote PASSES
+  strict).
+- M20 ledger — kernel-only form count drops from 6 to 5;
+  per-form test target adjusts accordingly.
+
+**Methodology learning:** the framing "Reader / macro internals;
+not idiomatic surface" was an assumption that didn't survive
+ground-truth check. Surface idiom is precisely what reader macros
+produce; their output cannot be relegated to "internals." For
+future kernel/surface design calls, CDC should verify against the
+READER and EXPANDER behaviour, not just the high-level form
+ontology — what arrives at the classifier is what the reader and
+expander produce, not what the user typed.
+
+**Disclosure of CDC framing error:** the 2026-05-17 second
+revision's rationale for placing quote/quasiquote in kernel-only
+was authored by me (CDC). The error was caught by Duncan during
+M20 audit-walk review. This refinement-log entry records the
+correction and the methodology learning for future kernel/surface
+design work.
