@@ -15,18 +15,11 @@ import {
 	formatSExpr,
 } from "./expander.js";
 import { toJsIdentifier } from "./compiler.js";
-
-/**
- * Create a kernel-level AST node that won't be re-intercepted by surface
- * macros during fixed-point expansion. Used by surface macros (reset!,
- * swap!) that emit kernel `=` (assignment) — prevents the surface `=`
- * macro (equality) from re-expanding their output.
- */
-function kernelArray(...items) {
-	const node = array(...items);
-	node._kernel = true;
-	return node;
-}
+import {
+	kernelArray,
+	isStatementOnlyForm,
+	wrapReturnLast,
+} from "./surface-helpers.js";
 
 // --- Type Registry ---
 // Maps constructor names to their field names, populated by `type` macro.
@@ -901,37 +894,8 @@ function andChain(checks) {
 export function registerSurfaceMacros(macroEnv) {
 	// --- Shared helpers (scoped to registerSurfaceMacros for access to sym, array, etc.) ---
 
-	const STATEMENT_ONLY_HEADS = [
-		"while", "for", "for-of", "for-in", "do-while", "switch",
-		"label", "debugger",
-		"block", "try", "catch", "finally",
-		"var", "const", "let",
-		"func", "fn", "class", "type", "export", "import",
-	];
-
-	function isStatementOnlyForm(expr) {
-		if (!isArray(expr) || expr.values.length === 0) return false;
-		const head = expr.values[0];
-		if (!head || head.type !== "atom") return false;
-		const name = head.value;
-		if (name === "if") return expr.values.length < 4;
-		return STATEMENT_ONLY_HEADS.includes(name);
-	}
-
-	/**
-	 * Wrap body forms so the last expression is returned.
-	 * Empty → [], single → [(return expr)], multiple → [...init, (return last)].
-	 * DD-50.6: skips wrapping when the last expression is a statement-only form.
-	 */
-	function wrapReturnLast(bodyForms) {
-		if (bodyForms.length === 0) return [];
-		const lastExpr = bodyForms[bodyForms.length - 1];
-		if (isStatementOnlyForm(lastExpr)) {
-			return [...bodyForms];
-		}
-		if (bodyForms.length === 1) return [array(sym("return"), bodyForms[0])];
-		return [...bodyForms.slice(0, -1), array(sym("return"), lastExpr)];
-	}
+	// DD-37 M22-3b: STATEMENT_ONLY_HEADS, isStatementOnlyForm, wrapReturnLast
+	// extracted to surface-helpers.js (imported at module level).
 
 	/**
 	 * Build a threading expression (thread-first or thread-last).
