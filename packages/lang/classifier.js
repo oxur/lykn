@@ -3,7 +3,7 @@
 // Currently only handles `not`; other forms pass through to the
 // existing surface macro path in expander.js/surface.js.
 
-import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc } from "./surface-ast.js";
+import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread } from "./surface-ast.js";
 
 /**
  * Classify a surface form head atom. Returns a typed AST node if the
@@ -59,6 +59,18 @@ export function classifySurfaceForm(head, args) {
       }
       return Dissoc(args[0], keys);
     }
+    case "->":
+      if (args.length < 2) throw new Error("-> requires at least 2 arguments: (-> value step...)");
+      return Thread("first", args[0], args.slice(1));
+    case "->>":
+      if (args.length < 2) throw new Error("->> requires at least 2 arguments: (->> value step...)");
+      return Thread("last", args[0], args.slice(1));
+    case "some->":
+      if (args.length < 2) throw new Error("some-> requires at least 2 arguments");
+      return SomeThread("first", args[0], args.slice(1));
+    case "some->>":
+      if (args.length < 2) throw new Error("some->> requires at least 2 arguments");
+      return SomeThread("last", args[0], args.slice(1));
     default:
       return null;
   }
@@ -71,6 +83,9 @@ export function classifySurfaceForm(head, args) {
  * @param {Function} array - array constructor
  * @returns {*} kernel S-expression
  */
+function isKw(x) { return x && x.type === "keyword"; }
+function isArr(x) { return x && x.type === "list" && Array.isArray(x.values); }
+
 export function emitSurfaceForm(node, h) {
   const { sym, array, gensym } = h;
   switch (node.type) {
@@ -99,6 +114,62 @@ export function emitSurfaceForm(node, h) {
       const binding = array(sym("const"), pattern, node.obj);
       const arrowBody = array(sym("=>"), array(), binding, array(sym("return"), restVar));
       return array(arrowBody);
+    }
+    case "Thread": {
+      let threaded = node.initial;
+      for (const step of node.steps) {
+        if (isKw(step)) {
+          threaded = array(sym("."), threaded, sym(step.value));
+        } else if (isArr(step) && step.values.length > 0 && isKw(step.values[0])) {
+          const [kw, ...rest] = step.values;
+          threaded = array(sym("."), threaded, sym(kw.value), ...rest);
+        } else if (isArr(step)) {
+          if (node.position === "first") {
+            const [fn, ...rest] = step.values;
+            threaded = array(fn, threaded, ...rest);
+          } else {
+            threaded = array(...step.values, threaded);
+          }
+        } else {
+          threaded = array(step, threaded);
+        }
+      }
+      return threaded;
+    }
+    case "SomeThread": {
+      const stmts = [];
+      let prevVar = gensym("t");
+      stmts.push(array(sym("const"), prevVar, node.initial));
+      stmts.push(array(sym("if"), array(sym("=="), prevVar, sym("null")), array(sym("return"), prevVar)));
+      for (let i = 0; i < node.steps.length; i++) {
+        const step = node.steps[i];
+        let callExpr;
+        if (isKw(step)) {
+          callExpr = array(sym("."), prevVar, sym(step.value));
+        } else if (isArr(step) && step.values.length > 0 && isKw(step.values[0])) {
+          const [kw, ...rest] = step.values;
+          callExpr = array(sym("."), prevVar, sym(kw.value), ...rest);
+        } else if (isArr(step)) {
+          if (node.position === "first") {
+            const [fn, ...rest] = step.values;
+            callExpr = array(fn, prevVar, ...rest);
+          } else {
+            callExpr = array(...step.values, prevVar);
+          }
+        } else {
+          callExpr = array(step, prevVar);
+        }
+        if (i === node.steps.length - 1) {
+          stmts.push(array(sym("return"), callExpr));
+        } else {
+          const nextVar = gensym("t");
+          stmts.push(array(sym("const"), nextVar, callExpr));
+          stmts.push(array(sym("if"), array(sym("=="), nextVar, sym("null")), array(sym("return"), nextVar)));
+          prevVar = nextVar;
+        }
+      }
+      const arrowFn = array(sym("=>"), array(), ...stmts);
+      return array(arrowFn);
     }
     default:
       throw new Error(`Unknown surface AST node type: ${node.type}`);

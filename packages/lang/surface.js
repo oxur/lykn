@@ -1211,11 +1211,7 @@ export function registerSurfaceMacros(macroEnv) {
 	// DD-37 M21: `not` moved to classifier.js (DD-37 step 3 pilot).
 	// The classifier handles (not x) → Not AST node → (! x) kernel form.
 
-	// --- -> (thread-first) ---
-	macroEnv.set("->", (...args) => buildThread(args, "first"));
-
-	// --- ->> (thread-last) ---
-	macroEnv.set("->>", (...args) => buildThread(args, "last"));
+	// DD-37 M22: ->, ->> moved to classifier.js (batch 3).
 
 	// DD-37 M22: assoc, dissoc, conj moved to classifier.js (batch 2).
 
@@ -2083,12 +2079,7 @@ export function registerSurfaceMacros(macroEnv) {
 		return array(arrowFn);
 	});
 
-	// --- some-> (nil-safe thread-first) ---
-	// (some-> x (f a) (g b)) → IIFE with null checks
-	macroEnv.set("some->", (...args) => buildSomeThread(args, "first"));
-
-	// --- some->> (nil-safe thread-last) ---
-	macroEnv.set("some->>", (...args) => buildSomeThread(args, "last"));
+	// DD-37 M22: some->, some->> moved to classifier.js (batch 3).
 
 	// --- if-let ---
 	// (if-let (pattern expr) then else)

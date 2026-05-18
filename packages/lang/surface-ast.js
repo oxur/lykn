@@ -35,3 +35,11 @@ export function Assoc(obj, pairs) {
 export function Dissoc(obj, keys) {
   return { type: "Dissoc", obj, keys };
 }
+
+// Batch 3: threading macros
+export function Thread(position, initial, steps) {
+  return { type: "Thread", position, initial, steps };
+}
+export function SomeThread(position, initial, steps) {
+  return { type: "SomeThread", position, initial, steps };
+}
