@@ -1319,3 +1319,19 @@ What's *not* changed by these amendments:
 - The Alt C ("classifier-only") fallback is unchanged; it remains
   the escape valve if Phase 0's pilot pushes the architecture past
   the +20KB band.
+
+### 2026-05-17 — Phase 0 bundle baseline (M21)
+
+Reproducible baseline measurement via `make bundle-size` (esbuild,
+ESM bundle of `packages/browser/mod.js` with full transitive
+resolution):
+
+| Metric | Value |
+|--------|-------|
+| Raw | 217,672 bytes (212.6 KB) |
+| Minified | 105,439 bytes (103.0 KB) |
+| Gzipped | 27,630 bytes (27.0 KB) |
+
+This satisfies Phase 0 criterion #1 (baseline measurement landed).
+The gzipped baseline (27.0 KB) is the reference point for the pilot
+delta and CI threshold checks (+2KB warning, +5KB hard fail).

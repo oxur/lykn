@@ -499,3 +499,10 @@ publish-one:
 	@echo ""
 	@echo "$(GREEN)✓ Published $(CRATE)$(RESET)"
 	@echo ""
+
+# ── Bundle size measurement (DD-37 Phase 0) ──────────────────────────
+
+.PHONY: bundle-size
+bundle-size:
+	@echo "$(BLUE)Measuring browser bundle size...$(RESET)"
+	@deno run -A --config project.json scripts/bundle-size.js
