@@ -3,7 +3,8 @@
 // Currently only handles `not`; other forms pass through to the
 // existing surface macro path in expander.js/surface.js.
 
-import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread } from "./surface-ast.js";
+import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet } from "./surface-ast.js";
+import { compileLetPattern, wrapReturnLast, formatSExpr } from "./surface-helpers.js";
 
 /**
  * Classify a surface form head atom. Returns a typed AST node if the
@@ -71,6 +72,18 @@ export function classifySurfaceForm(head, args) {
     case "some->>":
       if (args.length < 2) throw new Error("some->> requires at least 2 arguments");
       return SomeThread("last", args[0], args.slice(1));
+    case "if-let": {
+      if (args.length < 2 || args.length > 3) throw new Error("if-let requires 2-3 arguments: (if-let (binding expr) then else?)");
+      const bp = args[0];
+      if (!bp || bp.type !== "list" || bp.values.length !== 2) throw new Error("if-let: first argument must be (pattern expr)");
+      return IfLet(bp, args[1], args.length === 3 ? args[2] : null);
+    }
+    case "when-let": {
+      if (args.length < 2) throw new Error("when-let requires at least 2 arguments: (when-let (binding expr) body...)");
+      const bp = args[0];
+      if (!bp || bp.type !== "list" || bp.values.length !== 2) throw new Error("when-let: first argument must be (pattern expr)");
+      return WhenLet(bp, args.slice(1));
+    }
     default:
       return null;
   }
@@ -170,6 +183,35 @@ export function emitSurfaceForm(node, h) {
       }
       const arrowFn = array(sym("=>"), array(), ...stmts);
       return array(arrowFn);
+    }
+    case "IfLet": {
+      const pattern = node.bindingPair.values[0];
+      const expr = node.bindingPair.values[1];
+      const tempVar = gensym("t");
+      const stmts = [array(sym("const"), tempVar, expr)];
+      const result = compileLetPattern(pattern, tempVar);
+      if (!result) throw new Error(`if-let: unrecognized pattern: ${formatSExpr(pattern)}`);
+      const { condition, bindings } = result;
+      const thenBlock = [...bindings, array(sym("return"), node.thenBody)];
+      if (node.elseBody) {
+        stmts.push(array(sym("if"), condition, array(sym("block"), ...thenBlock), array(sym("block"), array(sym("return"), node.elseBody))));
+      } else {
+        stmts.push(array(sym("if"), condition, array(sym("block"), ...thenBlock)));
+      }
+      return array(array(sym("=>"), array(), ...stmts));
+    }
+    case "WhenLet": {
+      const pattern = node.bindingPair.values[0];
+      const expr = node.bindingPair.values[1];
+      const tempVar = gensym("t");
+      const stmts = [array(sym("const"), tempVar, expr)];
+      const result = compileLetPattern(pattern, tempVar);
+      if (!result) throw new Error(`when-let: unrecognized pattern: ${formatSExpr(pattern)}`);
+      const { condition, bindings } = result;
+      const wrapped = wrapReturnLast(node.bodyForms);
+      const returnBody = wrapped.length === 1 ? wrapped[0] : array(sym("block"), ...wrapped);
+      stmts.push(array(sym("if"), condition, array(sym("block"), ...bindings, returnBody)));
+      return array(array(sym("=>"), array(), ...stmts));
     }
     default:
       throw new Error(`Unknown surface AST node type: ${node.type}`);

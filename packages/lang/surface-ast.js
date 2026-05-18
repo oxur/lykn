@@ -43,3 +43,11 @@ export function Thread(position, initial, steps) {
 export function SomeThread(position, initial, steps) {
   return { type: "SomeThread", position, initial, steps };
 }
+
+// Batch 4: binding macros
+export function IfLet(bindingPair, thenBody, elseBody) {
+  return { type: "IfLet", bindingPair, thenBody, elseBody };
+}
+export function WhenLet(bindingPair, bodyForms) {
+  return { type: "WhenLet", bindingPair, bodyForms };
+}
