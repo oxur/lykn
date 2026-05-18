@@ -51,3 +51,12 @@ export function IfLet(bindingPair, thenBody, elseBody) {
 export function WhenLet(bindingPair, bodyForms) {
   return { type: "WhenLet", bindingPair, bodyForms };
 }
+
+// Batch 5: anonymous functions
+export function Fn(paramList, bodyForms) {
+  return { type: "Fn", paramList, bodyForms };
+}
+
+// Batch 6: logical n-ary
+export function And(args) { return { type: "And", args }; }
+export function Or(args) { return { type: "Or", args }; }

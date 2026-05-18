@@ -3,8 +3,8 @@
 // Currently only handles `not`; other forms pass through to the
 // existing surface macro path in expander.js/surface.js.
 
-import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet } from "./surface-ast.js";
-import { compileLetPattern, wrapReturnLast, formatSExpr } from "./surface-helpers.js";
+import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet, Fn, And, Or } from "./surface-ast.js";
+import { compileLetPattern, wrapReturnLast, formatSExpr, parseTypedParams, paramNameNodes, paramTypeChecks } from "./surface-helpers.js";
 
 /**
  * Classify a surface form head atom. Returns a typed AST node if the
@@ -84,6 +84,18 @@ export function classifySurfaceForm(head, args) {
       if (!bp || bp.type !== "list" || bp.values.length !== 2) throw new Error("when-let: first argument must be (pattern expr)");
       return WhenLet(bp, args.slice(1));
     }
+    case "fn":
+    case "lambda": {
+      if (args.length < 2) throw new Error("fn requires at least 2 arguments: (fn (params) body...)");
+      if (!args[0] || args[0].type !== "list") throw new Error("fn: first argument must be a parameter list");
+      return Fn(args[0], args.slice(1));
+    }
+    case "and":
+      if (args.length < 2) throw new Error("and requires at least 2 arguments: (and a b)");
+      return And(args);
+    case "or":
+      if (args.length < 2) throw new Error("or requires at least 2 arguments: (or a b)");
+      return Or(args);
     default:
       return null;
   }
@@ -212,6 +224,26 @@ export function emitSurfaceForm(node, h) {
       const returnBody = wrapped.length === 1 ? wrapped[0] : array(sym("block"), ...wrapped);
       stmts.push(array(sym("if"), condition, array(sym("block"), ...bindings, returnBody)));
       return array(array(sym("=>"), array(), ...stmts));
+    }
+    case "Fn": {
+      const params = parseTypedParams(node.paramList);
+      const pNames = params.flatMap(p => paramNameNodes(p));
+      const typeChecks = [];
+      for (const p of params) typeChecks.push(...paramTypeChecks(p, "anonymous"));
+      if (typeChecks.length > 0) {
+        return array(sym("=>"), array(...pNames), ...typeChecks, ...wrapReturnLast(node.bodyForms));
+      }
+      return array(sym("=>"), array(...pNames), ...typeChecks, ...node.bodyForms);
+    }
+    case "And": {
+      let result = node.args[0];
+      for (let i = 1; i < node.args.length; i++) result = array(sym("&&"), result, node.args[i]);
+      return result;
+    }
+    case "Or": {
+      let result = node.args[0];
+      for (let i = 1; i < node.args.length; i++) result = array(sym("||"), result, node.args[i]);
+      return result;
     }
     default:
       throw new Error(`Unknown surface AST node type: ${node.type}`);

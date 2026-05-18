@@ -471,7 +471,7 @@ function parseArrayDestructure(values, _parentNode) {
 // --- Param shape helpers ---
 
 /** Get kernel param name nodes for a function signature. */
-function paramNameNodes(p) {
+export function paramNameNodes(p) {
 	if (p.destructured) {
 		if (p.kind === "object") {
 			const elems = p.fields.map((f) => {
@@ -519,7 +519,7 @@ function paramNameNodes(p) {
 }
 
 /** Get type check assertions for a param. */
-function paramTypeChecks(p, funcName) {
+export function paramTypeChecks(p, funcName) {
 	if (p.destructured) {
 		const checks = [];
 		const allFields = [
@@ -621,7 +621,7 @@ function parseRestParam(listNode) {
  * Parse typed parameter list: (:type name :type name ...) → [{typeKw, name}, ...]
  * Also accepts destructuring patterns, (default ...), and (rest ...).
  */
-function parseTypedParams(paramList) {
+export function parseTypedParams(paramList) {
 	const params = [];
 	const values = paramList.values;
 	let i = 0;
@@ -1142,33 +1142,7 @@ export function registerSurfaceMacros(macroEnv) {
 		return array(sym("!=="), args[0], args[1]);
 	});
 
-	// --- and (logical AND) ---
-	// (and a b) → (&& a b)
-	// (and a b c d) → (&& (&& (&& a b) c) d)
-	macroEnv.set("and", (...args) => {
-		if (args.length < 2) {
-			throw new Error("and requires at least 2 arguments: (and a b)");
-		}
-		let result = args[0];
-		for (let i = 1; i < args.length; i++) {
-			result = array(sym("&&"), result, args[i]);
-		}
-		return result;
-	});
-
-	// --- or (logical OR) ---
-	// (or a b) → (|| a b)
-	// (or a b c d) → (|| (|| (|| a b) c) d)
-	macroEnv.set("or", (...args) => {
-		if (args.length < 2) {
-			throw new Error("or requires at least 2 arguments: (or a b)");
-		}
-		let result = args[0];
-		for (let i = 1; i < args.length; i++) {
-			result = array(sym("||"), result, args[i]);
-		}
-		return result;
-	});
+	// DD-37 M22: and, or moved to classifier.js (batch 6).
 
 	// --- not (logical NOT) ---
 	// DD-37 M21: `not` moved to classifier.js (DD-37 step 3 pilot).
@@ -1236,41 +1210,7 @@ export function registerSurfaceMacros(macroEnv) {
 	// Phase 2: Complex Surface Forms
 	// ===================================================================
 
-	// --- fn / lambda ---
-	// (fn (:number x :number y) (+ x y)) → (=> (x y) <type-checks> (+ x y))
-	// (fn () (Date:now)) → (=> () (Date:now))
-	const fnMacro = (...args) => {
-		if (args.length < 2) {
-			throw new Error(
-				"fn requires at least 2 arguments: (fn (params) body...)",
-			);
-		}
-		const paramList = args[0];
-		if (!isArray(paramList)) {
-			throw new Error("fn: first argument must be a parameter list");
-		}
-		const bodyForms = args.slice(1);
-
-		// Parse typed params
-		const params = parseTypedParams(paramList);
-		const pNames = params.flatMap((p) => paramNameNodes(p));
-
-		// Build type checks
-		const typeChecks = [];
-		for (const p of params) {
-			typeChecks.push(...paramTypeChecks(p, "anonymous"));
-		}
-
-		// When type checks are present, the arrow gets a block body, so we must
-		// wrap the last body expression in (return ...) to preserve the return value.
-		if (typeChecks.length > 0) {
-			return array(sym("=>"), array(...pNames), ...typeChecks, ...wrapReturnLast(bodyForms));
-		}
-		return array(sym("=>"), array(...pNames), ...typeChecks, ...bodyForms);
-	};
-
-	macroEnv.set("fn", fnMacro);
-	macroEnv.set("lambda", fnMacro);
+	// DD-37 M22: fn, lambda moved to classifier.js (batch 5).
 
 	// --- genfunc / genfn (generator functions) ---
 
