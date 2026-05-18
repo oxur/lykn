@@ -1271,13 +1271,8 @@ export function registerSurfaceMacros(macroEnv) {
 	});
 
 	// --- not (logical NOT) ---
-	// (not x) → (! x)
-	macroEnv.set("not", (...args) => {
-		if (args.length !== 1) {
-			throw new Error("not requires exactly 1 argument: (not x)");
-		}
-		return array(sym("!"), args[0]);
-	});
+	// DD-37 M21: `not` moved to classifier.js (DD-37 step 3 pilot).
+	// The classifier handles (not x) → Not AST node → (! x) kernel form.
 
 	// --- -> (thread-first) ---
 	macroEnv.set("->", (...args) => buildThread(args, "first"));
