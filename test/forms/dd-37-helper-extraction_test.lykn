@@ -1,0 +1,25 @@
+(import-macros "testing" (test includes ok))
+(import "testing/helpers.js" (compile))
+
+;; DD-37 M22-3b: integration tests proving helpers work before/after extraction.
+;; These exercise forms that depend on the internal helpers:
+;; - wrapReturnLast (used by func body handling)
+;; - compileLetPattern (used by if-let, when-let, match)
+;; - buildTypeCheck (used by func :args type annotations)
+;; - isStatementOnlyForm (used by wrapReturnLast)
+
+(test "helper: if-let uses compileLetPattern"
+  (bind r (compile "(if-let (v 42) v 0)"))
+  (includes r "42"))
+
+(test "helper: func uses wrapReturnLast + buildTypeCheck"
+  (bind r (compile "(func inc :args (:number x) :returns :number :body (+ x 1))"))
+  (includes r "function inc"))
+
+(test "helper: bind typed uses buildTypeCheck"
+  (bind r (compile "(bind :number x (compute))"))
+  (includes r "const"))
+
+(test "helper: match uses compilePattern + andChain"
+  (bind r (compile "(type Option (Some :any value) None)\n(bind x (match (Some 1) ((Some v) v) (None 0)))"))
+  (includes r "const"))
