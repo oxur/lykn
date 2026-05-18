@@ -1146,70 +1146,7 @@ export function registerSurfaceMacros(macroEnv) {
 		return sym(`${cell.value}:value`);
 	});
 
-	// --- swap! ---
-	// (swap! c f) → (= c:value (f c:value))
-	// (swap! c f a b) → (= c:value (f c:value a b))
-	macroEnv.set("swap!", (...args) => {
-		if (args.length < 2) {
-			throw new Error("swap! requires at least 2 arguments: (swap! cell fn)");
-		}
-		const cell = args[0];
-		if (cell.type !== "atom") {
-			throw new Error("swap!: first argument must be a symbol");
-		}
-		const fn = args[1];
-		const extraArgs = args.slice(2);
-		const cellValue = sym(`${cell.value}:value`);
-		return kernelArray(sym("="), cellValue, array(fn, cellValue, ...extraArgs));
-	});
-
-	// --- reset! ---
-	// (reset! c v) → (= c:value v)
-	macroEnv.set("reset!", (...args) => {
-		if (args.length !== 2) {
-			throw new Error(
-				"reset! requires exactly 2 arguments: (reset! cell value)",
-			);
-		}
-		const cell = args[0];
-		if (cell.type !== "atom") {
-			throw new Error("reset!: first argument must be a symbol");
-		}
-		return kernelArray(sym("="), sym(`${cell.value}:value`), args[1]);
-	});
-
-	// --- set! ---
-	// (set! target:prop value) → (= target:prop value) [kernel assignment]
-	// Target must be colon-syntax (member expression), not a bare binding.
-	macroEnv.set("set!", (...args) => {
-		if (args.length !== 2) {
-			throw new Error(
-				"set! requires exactly 2 arguments: (set! target:prop value)",
-			);
-		}
-		const target = args[0];
-		if (target.type !== "atom" || !target.value.includes(":")) {
-			throw new Error(
-				"set! requires a property path (e.g., obj:prop), not a bare binding. " +
-					"Use (bind x val) for new bindings, (reset! cell val) for cells.",
-			);
-		}
-		return kernelArray(sym("="), target, args[1]);
-	});
-
-	// --- set-symbol! ---
-	// (set-symbol! obj key value) → (= (get obj key) value) [kernel assignment]
-	// For Symbol-keyed property mutation. Reading uses (get obj key) directly.
-	// TODO: deprecate when surface/kernel syntaxes are separated; remove the release after that.
-	macroEnv.set("set-symbol!", (...args) => {
-		if (args.length !== 3) {
-			throw new Error(
-				"set-symbol! requires exactly 3 arguments: (set-symbol! obj key value)",
-			);
-		}
-		const target = array(sym("get"), args[0], args[1]);
-		return kernelArray(sym("="), target, args[2]);
-	});
+	// DD-37 M22: swap!, reset!, set!, set-symbol! moved to classifier.js (batch 1).
 
 	// --- = (strict equality) ---
 	// (= a b) → (=== a b)
