@@ -1335,3 +1335,33 @@ resolution):
 This satisfies Phase 0 criterion #1 (baseline measurement landed).
 The gzipped baseline (27.0 KB) is the reference point for the pilot
 delta and CI threshold checks (+2KB warning, +5KB hard fail).
+
+### 2026-05-17 — Phase 0 `not` pilot delta + extrapolation (M21)
+
+Post-pilot measurement (after `not` extracted through classifier.js):
+
+| Metric | Baseline | Post-pilot | Delta |
+|--------|----------|------------|-------|
+| Raw | 217,672 | 218,410 | +738 bytes (+0.7 KB) |
+| Minified | 105,439 | 105,752 | +313 bytes (+0.3 KB) |
+| Gzipped | 27,630 | 27,739 | +109 bytes (+0.1 KB) |
+
+**Extrapolation (~20 forms):**
+
+- Lower bound: 109 bytes × 20 = **+2.2 KB gzipped** (assumes all
+  forms are comparable to `not`).
+- Upper bound: 109 bytes × 20 × 3 = **+6.5 KB gzipped** (scaling
+  factor 3× for `func`, `match`, `bind` being substantially larger
+  than the unary `not`).
+- Midpoint estimate: ~4 KB gzipped total growth.
+
+**Budget check:** DD-37's total budget is +20 KB gzipped. Even the
+upper bound (6.5 KB) is well within budget. The pilot's per-form
+cost is encouraging — the full migration should land comfortably
+within the band.
+
+**Go/no-go: GO.** The per-form migration (DD-37 step 3 for
+remaining ~19 forms) may proceed. No Alt C escalation needed.
+
+This satisfies Phase 0 criterion #3 (one full-pipeline migration
+prototyped, delta measured, extrapolated).
