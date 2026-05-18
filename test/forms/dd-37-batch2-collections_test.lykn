@@ -1,0 +1,15 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" (compile))
+
+(test "conj: appends to array"
+  (bind r (compile "(conj items 4)"))
+  (includes r "...items"))
+
+(test "assoc: immutable object update"
+  (bind r (compile "(assoc user :age 31)"))
+  (includes r "...user")
+  (includes r "age"))
+
+(test "dissoc: immutable field removal"
+  (bind r (compile "(dissoc user :password)"))
+  (includes r "rest"))

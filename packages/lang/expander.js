@@ -733,7 +733,7 @@ export function expandExpr(form) {
   if (head.type === 'atom' && !form._kernel) {
     const astNode = classifySurfaceForm(head.value, form.values.slice(1));
     if (astNode) {
-      const kernel = emitSurfaceForm(astNode, sym, array);
+      const kernel = emitSurfaceForm(astNode, { sym, array, gensym, isKeyword });
       kernel._kernel = true;
       return expandExpr(kernel);
     }

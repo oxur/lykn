@@ -49,7 +49,8 @@ export function classifySurfaceForm(head, args) {
  * @param {Function} array - array constructor
  * @returns {*} kernel S-expression
  */
-export function emitSurfaceForm(node, sym, array) {
+export function emitSurfaceForm(node, h) {
+  const { sym, array, gensym } = h;
   switch (node.type) {
     case "Not":
       return array(sym("!"), node.operand);

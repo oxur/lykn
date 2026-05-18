@@ -24,7 +24,7 @@ Deno.test("DD-37 pilot: new classifier path produces same kernel as old macro pa
   const args = form.values.slice(1); // [x]
   const astNode = classifySurfaceForm(head, args);
   if (!astNode) throw new Error("classifier returned null for 'not'");
-  const kernelForm = emitSurfaceForm(astNode, sym, array);
+  const kernelForm = emitSurfaceForm(astNode, { sym, array });
   const newResult = compile(read(`(! x)`)).trim();
 
   assertEquals(oldResult, newResult,
