@@ -37,14 +37,14 @@ export function resetTypeRegistry() {
 
 // --- Shared Helpers ---
 
-function isPascalCase(name) {
+export function isPascalCase(name) {
 	return name.length > 0 && name[0] >= "A" && name[0] <= "Z";
 }
 
 /**
  * Determine the static type of a literal AST node, or null if not a literal.
  */
-function getLiteralType(node) {
+export function getLiteralType(node) {
 	if (node.type === "number") return "number";
 	if (node.type === "string") return "string";
 	if (node.type === "atom") {
@@ -75,7 +75,7 @@ function getLiteralType(node) {
 /**
  * Check if a type annotation matches a statically known literal type.
  */
-function typeMatchesLiteral(typeName, literalType) {
+export function typeMatchesLiteral(typeName, literalType) {
 	if (literalType === "NaN") return false; // NaN fails :number
 	if (literalType === "null") return false; // null fails :object
 	if (literalType === "undefined") return false; // undefined fails everything
@@ -86,7 +86,7 @@ function typeMatchesLiteral(typeName, literalType) {
  * Build a type check assertion for a parameter.
  * Returns a kernel (if (check) (throw (new TypeError msg))) form, or null for :any.
  */
-function buildTypeCheck(paramNode, typeKw, funcName, label) {
+export function buildTypeCheck(paramNode, typeKw, funcName, label) {
 	const typeName = typeKw.value;
 	if (typeName === "any") return null;
 
@@ -691,7 +691,7 @@ function replaceTilde(node, replacement) {
  * checks are conditions (to be &&'d together).
  * bindings are (const ...) forms.
  */
-function compilePattern(pattern, targetSym) {
+export function compilePattern(pattern, targetSym) {
 	// Wildcard
 	if (pattern.type === "atom" && pattern.value === "_") {
 		return { checks: [], bindings: [] };
@@ -877,7 +877,7 @@ function compilePattern(pattern, targetSym) {
 /**
  * Build an && chain from an array of check AST nodes.
  */
-function andChain(checks) {
+export function andChain(checks) {
 	if (checks.length === 0) return null;
 	if (checks.length === 1) return checks[0];
 	let result = checks[0];
@@ -885,6 +885,33 @@ function andChain(checks) {
 		result = array(sym("&&"), result, checks[i]);
 	}
 	return result;
+}
+
+export function compileLetPattern(pattern, tempVar) {
+	if (
+		isArray(pattern) &&
+		pattern.values.length > 0 &&
+		pattern.values[0].type === "atom" &&
+		isPascalCase(pattern.values[0].value)
+	) {
+		const { checks, bindings } = compilePattern(pattern, tempVar);
+		return { condition: andChain(checks), bindings };
+	}
+	if (
+		isArray(pattern) &&
+		pattern.values.length > 0 &&
+		pattern.values[0].type === "atom" &&
+		pattern.values[0].value === "obj"
+	) {
+		const { checks, bindings } = compilePattern(pattern, tempVar);
+		return { condition: andChain(checks), bindings };
+	}
+	if (pattern.type === "atom" && !isPascalCase(pattern.value)) {
+		const condition = kernelArray(sym("!="), tempVar, sym("null"));
+		const bindings = [array(sym("const"), pattern, tempVar)];
+		return { condition, bindings };
+	}
+	return null;
 }
 
 /**
@@ -994,35 +1021,7 @@ export function registerSurfaceMacros(macroEnv) {
 	 * Returns { condition, bindings } where condition is the test AST node
 	 * and bindings is an array of (const ...) forms.
 	 */
-	function compileLetPattern(pattern, tempVar) {
-		if (
-			isArray(pattern) &&
-			pattern.values.length > 0 &&
-			pattern.values[0].type === "atom" &&
-			isPascalCase(pattern.values[0].value)
-		) {
-			// ADT constructor pattern
-			const { checks, bindings } = compilePattern(pattern, tempVar);
-			return { condition: andChain(checks), bindings };
-		}
-		if (
-			isArray(pattern) &&
-			pattern.values.length > 0 &&
-			pattern.values[0].type === "atom" &&
-			pattern.values[0].value === "obj"
-		) {
-			// Structural obj pattern
-			const { checks, bindings } = compilePattern(pattern, tempVar);
-			return { condition: andChain(checks), bindings };
-		}
-		if (pattern.type === "atom" && !isPascalCase(pattern.value)) {
-			// Simple binding — nil check (loose != to catch null and undefined)
-			const condition = kernelArray(sym("!="), tempVar, sym("null"));
-			const bindings = [array(sym("const"), pattern, tempVar)];
-			return { condition, bindings };
-		}
-		return null; // unrecognized
-	}
+	// DD-37 M22-3b: compileLetPattern moved to top-level (exported).
 
 	// --- bind ---
 	// (bind name value) → (const name value)

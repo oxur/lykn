@@ -47,3 +47,6 @@ export function kernelArray(...items) {
   node._kernel = true;
   return node;
 }
+
+// Re-exported from surface.js for classifier.js use.
+export { isPascalCase, compilePattern, andChain, getLiteralType, typeMatchesLiteral, buildTypeCheck, compileLetPattern } from "./surface.js";
