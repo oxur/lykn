@@ -1,0 +1,15 @@
+(import-macros "testing" (test is-equal includes))
+(import "testing/helpers.js" (compile))
+
+;; DD-37 Phase 0 pilot: `not` produces identical output through the
+;; new classifier architecture path as through the old surface-macro path.
+
+(test
+  "DD-37 pilot: (not x) compiles to (! x) via surface macro"
+  (bind result (compile "(not x)"))
+  (includes result "!x"))
+
+(test
+  "DD-37 pilot: (not (= a b)) compiles correctly"
+  (bind result (compile "(not (= a b))"))
+  (includes result "!(a === b)"))
