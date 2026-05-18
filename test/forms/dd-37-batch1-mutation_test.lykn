@@ -1,0 +1,22 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" (compile))
+
+;; DD-37 M22 Batch 1: mutation primitives regression tests.
+;; These must continue to pass after the forms are extracted from
+;; surface.js into classifier.js.
+
+(test "swap!: basic cell swap"
+  (bind r (compile "(bind c (cell 0))\n(swap! c (fn (:number n) (+ n 1)))"))
+  (includes r "c.value"))
+
+(test "reset!: basic cell reset"
+  (bind r (compile "(bind c (cell 0))\n(reset! c 42)"))
+  (includes r "c.value = 42"))
+
+(test "set!: property assignment"
+  (bind r (compile "(set! obj:name \"Alice\")"))
+  (includes r "obj.name = "))
+
+(test "set-symbol!: computed property assignment"
+  (bind r (compile "(set-symbol! obj key \"val\")"))
+  (includes r "obj[key] = "))

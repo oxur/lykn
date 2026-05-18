@@ -64,6 +64,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features -- --include-ignored
 
+  bundle-size:
+    name: "Bundle size check (DD-37)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: BASELINE_GZIPPED=27630 make bundle-size
+
   publishing:
     name: "Publishing pipeline tests"
     runs-on: ubuntu-latest
