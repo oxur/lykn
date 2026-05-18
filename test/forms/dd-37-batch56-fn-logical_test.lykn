@@ -1,0 +1,24 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" (compile))
+
+;; Batch 5: fn/lambda
+(test "fn: typed params"
+  (bind r (compile "(fn (:number x) (* x 2))"))
+  (includes r "=>"))
+
+(test "lambda: alias for fn"
+  (bind r (compile "(lambda (:number x) (* x 2))"))
+  (includes r "=>"))
+
+;; Batch 6: and/or
+(test "and: binary"
+  (bind r (compile "(and a b)"))
+  (includes r "&&"))
+
+(test "or: binary"
+  (bind r (compile "(or a b)"))
+  (includes r "||"))
+
+(test "and: variadic folds left"
+  (bind r (compile "(and a b c)"))
+  (includes r "&&"))
