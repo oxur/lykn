@@ -1,0 +1,6 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" ((alias compile-kernel compile) compile-both))
+
+(test "function*: generator declaration"
+  (const result (compile-both "(function* gen () (yield 1) (yield 2))"))
+  (includes result "function* gen()"))

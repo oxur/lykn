@@ -33,3 +33,13 @@
 (test "passthrough: === (strict comparison)"
   (const result (compile-both "(=== a b)"))
   (includes result "a === b"))
+
+;; Macro / quoting (DD-58 refinement: quote/quasiquote are flavor (b),
+;; produced by reader macros 'expr and `expr)
+(test "passthrough: quote (macro/quoting)"
+  (const result (compile "(quote x)"))
+  (includes result "x"))
+
+(test "passthrough: quasiquote (macro/quoting)"
+  (const result (compile "(quasiquote x)"))
+  (includes result "x"))
