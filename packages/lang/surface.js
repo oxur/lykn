@@ -1217,65 +1217,7 @@ export function registerSurfaceMacros(macroEnv) {
 	// --- ->> (thread-last) ---
 	macroEnv.set("->>", (...args) => buildThread(args, "last"));
 
-	// --- assoc ---
-	macroEnv.set("assoc", (...args) => {
-		if (args.length < 3) {
-			throw new Error(
-				"assoc requires at least 3 arguments: (assoc obj :key value)",
-			);
-		}
-		const obj = args[0];
-		const pairs = [];
-		for (let i = 1; i < args.length; i += 2) {
-			if (!isKeyword(args[i])) {
-				throw new Error(
-					`assoc: expected keyword at position ${i}, got ${args[i]?.type ?? "nothing"}`,
-				);
-			}
-			if (i + 1 >= args.length) {
-				throw new Error(`assoc: keyword :${args[i].value} has no value`);
-			}
-			pairs.push(array(sym(args[i].value), args[i + 1]));
-		}
-		return array(sym("object"), array(sym("spread"), obj), ...pairs);
-	});
-
-	// --- dissoc ---
-	macroEnv.set("dissoc", (...args) => {
-		if (args.length < 2) {
-			throw new Error(
-				"dissoc requires at least 2 arguments: (dissoc obj :key)",
-			);
-		}
-		const obj = args[0];
-		const aliasPatterns = [];
-		for (let i = 1; i < args.length; i++) {
-			if (!isKeyword(args[i])) {
-				throw new Error(
-					`dissoc: expected keyword at position ${i}, got ${args[i]?.type ?? "nothing"}`,
-				);
-			}
-			const discardVar = gensym("_");
-			aliasPatterns.push(array(sym("alias"), sym(args[i].value), discardVar));
-		}
-		const restVar = gensym("rest");
-		const pattern = array(
-			sym("object"),
-			...aliasPatterns,
-			array(sym("rest"), restVar),
-		);
-		const binding = array(sym("const"), pattern, obj);
-		const arrowBody = array(sym("=>"), array(), binding, array(sym("return"), restVar));
-		return array(arrowBody);
-	});
-
-	// --- conj ---
-	macroEnv.set("conj", (...args) => {
-		if (args.length !== 2) {
-			throw new Error("conj requires exactly 2 arguments: (conj array value)");
-		}
-		return array(sym("array"), array(sym("spread"), args[0]), args[1]);
-	});
+	// DD-37 M22: assoc, dissoc, conj moved to classifier.js (batch 2).
 
 	// ===================================================================
 	// js: namespace interop (DD-15)

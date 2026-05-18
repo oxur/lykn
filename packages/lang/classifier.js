@@ -3,7 +3,7 @@
 // Currently only handles `not`; other forms pass through to the
 // existing surface macro path in expander.js/surface.js.
 
-import { Not, Swap, Reset, SetProp, SetSymbol } from "./surface-ast.js";
+import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc } from "./surface-ast.js";
 
 /**
  * Classify a surface form head atom. Returns a typed AST node if the
@@ -37,6 +37,28 @@ export function classifySurfaceForm(head, args) {
     case "set-symbol!":
       if (args.length !== 3) throw new Error("set-symbol! requires exactly 3 arguments: (set-symbol! obj key value)");
       return SetSymbol(args[0], args[1], args[2]);
+    case "conj":
+      if (args.length !== 2) throw new Error("conj requires exactly 2 arguments: (conj array value)");
+      return Conj(args[0], args[1]);
+    case "assoc": {
+      if (args.length < 3) throw new Error("assoc requires at least 3 arguments: (assoc obj :key value)");
+      const pairs = [];
+      for (let i = 1; i < args.length; i += 2) {
+        if (args[i].type !== "keyword") throw new Error(`assoc: expected keyword at position ${i}, got ${args[i]?.type ?? "nothing"}`);
+        if (i + 1 >= args.length) throw new Error(`assoc: keyword :${args[i].value} has no value`);
+        pairs.push({ key: args[i].value, value: args[i + 1] });
+      }
+      return Assoc(args[0], pairs);
+    }
+    case "dissoc": {
+      if (args.length < 2) throw new Error("dissoc requires at least 2 arguments: (dissoc obj :key)");
+      const keys = [];
+      for (let i = 1; i < args.length; i++) {
+        if (args[i].type !== "keyword") throw new Error(`dissoc: expected keyword at position ${i}, got ${args[i]?.type ?? "nothing"}`);
+        keys.push(args[i].value);
+      }
+      return Dissoc(args[0], keys);
+    }
     default:
       return null;
   }
@@ -64,6 +86,20 @@ export function emitSurfaceForm(node, h) {
       return array(sym("="), node.target, node.value);
     case "SetSymbol":
       return array(sym("="), array(sym("get"), node.obj, node.key), node.value);
+    case "Conj":
+      return array(sym("array"), array(sym("spread"), node.arr), node.item);
+    case "Assoc": {
+      const pairs = node.pairs.map(p => array(sym(p.key), p.value));
+      return array(sym("object"), array(sym("spread"), node.obj), ...pairs);
+    }
+    case "Dissoc": {
+      const aliasPatterns = node.keys.map(k => array(sym("alias"), sym(k), gensym("_")));
+      const restVar = gensym("rest");
+      const pattern = array(sym("object"), ...aliasPatterns, array(sym("rest"), restVar));
+      const binding = array(sym("const"), pattern, node.obj);
+      const arrowBody = array(sym("=>"), array(), binding, array(sym("return"), restVar));
+      return array(arrowBody);
+    }
     default:
       throw new Error(`Unknown surface AST node type: ${node.type}`);
   }

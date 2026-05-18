@@ -24,3 +24,14 @@ export function SetProp(target, value) {
 export function SetSymbol(obj, key, value) {
   return { type: "SetSymbol", obj, key, value };
 }
+
+// Batch 2: collection ops
+export function Conj(arr, item) {
+  return { type: "Conj", arr, item };
+}
+export function Assoc(obj, pairs) {
+  return { type: "Assoc", obj, pairs };
+}
+export function Dissoc(obj, keys) {
+  return { type: "Dissoc", obj, keys };
+}
