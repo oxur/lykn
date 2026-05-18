@@ -1,0 +1,10 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" (compile))
+
+(test "if-let: simple binding"
+  (bind r (compile "(if-let (v 42) v 0)"))
+  (includes r "42"))
+
+(test "when-let: simple binding"
+  (bind r (compile "(when-let (v 42) (console:log v))"))
+  (includes r "42"))
