@@ -24,7 +24,7 @@ import {
 // --- Type Registry ---
 // Maps constructor names to their field names, populated by `type` macro.
 // Used by `match` and `if-let`/`when-let` to resolve ADT pattern field bindings.
-const typeRegistry = new Map();
+export const typeRegistry = new Map();
 
 export function resetTypeRegistry() {
 	typeRegistry.clear();
@@ -190,7 +190,7 @@ const FUNC_CLAUSE_KEYS = new Set(["args", "returns", "yields", "pre", "post", "b
  * Other keywords (like :string, :number) are treated as values.
  * Returns Map<string, any[]>.
  */
-function parseKeywordClauses(args) {
+export function parseKeywordClauses(args) {
 	const clauses = new Map();
 	let currentKey = null;
 	let currentValues = [];
@@ -216,7 +216,7 @@ function parseKeywordClauses(args) {
  * Parse a destructuring pattern list: (object :type name ...) or (array :type name ...)
  * Returns { destructured: true, kind, fields, rest? }
  */
-function parseDestructuredParam(listNode) {
+export function parseDestructuredParam(listNode) {
 	const values = listNode.values;
 	if (values.length === 0) {
 		throw new Error(
@@ -244,7 +244,7 @@ function parseDestructuredParam(listNode) {
 	return parseArrayDestructure(inner, listNode);
 }
 
-function parseObjectDestructure(values, _parentNode) {
+export function parseObjectDestructure(values, _parentNode) {
 	const fields = [];
 	let i = 0;
 	while (i < values.length) {
@@ -340,7 +340,7 @@ function parseObjectDestructure(values, _parentNode) {
 	return { destructured: true, kind: "object", fields };
 }
 
-function parseArrayDestructure(values, _parentNode) {
+export function parseArrayDestructure(values, _parentNode) {
 	const fields = [];
 	let rest = null;
 	let i = 0;
@@ -555,13 +555,13 @@ export function paramTypeChecks(p, funcName) {
 }
 
 /** Get the dispatch type string for multi-clause dispatch. */
-function paramDispatchType(p) {
+export function paramDispatchType(p) {
 	if (p.destructured) return p.kind;
 	return p.typeKw.value;
 }
 
 /** Get all bound name nodes for a param. */
-function paramBoundNames(p) {
+export function paramBoundNames(p) {
 	if (p.destructured) {
 		const names = [];
 		for (const f of p.fields) {
@@ -582,7 +582,7 @@ function paramBoundNames(p) {
 /**
  * Parse a top-level (default :type name value) in :args.
  */
-function parseDefaultParam(listNode) {
+export function parseDefaultParam(listNode) {
 	const vals = listNode.values;
 	if (vals.length !== 4) {
 		throw new Error(
@@ -601,7 +601,7 @@ function parseDefaultParam(listNode) {
 /**
  * Parse a top-level (rest :type name) in :args.
  */
-function parseRestParam(listNode) {
+export function parseRestParam(listNode) {
 	const vals = listNode.values;
 	if (vals.length !== 3) {
 		throw new Error(
@@ -914,6 +914,405 @@ export function compileLetPattern(pattern, tempVar) {
 	return null;
 }
 
+// DD-37 M22: extracted from registerSurfaceMacros inner scope.
+export function instrumentYields(node, yieldsType, funcName) {
+	if (!node || node.type !== "list") return node;
+	const vals = node.values;
+	if (vals.length === 0) return node;
+	if (vals[0].type === "atom" && vals[0].value === "yield" && vals.length >= 2) {
+		const yieldedExpr = instrumentYields(vals[1], yieldsType, funcName);
+		const vVar = gensym("yv");
+		const check = buildTypeCheck(vVar, yieldsType, funcName, "yield");
+		if (check) {
+			const iife = array(
+				array(sym("=>"), array(),
+					array(sym("const"), vVar, yieldedExpr),
+					check,
+					array(sym("return"), vVar),
+				),
+			);
+			return array(sym("yield"), iife);
+		}
+		return array(sym("yield"), yieldedExpr);
+	}
+	if (vals[0].type === "atom" && vals[0].value === "yield*") {
+		return node;
+	}
+	return {
+		...node,
+		values: vals.map((v) => instrumentYields(v, yieldsType, funcName)),
+	};
+}
+
+export function buildSingleClauseFunc(funcName, funcNameNode, clauseArgs) {
+	const clauses = parseKeywordClauses(clauseArgs);
+	const argsClause = clauses.get("args");
+	const returnsClause = clauses.get("returns");
+	const preClause = clauses.get("pre");
+	const postClause = clauses.get("post");
+	const bodyClause = clauses.get("body");
+
+	if (!bodyClause || bodyClause.length === 0) {
+		throw new Error(`func ${funcName}: :body is required`);
+	}
+
+	// Parse params
+	let params = [];
+	if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
+		params = parseTypedParams(argsClause[0]);
+	}
+	const pNames = params.flatMap((p) => paramNameNodes(p));
+
+	// Build function body statements
+	const bodyStmts = [];
+
+	// Type checks for params
+	for (const p of params) {
+		bodyStmts.push(...paramTypeChecks(p, funcName));
+	}
+
+	// Pre-condition
+	if (preClause && preClause.length > 0) {
+		const preExpr = preClause[0];
+		const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
+		bodyStmts.push(
+			array(
+				sym("if"),
+				array(sym("!"), preExpr),
+				array(
+					sym("throw"),
+					array(sym("new"), sym("Error"), { type: "string", value: preMsg }),
+				),
+			),
+		);
+	}
+
+	// Determine return behavior
+	const hasReturns = returnsClause && returnsClause.length > 0;
+	const returnsType = hasReturns ? returnsClause[0] : null;
+	const isVoid =
+		returnsType && isKeyword(returnsType) && returnsType.value === "void";
+	const hasPost = postClause && postClause.length > 0;
+
+	if (hasPost) {
+		const lastBodyExpr = bodyClause[bodyClause.length - 1];
+		if (lastBodyExpr && isStatementOnlyForm(lastBodyExpr)) {
+			const headName = isArray(lastBodyExpr) && lastBodyExpr.values.length > 0
+				? lastBodyExpr.values[0].value || "<unknown>"
+				: "<unknown>";
+			const retType = returnsType ? returnsType.value : "<unknown>";
+			throw new Error(
+				`function \`${funcName}\` declared \`:returns :${retType}\` but body ends with \`${headName}\` ` +
+				`(a statement-only form which cannot produce a value). ` +
+				`Either: (a) add a return-typed expression after the form, ` +
+				`or (b) remove \`:returns :${retType}\` from the function declaration.`
+			);
+		}
+		const resultVar = gensym("result");
+		// Body: capture result
+		if (bodyClause.length === 1) {
+			bodyStmts.push(array(sym("const"), resultVar, bodyClause[0]));
+		} else {
+			// Multiple body exprs — last one is the value
+			const initBody = bodyClause.slice(0, -1);
+			bodyStmts.push(...initBody);
+			bodyStmts.push(
+				array(sym("const"), resultVar, bodyClause[bodyClause.length - 1]),
+			);
+		}
+
+		// Returns type check on result
+		if (hasReturns && !isVoid && returnsType.value !== "any") {
+			const retCheck = buildTypeCheck(
+				resultVar,
+				returnsType,
+				funcName,
+				"return",
+			);
+			if (retCheck) bodyStmts.push(retCheck);
+		}
+
+		// Post-condition
+		const postExpr = postClause[0];
+		const postMsg = `${funcName}: post-condition failed: ${formatSExpr(postExpr)} — callee blame`;
+		const postWithResult = replaceTilde(postExpr, resultVar);
+		bodyStmts.push(
+			array(
+				sym("if"),
+				array(sym("!"), postWithResult),
+				array(
+					sym("throw"),
+					array(sym("new"), sym("Error"), { type: "string", value: postMsg }),
+				),
+			),
+		);
+
+		bodyStmts.push(array(sym("return"), resultVar));
+	} else if (hasReturns && !isVoid) {
+		// Returns type check
+		if (returnsType.value !== "any") {
+			const lastBodyExpr = bodyClause[bodyClause.length - 1];
+			if (lastBodyExpr && isStatementOnlyForm(lastBodyExpr)) {
+				const headName = isArray(lastBodyExpr) && lastBodyExpr.values.length > 0
+					? lastBodyExpr.values[0].value || "<unknown>"
+					: "<unknown>";
+				throw new Error(
+					`function \`${funcName}\` declared \`:returns :${returnsType.value}\` but body ends with \`${headName}\` ` +
+					`(a statement-only form which cannot produce a value). ` +
+					`Either: (a) add a return-typed expression after the form, ` +
+					`or (b) remove \`:returns :${returnsType.value}\` from the function declaration.`
+				);
+			}
+			const resultVar = gensym("result");
+			if (bodyClause.length === 1) {
+				bodyStmts.push(array(sym("const"), resultVar, bodyClause[0]));
+			} else {
+				const initBody = bodyClause.slice(0, -1);
+				bodyStmts.push(...initBody);
+				bodyStmts.push(
+					array(sym("const"), resultVar, bodyClause[bodyClause.length - 1]),
+				);
+			}
+			const retCheck = buildTypeCheck(
+				resultVar,
+				returnsType,
+				funcName,
+				"return",
+			);
+			if (retCheck) bodyStmts.push(retCheck);
+			bodyStmts.push(array(sym("return"), resultVar));
+		} else {
+			// :any return — no check
+			bodyStmts.push(...wrapReturnLast(bodyClause));
+		}
+	} else if (isVoid) {
+		bodyStmts.push(...bodyClause);
+	} else {
+		// No :returns — treat body forms as statements, implicit return of last
+		bodyStmts.push(...wrapReturnLast(bodyClause));
+	}
+
+	return array(
+		sym("function"),
+		funcNameNode,
+		array(...pNames),
+		...bodyStmts,
+	);
+}
+
+
+export function buildMultiClauseFunc(funcName, funcNameNode, clauseLists) {
+	const argsVar = gensym("args");
+	const stmts = [];
+
+	// Sort clauses: longer arity first, then more typed before less typed
+	const parsed = clauseLists.map((cl) => {
+		const clauses = parseKeywordClauses(cl.values);
+		const argsClause = clauses.get("args");
+		let params = [];
+		if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
+			params = parseTypedParams(argsClause[0]);
+		}
+		const typedCount = params.filter((p) => paramDispatchType(p) !== "any").length;
+		return { clauses, params, typedCount, arity: params.length };
+	});
+
+	parsed.sort((a, b) => {
+		if (a.arity !== b.arity) return b.arity - a.arity;
+		return b.typedCount - a.typedCount;
+	});
+
+	for (const clause of parsed) {
+		const { clauses, params } = clause;
+		const returnsClause = clauses.get("returns");
+		const preClause = clauses.get("pre");
+		const postClause = clauses.get("post");
+		const bodyClause = clauses.get("body");
+
+		if (!bodyClause || bodyClause.length === 0) {
+			throw new Error(`func ${funcName}: :body is required in each clause`);
+		}
+
+		// Build dispatch condition: args.length === N && type checks
+		const conditions = [
+			array(sym("==="), sym(`${argsVar.value}:length`), {
+				type: "number",
+				value: params.length,
+			}),
+		];
+
+		for (let i = 0; i < params.length; i++) {
+			const p = params[i];
+			const dtype = paramDispatchType(p);
+			if (dtype === "any") continue;
+			const argAccess = array(sym("get"), argsVar, {
+				type: "number",
+				value: i,
+			});
+			// Inline type check for dispatch
+			switch (dtype) {
+				case "number":
+					conditions.push(
+						array(sym("==="), array(sym("typeof"), argAccess), {
+							type: "string",
+							value: "number",
+						}),
+					);
+					break;
+				case "string":
+					conditions.push(
+						array(sym("==="), array(sym("typeof"), argAccess), {
+							type: "string",
+							value: "string",
+						}),
+					);
+					break;
+				case "boolean":
+					conditions.push(
+						array(sym("==="), array(sym("typeof"), argAccess), {
+							type: "string",
+							value: "boolean",
+						}),
+					);
+					break;
+				case "function":
+					conditions.push(
+						array(sym("==="), array(sym("typeof"), argAccess), {
+							type: "string",
+							value: "function",
+						}),
+					);
+					break;
+				case "object":
+					conditions.push(
+						array(
+							sym("&&"),
+							array(sym("==="), array(sym("typeof"), argAccess), {
+								type: "string",
+								value: "object",
+							}),
+							array(sym("!=="), argAccess, sym("null")),
+						),
+					);
+					break;
+				case "array":
+					conditions.push(array(sym("Array:isArray"), argAccess));
+					break;
+				default:
+					break;
+			}
+		}
+
+		const condition = andChain(conditions);
+
+		// Build clause body
+		const clauseBody = [];
+
+		// Bind params from args
+		for (let i = 0; i < params.length; i++) {
+			const p = params[i];
+			const argAccess = array(sym("get"), argsVar, {
+				type: "number",
+				value: i,
+			});
+			if (p.destructured) {
+				// const (object name1 name2) = get(args, i)
+				clauseBody.push(
+					array(sym("const"), paramNameNodes(p)[0], argAccess),
+				);
+			} else {
+				clauseBody.push(
+					array(sym("const"), p.name, argAccess),
+				);
+			}
+		}
+
+		// Full type checks (with NaN exclusion etc.)
+		for (const p of params) {
+			clauseBody.push(...paramTypeChecks(p, funcName));
+		}
+
+		// Pre-condition
+		if (preClause && preClause.length > 0) {
+			const preExpr = preClause[0];
+			const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
+			clauseBody.push(
+				array(
+					sym("if"),
+					array(sym("!"), preExpr),
+					array(
+						sym("throw"),
+						array(sym("new"), sym("Error"), {
+							type: "string",
+							value: preMsg,
+						}),
+					),
+				),
+			);
+		}
+
+		// Body + return
+		const hasReturns = returnsClause && returnsClause.length > 0;
+		const hasPost = postClause && postClause.length > 0;
+
+		if (hasPost) {
+			const resultVar = gensym("result");
+			if (bodyClause.length === 1) {
+				clauseBody.push(array(sym("const"), resultVar, bodyClause[0]));
+			} else {
+				clauseBody.push(...bodyClause.slice(0, -1));
+				clauseBody.push(
+					array(sym("const"), resultVar, bodyClause[bodyClause.length - 1]),
+				);
+			}
+			const postExpr = postClause[0];
+			const postMsg = `${funcName}: post-condition failed: ${formatSExpr(postExpr)} — callee blame`;
+			const postWithResult = replaceTilde(postExpr, resultVar);
+			clauseBody.push(
+				array(
+					sym("if"),
+					array(sym("!"), postWithResult),
+					array(
+						sym("throw"),
+						array(sym("new"), sym("Error"), {
+							type: "string",
+							value: postMsg,
+						}),
+					),
+				),
+			);
+			clauseBody.push(array(sym("return"), resultVar));
+		} else if (hasReturns) {
+			clauseBody.push(...wrapReturnLast(bodyClause));
+		} else {
+			clauseBody.push(...bodyClause);
+		}
+
+		stmts.push(
+			array(sym("if"), condition, array(sym("block"), ...clauseBody)),
+		);
+	}
+
+	// Final throw for no matching clause
+	stmts.push(
+		array(
+			sym("throw"),
+			array(sym("new"), sym("TypeError"), {
+				type: "string",
+				value: `${funcName}: no matching clause for arguments`,
+			}),
+		),
+	);
+
+	return array(
+		sym("function"),
+		funcNameNode,
+		array(array(sym("rest"), argsVar)),
+		...stmts,
+	);
+}
+
+
 /**
  * Register all surface form macros into the macro environment.
  * @param {Map<string, Function>} macroEnv
@@ -1182,41 +1581,6 @@ export function registerSurfaceMacros(macroEnv) {
 	 * Recursively walk an AST node and instrument (yield expr) forms
 	 * with a type check on the yielded value. Leaves (yield*) unchanged.
 	 */
-	function instrumentYields(node, yieldsType, funcName) {
-		if (!node || node.type !== "list") return node;
-		const vals = node.values;
-		if (vals.length === 0) return node;
-
-		// (yield expr) → wrap in IIFE: (yield ((=> () (const __v expr) check (return __v))))
-		if (vals[0].type === "atom" && vals[0].value === "yield" && vals.length >= 2) {
-			const yieldedExpr = instrumentYields(vals[1], yieldsType, funcName);
-			const vVar = gensym("yv");
-			const check = buildTypeCheck(vVar, yieldsType, funcName, "yield");
-			if (check) {
-				// IIFE that checks and returns the value
-				const iife = array(
-					array(sym("=>"), array(),
-						array(sym("const"), vVar, yieldedExpr),
-						check,
-						array(sym("return"), vVar),
-					),
-				);
-				return array(sym("yield"), iife);
-			}
-			return array(sym("yield"), yieldedExpr);
-		}
-
-		// (yield* ...) — leave as-is, delegate responsibility
-		if (vals[0].type === "atom" && vals[0].value === "yield*") {
-			return node;
-		}
-
-		// Recurse into all sub-expressions
-		return {
-			...node,
-			values: vals.map((v) => instrumentYields(v, yieldsType, funcName)),
-		};
-	}
 
 	// (genfunc name :args (...) :yields :type :body ...)
 	macroEnv.set("genfunc", (...args) => {
@@ -1459,372 +1823,7 @@ export function registerSurfaceMacros(macroEnv) {
 		);
 	});
 
-	function buildSingleClauseFunc(funcName, funcNameNode, clauseArgs) {
-		const clauses = parseKeywordClauses(clauseArgs);
-		const argsClause = clauses.get("args");
-		const returnsClause = clauses.get("returns");
-		const preClause = clauses.get("pre");
-		const postClause = clauses.get("post");
-		const bodyClause = clauses.get("body");
 
-		if (!bodyClause || bodyClause.length === 0) {
-			throw new Error(`func ${funcName}: :body is required`);
-		}
-
-		// Parse params
-		let params = [];
-		if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
-			params = parseTypedParams(argsClause[0]);
-		}
-		const pNames = params.flatMap((p) => paramNameNodes(p));
-
-		// Build function body statements
-		const bodyStmts = [];
-
-		// Type checks for params
-		for (const p of params) {
-			bodyStmts.push(...paramTypeChecks(p, funcName));
-		}
-
-		// Pre-condition
-		if (preClause && preClause.length > 0) {
-			const preExpr = preClause[0];
-			const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
-			bodyStmts.push(
-				array(
-					sym("if"),
-					array(sym("!"), preExpr),
-					array(
-						sym("throw"),
-						array(sym("new"), sym("Error"), { type: "string", value: preMsg }),
-					),
-				),
-			);
-		}
-
-		// Determine return behavior
-		const hasReturns = returnsClause && returnsClause.length > 0;
-		const returnsType = hasReturns ? returnsClause[0] : null;
-		const isVoid =
-			returnsType && isKeyword(returnsType) && returnsType.value === "void";
-		const hasPost = postClause && postClause.length > 0;
-
-		if (hasPost) {
-			const lastBodyExpr = bodyClause[bodyClause.length - 1];
-			if (lastBodyExpr && isStatementOnlyForm(lastBodyExpr)) {
-				const headName = isArray(lastBodyExpr) && lastBodyExpr.values.length > 0
-					? lastBodyExpr.values[0].value || "<unknown>"
-					: "<unknown>";
-				const retType = returnsType ? returnsType.value : "<unknown>";
-				throw new Error(
-					`function \`${funcName}\` declared \`:returns :${retType}\` but body ends with \`${headName}\` ` +
-					`(a statement-only form which cannot produce a value). ` +
-					`Either: (a) add a return-typed expression after the form, ` +
-					`or (b) remove \`:returns :${retType}\` from the function declaration.`
-				);
-			}
-			const resultVar = gensym("result");
-			// Body: capture result
-			if (bodyClause.length === 1) {
-				bodyStmts.push(array(sym("const"), resultVar, bodyClause[0]));
-			} else {
-				// Multiple body exprs — last one is the value
-				const initBody = bodyClause.slice(0, -1);
-				bodyStmts.push(...initBody);
-				bodyStmts.push(
-					array(sym("const"), resultVar, bodyClause[bodyClause.length - 1]),
-				);
-			}
-
-			// Returns type check on result
-			if (hasReturns && !isVoid && returnsType.value !== "any") {
-				const retCheck = buildTypeCheck(
-					resultVar,
-					returnsType,
-					funcName,
-					"return",
-				);
-				if (retCheck) bodyStmts.push(retCheck);
-			}
-
-			// Post-condition
-			const postExpr = postClause[0];
-			const postMsg = `${funcName}: post-condition failed: ${formatSExpr(postExpr)} — callee blame`;
-			const postWithResult = replaceTilde(postExpr, resultVar);
-			bodyStmts.push(
-				array(
-					sym("if"),
-					array(sym("!"), postWithResult),
-					array(
-						sym("throw"),
-						array(sym("new"), sym("Error"), { type: "string", value: postMsg }),
-					),
-				),
-			);
-
-			bodyStmts.push(array(sym("return"), resultVar));
-		} else if (hasReturns && !isVoid) {
-			// Returns type check
-			if (returnsType.value !== "any") {
-				const lastBodyExpr = bodyClause[bodyClause.length - 1];
-				if (lastBodyExpr && isStatementOnlyForm(lastBodyExpr)) {
-					const headName = isArray(lastBodyExpr) && lastBodyExpr.values.length > 0
-						? lastBodyExpr.values[0].value || "<unknown>"
-						: "<unknown>";
-					throw new Error(
-						`function \`${funcName}\` declared \`:returns :${returnsType.value}\` but body ends with \`${headName}\` ` +
-						`(a statement-only form which cannot produce a value). ` +
-						`Either: (a) add a return-typed expression after the form, ` +
-						`or (b) remove \`:returns :${returnsType.value}\` from the function declaration.`
-					);
-				}
-				const resultVar = gensym("result");
-				if (bodyClause.length === 1) {
-					bodyStmts.push(array(sym("const"), resultVar, bodyClause[0]));
-				} else {
-					const initBody = bodyClause.slice(0, -1);
-					bodyStmts.push(...initBody);
-					bodyStmts.push(
-						array(sym("const"), resultVar, bodyClause[bodyClause.length - 1]),
-					);
-				}
-				const retCheck = buildTypeCheck(
-					resultVar,
-					returnsType,
-					funcName,
-					"return",
-				);
-				if (retCheck) bodyStmts.push(retCheck);
-				bodyStmts.push(array(sym("return"), resultVar));
-			} else {
-				// :any return — no check
-				bodyStmts.push(...wrapReturnLast(bodyClause));
-			}
-		} else if (isVoid) {
-			bodyStmts.push(...bodyClause);
-		} else {
-			// No :returns — treat body forms as statements, implicit return of last
-			bodyStmts.push(...wrapReturnLast(bodyClause));
-		}
-
-		return array(
-			sym("function"),
-			funcNameNode,
-			array(...pNames),
-			...bodyStmts,
-		);
-	}
-
-	function buildMultiClauseFunc(funcName, funcNameNode, clauseLists) {
-		const argsVar = gensym("args");
-		const stmts = [];
-
-		// Sort clauses: longer arity first, then more typed before less typed
-		const parsed = clauseLists.map((cl) => {
-			const clauses = parseKeywordClauses(cl.values);
-			const argsClause = clauses.get("args");
-			let params = [];
-			if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
-				params = parseTypedParams(argsClause[0]);
-			}
-			const typedCount = params.filter((p) => paramDispatchType(p) !== "any").length;
-			return { clauses, params, typedCount, arity: params.length };
-		});
-
-		parsed.sort((a, b) => {
-			if (a.arity !== b.arity) return b.arity - a.arity;
-			return b.typedCount - a.typedCount;
-		});
-
-		for (const clause of parsed) {
-			const { clauses, params } = clause;
-			const returnsClause = clauses.get("returns");
-			const preClause = clauses.get("pre");
-			const postClause = clauses.get("post");
-			const bodyClause = clauses.get("body");
-
-			if (!bodyClause || bodyClause.length === 0) {
-				throw new Error(`func ${funcName}: :body is required in each clause`);
-			}
-
-			// Build dispatch condition: args.length === N && type checks
-			const conditions = [
-				array(sym("==="), sym(`${argsVar.value}:length`), {
-					type: "number",
-					value: params.length,
-				}),
-			];
-
-			for (let i = 0; i < params.length; i++) {
-				const p = params[i];
-				const dtype = paramDispatchType(p);
-				if (dtype === "any") continue;
-				const argAccess = array(sym("get"), argsVar, {
-					type: "number",
-					value: i,
-				});
-				// Inline type check for dispatch
-				switch (dtype) {
-					case "number":
-						conditions.push(
-							array(sym("==="), array(sym("typeof"), argAccess), {
-								type: "string",
-								value: "number",
-							}),
-						);
-						break;
-					case "string":
-						conditions.push(
-							array(sym("==="), array(sym("typeof"), argAccess), {
-								type: "string",
-								value: "string",
-							}),
-						);
-						break;
-					case "boolean":
-						conditions.push(
-							array(sym("==="), array(sym("typeof"), argAccess), {
-								type: "string",
-								value: "boolean",
-							}),
-						);
-						break;
-					case "function":
-						conditions.push(
-							array(sym("==="), array(sym("typeof"), argAccess), {
-								type: "string",
-								value: "function",
-							}),
-						);
-						break;
-					case "object":
-						conditions.push(
-							array(
-								sym("&&"),
-								array(sym("==="), array(sym("typeof"), argAccess), {
-									type: "string",
-									value: "object",
-								}),
-								array(sym("!=="), argAccess, sym("null")),
-							),
-						);
-						break;
-					case "array":
-						conditions.push(array(sym("Array:isArray"), argAccess));
-						break;
-					default:
-						break;
-				}
-			}
-
-			const condition = andChain(conditions);
-
-			// Build clause body
-			const clauseBody = [];
-
-			// Bind params from args
-			for (let i = 0; i < params.length; i++) {
-				const p = params[i];
-				const argAccess = array(sym("get"), argsVar, {
-					type: "number",
-					value: i,
-				});
-				if (p.destructured) {
-					// const (object name1 name2) = get(args, i)
-					clauseBody.push(
-						array(sym("const"), paramNameNodes(p)[0], argAccess),
-					);
-				} else {
-					clauseBody.push(
-						array(sym("const"), p.name, argAccess),
-					);
-				}
-			}
-
-			// Full type checks (with NaN exclusion etc.)
-			for (const p of params) {
-				clauseBody.push(...paramTypeChecks(p, funcName));
-			}
-
-			// Pre-condition
-			if (preClause && preClause.length > 0) {
-				const preExpr = preClause[0];
-				const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
-				clauseBody.push(
-					array(
-						sym("if"),
-						array(sym("!"), preExpr),
-						array(
-							sym("throw"),
-							array(sym("new"), sym("Error"), {
-								type: "string",
-								value: preMsg,
-							}),
-						),
-					),
-				);
-			}
-
-			// Body + return
-			const hasReturns = returnsClause && returnsClause.length > 0;
-			const hasPost = postClause && postClause.length > 0;
-
-			if (hasPost) {
-				const resultVar = gensym("result");
-				if (bodyClause.length === 1) {
-					clauseBody.push(array(sym("const"), resultVar, bodyClause[0]));
-				} else {
-					clauseBody.push(...bodyClause.slice(0, -1));
-					clauseBody.push(
-						array(sym("const"), resultVar, bodyClause[bodyClause.length - 1]),
-					);
-				}
-				const postExpr = postClause[0];
-				const postMsg = `${funcName}: post-condition failed: ${formatSExpr(postExpr)} — callee blame`;
-				const postWithResult = replaceTilde(postExpr, resultVar);
-				clauseBody.push(
-					array(
-						sym("if"),
-						array(sym("!"), postWithResult),
-						array(
-							sym("throw"),
-							array(sym("new"), sym("Error"), {
-								type: "string",
-								value: postMsg,
-							}),
-						),
-					),
-				);
-				clauseBody.push(array(sym("return"), resultVar));
-			} else if (hasReturns) {
-				clauseBody.push(...wrapReturnLast(bodyClause));
-			} else {
-				clauseBody.push(...bodyClause);
-			}
-
-			stmts.push(
-				array(sym("if"), condition, array(sym("block"), ...clauseBody)),
-			);
-		}
-
-		// Final throw for no matching clause
-		stmts.push(
-			array(
-				sym("throw"),
-				array(sym("new"), sym("TypeError"), {
-					type: "string",
-					value: `${funcName}: no matching clause for arguments`,
-				}),
-			),
-		);
-
-		return array(
-			sym("function"),
-			funcNameNode,
-			array(array(sym("rest"), argsVar)),
-			...stmts,
-		);
-	}
 
 	// --- match ---
 	// (match expr (pattern body) (pattern :when guard body) (_ default))

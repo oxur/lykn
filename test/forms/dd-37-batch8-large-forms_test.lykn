@@ -1,0 +1,35 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" (compile))
+
+;; Batch 8+9: large forms + special-case — regression tests.
+;; These forms remain as macros pending helper extraction of
+;; buildSingleClauseFunc, buildMultiClauseFunc, instrumentYields,
+;; and typeRegistry coupling resolution.
+
+(test "func: basic function"
+  (bind r (compile "(func greet :args (:string name) :body name)"))
+  (includes r "function greet"))
+
+(test "bind: basic binding"
+  (bind r (compile "(bind x 42)"))
+  (includes r "const x = 42"))
+
+(test "match: pattern matching"
+  (bind r (compile "(type Option (Some :any value) None)\n(bind x (match (Some 1) ((Some v) v) (None 0)))"))
+  (includes r "tag"))
+
+(test "=: strict equality"
+  (bind r (compile "(= a b)"))
+  (includes r "==="))
+
+(test "!=: strict inequality"
+  (bind r (compile "(!= a b)"))
+  (includes r "!=="))
+
+(test "type: ADT constructors"
+  (bind r (compile "(type Color Red Green Blue)"))
+  (includes r "Red"))
+
+(test "genfunc: generator function"
+  (bind r (compile "(genfunc gen :args (:number n) :body (yield n))"))
+  (includes r "function* gen"))
