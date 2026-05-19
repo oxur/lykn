@@ -1365,3 +1365,21 @@ remaining ~19 forms) may proceed. No Alt C escalation needed.
 
 This satisfies Phase 0 criterion #3 (one full-pipeline migration
 prototyped, delta measured, extrapolated).
+
+### 2026-05-18 — M22 step 3 completion (all 27 forms migrated)
+
+All 27 surface forms migrated from `surface.js` macro registration
+to `surface-ast.js` + `classifier.js` pipeline. Final measurements:
+
+| Metric | M21 Baseline | M22 Final | Delta |
+|--------|-------------|-----------|-------|
+| Raw | 217,672 | 222,759 | +5,087 (+5.0 KB) |
+| Minified | 105,439 | 109,977 | +4,538 (+4.4 KB) |
+| Gzipped | 27,630 | 28,574 | +944 (+0.9 KB) |
+
+Cumulative gzipped delta: **+944 bytes** — 4.7% of the +20 KB budget.
+The pilot's upper-bound extrapolation (+6.5 KB) was conservative;
+actual cost is well below even the lower bound (+2.2 KB).
+
+DD-37 step 3 is complete. `_kernel` marker and `kernelArray()` helper
+remain (step 4-5, M23 scope).
