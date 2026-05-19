@@ -1313,10 +1313,272 @@ export function buildMultiClauseFunc(funcName, funcNameNode, clauseLists) {
 }
 
 
+
+// DD-37 M22: match and type macros extracted as top-level exports.
+// Exact copies of the original macro bodies, de-indented.
+export function emitMatchMacro(args) {
+	if (args.length < 2) {
+		throw new Error("match requires an expression and at least one clause");
+	}
+	const expr = args[0];
+	const clauses = args.slice(1);
+	const targetVar = gensym("target");
+	const stmts = [array(sym("const"), targetVar, expr)];
+
+	for (let i = 0; i < clauses.length; i++) {
+		const clause = clauses[i];
+		if (!isArray(clause) || clause.values.length < 2) {
+			throw new Error(
+				`match: clause ${i} must be (pattern body...) or (pattern :when guard body...)`,
+			);
+		}
+
+		const pattern = clause.values[0];
+		let guard = null;
+		let bodyStart = 1;
+
+		// Check for :when guard
+		if (
+			clause.values.length >= 3 &&
+			isKeyword(clause.values[1]) &&
+			clause.values[1].value === "when"
+		) {
+			guard = clause.values[2];
+			bodyStart = 3;
+		}
+
+		const bodyForms = clause.values.slice(bodyStart);
+		if (bodyForms.length === 0) {
+			throw new Error(`match: clause ${i} has no body`);
+		}
+
+		const { checks, bindings } = compilePattern(pattern, targetVar);
+
+		// Add guard to checks
+		if (guard) {
+			// Guard may reference bound variables — we need bindings before guard eval
+			// So for guarded patterns, put check in if, bindings inside, then guard check
+			const condition = checks.length > 0 ? andChain(checks) : null;
+			const innerBlock = [...bindings];
+
+			// Guard check with nested if
+			const wrapped = wrapReturnLast(bodyForms);
+			const guardedBody =
+				wrapped.length === 1
+					? wrapped[0]
+					: array(sym("block"), ...wrapped);
+
+			innerBlock.push(array(sym("if"), guard, guardedBody));
+
+			if (condition) {
+				stmts.push(
+					array(sym("if"), condition, array(sym("block"), ...innerBlock)),
+				);
+			} else {
+				stmts.push(array(sym("block"), ...innerBlock));
+			}
+		} else {
+			// No guard — simple case
+			const isWildcard = pattern.type === "atom" && pattern.value === "_";
+			const isSimpleBinding =
+				pattern.type === "atom" &&
+				!isPascalCase(pattern.value) &&
+				pattern.value !== "_" &&
+				pattern.value !== "true" &&
+				pattern.value !== "false" &&
+				pattern.value !== "null" &&
+				pattern.value !== "undefined";
+
+			if (isWildcard || isSimpleBinding) {
+				// Default / catch-all — no condition check
+				const block = [...bindings, ...wrapReturnLast(bodyForms)];
+				stmts.push(array(sym("block"), ...block));
+			} else {
+				const condition = andChain(checks);
+				const block = [...bindings, ...wrapReturnLast(bodyForms)];
+				stmts.push(
+					array(sym("if"), condition, array(sym("block"), ...block)),
+				);
+			}
+		}
+	}
+
+	// If last clause is not a wildcard/binding, add throw
+	const lastClause = clauses[clauses.length - 1];
+	const lastPattern = lastClause.values[0];
+	const isLastWildcard =
+		lastPattern.type === "atom" && lastPattern.value === "_";
+	const isLastBinding =
+		lastPattern.type === "atom" &&
+		!isPascalCase(lastPattern.value) &&
+		lastPattern.value !== "true" &&
+		lastPattern.value !== "false" &&
+		lastPattern.value !== "null" &&
+		lastPattern.value !== "undefined";
+
+	if (!isLastWildcard && !isLastBinding) {
+		stmts.push(
+			array(
+				sym("throw"),
+				array(sym("new"), sym("Error"), {
+					type: "string",
+					value: "match: no matching pattern",
+				}),
+			),
+		);
+	}
+
+	// Wrap in IIFE
+	const arrowFn = array(sym("=>"), array(), ...stmts);
+	return array(arrowFn);
+}
+
+export function emitTypeMacro(args) {
+	if (args.length < 2) {
+		throw new Error("type requires a name and at least one constructor");
+	}
+	const typeName = args[0];
+	if (typeName.type !== "atom") {
+		throw new Error("type: first argument must be a type name");
+	}
+
+	const constructors = args.slice(1);
+	const forms = [];
+
+	for (const ctor of constructors) {
+		if (ctor.type === "atom") {
+			// Zero-field constructor: (const None (object (tag "None")))
+			const ctorName = ctor.value;
+			typeRegistry.set(ctorName, []);
+			forms.push(
+				array(
+					sym("const"),
+					ctor,
+					array(
+						sym("object"),
+						array(sym("tag"), { type: "string", value: ctorName }),
+					),
+				),
+			);
+		} else if (isArray(ctor) && ctor.values.length >= 1) {
+			// Constructor with fields: (function Some (value) <checks> (return (object ...)))
+			const ctorName = ctor.values[0].value;
+			const fields = parseTypedParams({
+				type: "list",
+				values: ctor.values.slice(1),
+			});
+			const fieldNames = fields.map((f) => f.name.value);
+			typeRegistry.set(ctorName, fieldNames);
+
+			const paramNames = fields.map((f) => f.name);
+			const typeChecks = [];
+			for (const f of fields) {
+				const check = buildTypeCheck(f.name, f.typeKw, ctorName, "field");
+				if (check) typeChecks.push(check);
+			}
+
+			const objPairs = [
+				array(sym("tag"), { type: "string", value: ctorName }),
+			];
+			for (const f of fields) {
+				objPairs.push(array(sym(f.name.value), f.name));
+			}
+
+			forms.push(
+				array(
+					sym("function"),
+					sym(ctorName),
+					array(...paramNames),
+					...typeChecks,
+					array(sym("return"), array(sym("object"), ...objPairs)),
+				),
+			);
+		}
+	}
+
+	if (forms.length === 1) return forms[0];
+	return forms;
+}
+
 /**
  * Register all surface form macros into the macro environment.
  * @param {Map<string, Function>} macroEnv
  */
+
+export function emitGenfuncMacro(args) {
+	if (args.length < 2) {
+		throw new Error("genfunc requires at least a name and :yields/:body");
+	}
+	const funcNameNode = args[0];
+	if (funcNameNode.type !== "atom") {
+		throw new Error("genfunc: first argument must be a function name");
+	}
+	const funcName = funcNameNode.value;
+	const clauseArgs = args.slice(1);
+	const clauses = parseKeywordClauses(clauseArgs);
+	const argsClause = clauses.get("args");
+	const yieldsClause = clauses.get("yields");
+	const _returnsClause = clauses.get("returns");
+	const preClause = clauses.get("pre");
+	const _postClause = clauses.get("post");
+	const bodyClause = clauses.get("body");
+
+	if (!bodyClause || bodyClause.length === 0) {
+		throw new Error(`genfunc ${funcName}: :body is required`);
+	}
+
+	// Parse params
+	let params = [];
+	if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
+		params = parseTypedParams(argsClause[0]);
+	}
+	const pNames = params.flatMap((p) => paramNameNodes(p));
+
+	// Build generator body
+	const bodyStmts = [];
+
+	// Type checks for params
+	for (const p of params) {
+		bodyStmts.push(...paramTypeChecks(p, funcName));
+	}
+
+	// Pre-condition
+	if (preClause && preClause.length > 0) {
+		const preExpr = preClause[0];
+		const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
+		bodyStmts.push(
+			array(
+				sym("if"),
+				array(sym("!"), preExpr),
+				array(
+					sym("throw"),
+					array(sym("new"), sym("Error"), { type: "string", value: preMsg }),
+				),
+			),
+		);
+	}
+
+	// Instrument yields if :yields type is specified and not :any
+	let instrumentedBody = bodyClause;
+	if (yieldsClause && yieldsClause.length > 0) {
+		const yieldsType = yieldsClause[0];
+		if (isKeyword(yieldsType) && yieldsType.value !== "any") {
+			instrumentedBody = bodyClause.map((expr) =>
+				instrumentYields(expr, yieldsType, funcName),
+			);
+		}
+	}
+
+	bodyStmts.push(...instrumentedBody);
+
+	return array(
+		sym("function*"),
+		funcNameNode,
+		array(...pNames),
+		...bodyStmts,
+	);
+}
+
 export function registerSurfaceMacros(macroEnv) {
 	// --- Shared helpers (scoped to registerSurfaceMacros for access to sym, array, etc.) ---
 
@@ -1422,90 +1684,9 @@ export function registerSurfaceMacros(macroEnv) {
 	 */
 	// DD-37 M22-3b: compileLetPattern moved to top-level (exported).
 
-	// --- bind ---
-	// (bind name value) → (const name value)
-	// (bind :type name value) → (const name value) + type check
-	macroEnv.set("bind", (...args) => {
-		if (args.length < 2) {
-			throw new Error("bind requires at least 2 arguments: (bind name value)");
-		}
-		if (isKeyword(args[0])) {
-			if (args.length < 3) {
-				throw new Error(
-					"bind with type annotation requires 3 arguments: (bind :type name value)",
-				);
-			}
-			const typeKw = args[0];
-			const nameNode = args[1];
-			const valueNode = args[2];
-			const typeName = typeKw.value;
-			const constDecl = array(sym("const"), nameNode, valueNode);
+	// DD-37 M22: bind, =, !=, func, genfunc, genfn, match, type
+	// all moved to classifier.js (batches 8+9).
 
-			// :any — no check
-			if (typeName === "any") {
-				return constDecl;
-			}
-
-			// Static check: literal initializer
-			const literalType = getLiteralType(valueNode);
-			if (literalType !== null) {
-				if (!typeMatchesLiteral(typeName, literalType)) {
-					throw new Error(
-						`bind '${nameNode.value}': type annotation is :${typeName} but initializer is a ${literalType} literal. Remove the annotation or fix the type.`,
-					);
-				}
-				// Type-compatible literal — no runtime check needed
-				return constDecl;
-			}
-
-			// Non-literal — emit runtime check
-			const check = buildTypeCheck(nameNode, typeKw, "bind", "");
-			if (check === null) {
-				return constDecl;
-			}
-			return array(sym("block"), constDecl, check);
-		}
-		return array(sym("const"), args[0], args[1]);
-	});
-
-	// --- obj ---
-	// (obj :name "Duncan" :age 42) → (object (name "Duncan") (age 42))
-	// DD-37 M22: obj, cell, express moved to classifier.js (batch 7).
-
-	// DD-37 M22: swap!, reset!, set!, set-symbol! moved to classifier.js (batch 1).
-
-	// --- = (strict equality) ---
-	// (= a b) → (=== a b)
-	// (= a b c) → (&& (=== a b) (=== b c))
-	macroEnv.set("=", (...args) => {
-		if (args.length < 2) {
-			throw new Error("= requires at least 2 arguments: (= a b)");
-		}
-		if (args.length === 2) {
-			return array(sym("==="), args[0], args[1]);
-		}
-		// Variadic: (= a b c) → (&&(=== a b) (=== b c))
-		const checks = [];
-		for (let i = 0; i < args.length - 1; i++) {
-			checks.push(array(sym("==="), args[i], args[i + 1]));
-		}
-		let result = checks[0];
-		for (let i = 1; i < checks.length; i++) {
-			result = array(sym("&&"), result, checks[i]);
-		}
-		return result;
-	});
-
-	// --- != (strict inequality) ---
-	// (!= a b) → (!== a b)
-	macroEnv.set("!=", (...args) => {
-		if (args.length !== 2) {
-			throw new Error("!= requires exactly 2 arguments: (!= a b)");
-		}
-		return array(sym("!=="), args[0], args[1]);
-	});
-
-	// DD-37 M22: and, or moved to classifier.js (batch 6).
 
 	// --- not (logical NOT) ---
 	// DD-37 M21: `not` moved to classifier.js (DD-37 step 3 pilot).
@@ -1571,383 +1752,7 @@ export function registerSurfaceMacros(macroEnv) {
 
 	// ===================================================================
 	// Phase 2: Complex Surface Forms
-	// ===================================================================
 
-	// DD-37 M22: fn, lambda moved to classifier.js (batch 5).
-
-	// --- genfunc / genfn (generator functions) ---
-
-	/**
-	 * Recursively walk an AST node and instrument (yield expr) forms
-	 * with a type check on the yielded value. Leaves (yield*) unchanged.
-	 */
-
-	// (genfunc name :args (...) :yields :type :body ...)
-	macroEnv.set("genfunc", (...args) => {
-		if (args.length < 2) {
-			throw new Error("genfunc requires at least a name and :yields/:body");
-		}
-		const funcNameNode = args[0];
-		if (funcNameNode.type !== "atom") {
-			throw new Error("genfunc: first argument must be a function name");
-		}
-		const funcName = funcNameNode.value;
-		const clauseArgs = args.slice(1);
-		const clauses = parseKeywordClauses(clauseArgs);
-		const argsClause = clauses.get("args");
-		const yieldsClause = clauses.get("yields");
-		const _returnsClause = clauses.get("returns");
-		const preClause = clauses.get("pre");
-		const _postClause = clauses.get("post");
-		const bodyClause = clauses.get("body");
-
-		if (!bodyClause || bodyClause.length === 0) {
-			throw new Error(`genfunc ${funcName}: :body is required`);
-		}
-
-		// Parse params
-		let params = [];
-		if (argsClause && argsClause.length === 1 && isArray(argsClause[0])) {
-			params = parseTypedParams(argsClause[0]);
-		}
-		const pNames = params.flatMap((p) => paramNameNodes(p));
-
-		// Build generator body
-		const bodyStmts = [];
-
-		// Type checks for params
-		for (const p of params) {
-			bodyStmts.push(...paramTypeChecks(p, funcName));
-		}
-
-		// Pre-condition
-		if (preClause && preClause.length > 0) {
-			const preExpr = preClause[0];
-			const preMsg = `${funcName}: pre-condition failed: ${formatSExpr(preExpr)} — caller blame`;
-			bodyStmts.push(
-				array(
-					sym("if"),
-					array(sym("!"), preExpr),
-					array(
-						sym("throw"),
-						array(sym("new"), sym("Error"), { type: "string", value: preMsg }),
-					),
-				),
-			);
-		}
-
-		// Instrument yields if :yields type is specified and not :any
-		let instrumentedBody = bodyClause;
-		if (yieldsClause && yieldsClause.length > 0) {
-			const yieldsType = yieldsClause[0];
-			if (isKeyword(yieldsType) && yieldsType.value !== "any") {
-				instrumentedBody = bodyClause.map((expr) =>
-					instrumentYields(expr, yieldsType, funcName),
-				);
-			}
-		}
-
-		bodyStmts.push(...instrumentedBody);
-
-		return array(
-			sym("function*"),
-			funcNameNode,
-			array(...pNames),
-			...bodyStmts,
-		);
-	});
-
-	// (genfn (params) :yields :type body...)
-	// or (genfn (params) body...) — no yield check
-	const genfnMacro = (...args) => {
-		if (args.length < 2) {
-			throw new Error("genfn requires at least a parameter list and body");
-		}
-		const paramList = args[0];
-		if (!isArray(paramList)) {
-			throw new Error("genfn: first argument must be a parameter list");
-		}
-
-		// Check for :yields keyword after param list
-		let yieldsType = null;
-		let bodyStart = 1;
-		if (args.length >= 3 && isKeyword(args[1]) && args[1].value === "yields") {
-			if (args.length < 4) {
-				throw new Error("genfn: :yields requires a type keyword and body");
-			}
-			yieldsType = args[2];
-			bodyStart = 3;
-		}
-
-		const bodyForms = args.slice(bodyStart);
-		const params = parseTypedParams(paramList);
-		const pNames = params.flatMap((p) => paramNameNodes(p));
-
-		// Type checks
-		const typeChecks = [];
-		for (const p of params) {
-			typeChecks.push(...paramTypeChecks(p, "anonymous"));
-		}
-
-		// Instrument yields
-		let instrumentedBody = bodyForms;
-		if (yieldsType && isKeyword(yieldsType) && yieldsType.value !== "any") {
-			instrumentedBody = bodyForms.map((expr) =>
-				instrumentYields(expr, yieldsType, "anonymous"),
-			);
-		}
-
-		// Build generator body — similar to fn but with function*
-		// function* generators always need block body
-		const allBody = [...typeChecks, ...instrumentedBody];
-
-		// Anonymous function* expression — pass param list directly (no name)
-		return array(
-			sym("function*"),
-			array(...pNames),
-			...allBody,
-		);
-	};
-
-	macroEnv.set("genfn", genfnMacro);
-
-	// --- type ---
-	// (type Option (Some :any value) None)
-	macroEnv.set("type", (...args) => {
-		if (args.length < 2) {
-			throw new Error("type requires a name and at least one constructor");
-		}
-		const typeName = args[0];
-		if (typeName.type !== "atom") {
-			throw new Error("type: first argument must be a type name");
-		}
-
-		const constructors = args.slice(1);
-		const forms = [];
-
-		for (const ctor of constructors) {
-			if (ctor.type === "atom") {
-				// Zero-field constructor: (const None (object (tag "None")))
-				const ctorName = ctor.value;
-				typeRegistry.set(ctorName, []);
-				forms.push(
-					array(
-						sym("const"),
-						ctor,
-						array(
-							sym("object"),
-							array(sym("tag"), { type: "string", value: ctorName }),
-						),
-					),
-				);
-			} else if (isArray(ctor) && ctor.values.length >= 1) {
-				// Constructor with fields: (function Some (value) <checks> (return (object ...)))
-				const ctorName = ctor.values[0].value;
-				const fields = parseTypedParams({
-					type: "list",
-					values: ctor.values.slice(1),
-				});
-				const fieldNames = fields.map((f) => f.name.value);
-				typeRegistry.set(ctorName, fieldNames);
-
-				const paramNames = fields.map((f) => f.name);
-				const typeChecks = [];
-				for (const f of fields) {
-					const check = buildTypeCheck(f.name, f.typeKw, ctorName, "field");
-					if (check) typeChecks.push(check);
-				}
-
-				const objPairs = [
-					array(sym("tag"), { type: "string", value: ctorName }),
-				];
-				for (const f of fields) {
-					objPairs.push(array(sym(f.name.value), f.name));
-				}
-
-				forms.push(
-					array(
-						sym("function"),
-						sym(ctorName),
-						array(...paramNames),
-						...typeChecks,
-						array(sym("return"), array(sym("object"), ...objPairs)),
-					),
-				);
-			}
-		}
-
-		if (forms.length === 1) return forms[0];
-		return forms;
-	});
-
-	// --- func ---
-	// Single clause: (func name :args (:type a) :returns :type :pre expr :post expr :body expr)
-	// Multi-clause: (func name (:args ... :body ...) (:args ... :body ...))
-	// Zero-arg: (func name body-expr...)
-	macroEnv.set("func", (...args) => {
-		if (args.length < 2) {
-			throw new Error("func requires at least a name and body");
-		}
-		const funcNameNode = args[0];
-		if (funcNameNode.type !== "atom") {
-			throw new Error("func: first argument must be a function name");
-		}
-		const funcName = funcNameNode.value;
-		const restArgs = args.slice(1);
-
-		// Detect mode: multi-clause, single-clause, or zero-arg
-		const firstAfterName = restArgs[0];
-
-		// Multi-clause: first arg is a list whose first element is a keyword
-		if (
-			isArray(firstAfterName) &&
-			firstAfterName.values.length > 0 &&
-			isKeyword(firstAfterName.values[0])
-		) {
-			return buildMultiClauseFunc(funcName, funcNameNode, restArgs);
-		}
-
-		// Single-clause: first arg is a keyword (:args, :body, etc.)
-		if (isKeyword(firstAfterName)) {
-			return buildSingleClauseFunc(funcName, funcNameNode, restArgs);
-		}
-
-		// Zero-arg shorthand: (func name body-exprs...)
-		// Last expression is implicit return
-		const bodyForms = restArgs;
-		return array(
-			sym("function"),
-			funcNameNode,
-			array(),
-			...wrapReturnLast(bodyForms),
-		);
-	});
-
-
-
-	// --- match ---
-	// (match expr (pattern body) (pattern :when guard body) (_ default))
-	// Always wraps in IIFE
-	macroEnv.set("match", (...args) => {
-		if (args.length < 2) {
-			throw new Error("match requires an expression and at least one clause");
-		}
-		const expr = args[0];
-		const clauses = args.slice(1);
-		const targetVar = gensym("target");
-		const stmts = [array(sym("const"), targetVar, expr)];
-
-		for (let i = 0; i < clauses.length; i++) {
-			const clause = clauses[i];
-			if (!isArray(clause) || clause.values.length < 2) {
-				throw new Error(
-					`match: clause ${i} must be (pattern body...) or (pattern :when guard body...)`,
-				);
-			}
-
-			const pattern = clause.values[0];
-			let guard = null;
-			let bodyStart = 1;
-
-			// Check for :when guard
-			if (
-				clause.values.length >= 3 &&
-				isKeyword(clause.values[1]) &&
-				clause.values[1].value === "when"
-			) {
-				guard = clause.values[2];
-				bodyStart = 3;
-			}
-
-			const bodyForms = clause.values.slice(bodyStart);
-			if (bodyForms.length === 0) {
-				throw new Error(`match: clause ${i} has no body`);
-			}
-
-			const { checks, bindings } = compilePattern(pattern, targetVar);
-
-			// Add guard to checks
-			if (guard) {
-				// Guard may reference bound variables — we need bindings before guard eval
-				// So for guarded patterns, put check in if, bindings inside, then guard check
-				const condition = checks.length > 0 ? andChain(checks) : null;
-				const innerBlock = [...bindings];
-
-				// Guard check with nested if
-				const wrapped = wrapReturnLast(bodyForms);
-				const guardedBody =
-					wrapped.length === 1
-						? wrapped[0]
-						: array(sym("block"), ...wrapped);
-
-				innerBlock.push(array(sym("if"), guard, guardedBody));
-
-				if (condition) {
-					stmts.push(
-						array(sym("if"), condition, array(sym("block"), ...innerBlock)),
-					);
-				} else {
-					stmts.push(array(sym("block"), ...innerBlock));
-				}
-			} else {
-				// No guard — simple case
-				const isWildcard = pattern.type === "atom" && pattern.value === "_";
-				const isSimpleBinding =
-					pattern.type === "atom" &&
-					!isPascalCase(pattern.value) &&
-					pattern.value !== "_" &&
-					pattern.value !== "true" &&
-					pattern.value !== "false" &&
-					pattern.value !== "null" &&
-					pattern.value !== "undefined";
-
-				if (isWildcard || isSimpleBinding) {
-					// Default / catch-all — no condition check
-					const block = [...bindings, ...wrapReturnLast(bodyForms)];
-					stmts.push(array(sym("block"), ...block));
-				} else {
-					const condition = andChain(checks);
-					const block = [...bindings, ...wrapReturnLast(bodyForms)];
-					stmts.push(
-						array(sym("if"), condition, array(sym("block"), ...block)),
-					);
-				}
-			}
-		}
-
-		// If last clause is not a wildcard/binding, add throw
-		const lastClause = clauses[clauses.length - 1];
-		const lastPattern = lastClause.values[0];
-		const isLastWildcard =
-			lastPattern.type === "atom" && lastPattern.value === "_";
-		const isLastBinding =
-			lastPattern.type === "atom" &&
-			!isPascalCase(lastPattern.value) &&
-			lastPattern.value !== "true" &&
-			lastPattern.value !== "false" &&
-			lastPattern.value !== "null" &&
-			lastPattern.value !== "undefined";
-
-		if (!isLastWildcard && !isLastBinding) {
-			stmts.push(
-				array(
-					sym("throw"),
-					array(sym("new"), sym("Error"), {
-						type: "string",
-						value: "match: no matching pattern",
-					}),
-				),
-			);
-		}
-
-		// Wrap in IIFE
-		const arrowFn = array(sym("=>"), array(), ...stmts);
-		return array(arrowFn);
-	});
-
-	// DD-37 M22: some->, some->> moved to classifier.js (batch 3).
-
-	// --- if-let ---
-	// (if-let (pattern expr) then else)
 	// DD-37 M22: if-let, when-let moved to classifier.js (batch 4).
+	// DD-37 M22: some->, some->> moved to classifier.js (batch 3).
 }

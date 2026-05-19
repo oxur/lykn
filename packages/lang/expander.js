@@ -734,6 +734,9 @@ export function expandExpr(form) {
     const astNode = classifySurfaceForm(head.value, form.values.slice(1));
     if (astNode) {
       const kernel = emitSurfaceForm(astNode, { sym, array, gensym, isKeyword });
+      if (Array.isArray(kernel)) {
+        return kernel.map(k => { k._kernel = true; return expandExpr(k); });
+      }
       kernel._kernel = true;
       return expandExpr(kernel);
     }

@@ -65,3 +65,13 @@ export function Or(args) { return { type: "Or", args }; }
 export function Express(cell) { return { type: "Express", cell }; }
 export function Obj(pairs) { return { type: "Obj", pairs }; }
 export function Cell(value) { return { type: "Cell", value }; }
+
+// Batch 8+9: remaining forms
+export function Bind(args) { return { type: "Bind", args }; }
+export function Eq(args) { return { type: "Eq", args }; }
+export function Neq(a, b) { return { type: "Neq", a, b }; }
+export function Func(nameNode, restArgs) { return { type: "Func", nameNode, restArgs }; }
+export function GenFunc(nameNode, restArgs) { return { type: "GenFunc", nameNode, restArgs }; }
+export function GenFn(paramList, args) { return { type: "GenFn", paramList, args }; }
+export function Match(expr, clauses) { return { type: "Match", expr, clauses }; }
+export function TypeDef(typeName, constructors) { return { type: "TypeDef", typeName, constructors }; }

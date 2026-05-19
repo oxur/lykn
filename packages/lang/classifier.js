@@ -3,8 +3,9 @@
 // Currently only handles `not`; other forms pass through to the
 // existing surface macro path in expander.js/surface.js.
 
-import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet, Fn, And, Or, Express, Obj, Cell } from "./surface-ast.js";
-import { compileLetPattern, wrapReturnLast, formatSExpr, parseTypedParams, paramNameNodes, paramTypeChecks } from "./surface-helpers.js";
+import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet, Fn, And, Or, Express, Obj, Cell, Bind, Eq, Neq, Func, GenFunc, GenFn, Match, TypeDef } from "./surface-ast.js";
+import { compileLetPattern, wrapReturnLast, formatSExpr, parseTypedParams, paramNameNodes, paramTypeChecks, isStatementOnlyForm, kernelArray } from "./surface-helpers.js";
+import { buildSingleClauseFunc, buildMultiClauseFunc, instrumentYields, compilePattern, andChain, isPascalCase, buildTypeCheck, typeRegistry, getLiteralType, typeMatchesLiteral, parseKeywordClauses, emitMatchMacro, emitTypeMacro, emitGenfuncMacro } from "./surface.js";
 
 /**
  * Classify a surface form head atom. Returns a typed AST node if the
@@ -112,6 +113,34 @@ export function classifySurfaceForm(head, args) {
     case "cell":
       if (args.length !== 1) throw new Error("cell requires exactly 1 argument: (cell value)");
       return Cell(args[0]);
+    case "bind":
+      if (args.length < 2) throw new Error("bind requires at least 2 arguments: (bind name value)");
+      return Bind(args);
+    case "=":
+      if (args.length < 2) throw new Error("= requires at least 2 arguments: (= a b)");
+      return Eq(args);
+    case "!=":
+      if (args.length !== 2) throw new Error("!= requires exactly 2 arguments: (!= a b)");
+      return Neq(args[0], args[1]);
+    case "func":
+      if (args.length < 2) throw new Error("func requires at least a name and body");
+      if (args[0].type !== "atom") throw new Error("func: first argument must be a function name");
+      return Func(args[0], args.slice(1));
+    case "genfunc":
+      if (args.length < 2) throw new Error("genfunc requires at least a name and :yields/:body");
+      if (args[0].type !== "atom") throw new Error("genfunc: first argument must be a function name");
+      return GenFunc(args[0], args.slice(1));
+    case "genfn":
+      if (args.length < 2) throw new Error("genfn requires at least a parameter list and body");
+      if (!args[0] || args[0].type !== "list") throw new Error("genfn: first argument must be a parameter list");
+      return GenFn(args[0], args);
+    case "match":
+      if (args.length < 2) throw new Error("match requires at least an expression and one clause");
+      return Match(args[0], args.slice(1));
+    case "type":
+      if (args.length < 2) throw new Error("type requires a name and at least one constructor");
+      if (args[0].type !== "atom") throw new Error("type: first argument must be a type name");
+      return TypeDef(args[0], args.slice(1));
     default:
       return null;
   }
@@ -273,6 +302,68 @@ export function emitSurfaceForm(node, h) {
     }
     case "Cell":
       return array(sym("object"), array(sym("value"), node.value));
+    case "Bind": {
+      const a = node.args;
+      if (a[0].type === "keyword") {
+        if (a.length < 3) throw new Error("bind with type annotation requires 3 arguments");
+        const typeKw = a[0], nameNode = a[1], valueNode = a[2];
+        const constDecl = array(sym("const"), nameNode, valueNode);
+        if (typeKw.value === "any") return constDecl;
+        const literalType = getLiteralType(valueNode);
+        if (literalType !== null) {
+          if (!typeMatchesLiteral(typeKw.value, literalType))
+            throw new Error(`bind '${nameNode.value}': type annotation is :${typeKw.value} but initializer is a ${literalType} literal.`);
+          return constDecl;
+        }
+        const check = buildTypeCheck(nameNode, typeKw, "bind", "");
+        return check === null ? constDecl : array(sym("block"), constDecl, check);
+      }
+      return array(sym("const"), a[0], a[1]);
+    }
+    case "Eq": {
+      if (node.args.length === 2) return array(sym("==="), node.args[0], node.args[1]);
+      const checks = [];
+      for (let i = 0; i < node.args.length - 1; i++)
+        checks.push(array(sym("==="), node.args[i], node.args[i + 1]));
+      let result = checks[0];
+      for (let i = 1; i < checks.length; i++) result = array(sym("&&"), result, checks[i]);
+      return result;
+    }
+    case "Neq":
+      return array(sym("!=="), node.a, node.b);
+    case "Func": {
+      const { nameNode, restArgs } = node;
+      const funcName = nameNode.value;
+      const firstAfterName = restArgs[0];
+      if (firstAfterName && firstAfterName.type === "list" && firstAfterName.values.length > 0 && firstAfterName.values[0].type === "keyword")
+        return buildMultiClauseFunc(funcName, nameNode, restArgs);
+      if (firstAfterName && firstAfterName.type === "keyword")
+        return buildSingleClauseFunc(funcName, nameNode, restArgs);
+      return array(sym("function"), nameNode, array(), ...wrapReturnLast(restArgs));
+    }
+    case "GenFunc":
+      return emitGenfuncMacro([node.nameNode, ...node.restArgs]);
+    case "GenFn": {
+      const a = node.args;
+      let yieldsType = null, bodyStart = 1;
+      if (a.length >= 3 && a[1].type === "keyword" && a[1].value === "yields") {
+        if (a.length < 4) throw new Error("genfn: :yields requires a type keyword and body");
+        yieldsType = a[2]; bodyStart = 3;
+      }
+      const bodyForms = a.slice(bodyStart);
+      const params = parseTypedParams(node.paramList);
+      const pNames = params.flatMap(p => paramNameNodes(p));
+      const typeChecks = [];
+      for (const p of params) typeChecks.push(...paramTypeChecks(p, "anonymous"));
+      let instrumentedBody = bodyForms;
+      if (yieldsType && yieldsType.type === "keyword" && yieldsType.value !== "any")
+        instrumentedBody = bodyForms.map(e => instrumentYields(e, yieldsType, "anonymous"));
+      return array(sym("function*"), array(...pNames), ...typeChecks, ...instrumentedBody);
+    }
+    case "Match":
+      return emitMatchMacro([node.expr, ...node.clauses]);
+    case "TypeDef":
+      return emitTypeMacro([node.typeName, ...node.constructors]);
     default:
       throw new Error(`Unknown surface AST node type: ${node.type}`);
   }
