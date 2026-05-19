@@ -1,0 +1,18 @@
+(import-macros "testing" (test includes))
+(import "testing/helpers.js" (compile))
+
+(test "express: cell read"
+  (bind r (compile "(bind c (cell 0))\n(express c)"))
+  (includes r "c.value"))
+
+(test "obj: keyword pairs"
+  (bind r (compile "(obj :name \"Alice\" :age 30)"))
+  (includes r "name"))
+
+(test "cell: creates value wrapper"
+  (bind r (compile "(cell 42)"))
+  (includes r "value"))
+
+(test "type: ADT definition"
+  (bind r (compile "(type Option (Some :any value) None)"))
+  (includes r "Some"))
