@@ -3,7 +3,7 @@
 // Currently only handles `not`; other forms pass through to the
 // existing surface macro path in expander.js/surface.js.
 
-import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet, Fn, And, Or } from "./surface-ast.js";
+import { Not, Swap, Reset, SetProp, SetSymbol, Conj, Assoc, Dissoc, Thread, SomeThread, IfLet, WhenLet, Fn, And, Or, Express, Obj, Cell } from "./surface-ast.js";
 import { compileLetPattern, wrapReturnLast, formatSExpr, parseTypedParams, paramNameNodes, paramTypeChecks } from "./surface-helpers.js";
 
 /**
@@ -96,6 +96,22 @@ export function classifySurfaceForm(head, args) {
     case "or":
       if (args.length < 2) throw new Error("or requires at least 2 arguments: (or a b)");
       return Or(args);
+    case "express":
+      if (args.length !== 1) throw new Error("express requires exactly 1 argument: (express cell)");
+      if (args[0].type !== "atom") throw new Error("express: argument must be a symbol");
+      return Express(args[0]);
+    case "obj": {
+      const pairs = [];
+      for (let i = 0; i < args.length; i += 2) {
+        if (args[i].type !== "keyword") throw new Error(`obj: expected keyword at position ${i}, got ${args[i]?.type ?? "nothing"}`);
+        if (i + 1 >= args.length) throw new Error(`obj: keyword :${args[i].value} has no value`);
+        pairs.push({ key: args[i].value, value: args[i + 1] });
+      }
+      return Obj(pairs);
+    }
+    case "cell":
+      if (args.length !== 1) throw new Error("cell requires exactly 1 argument: (cell value)");
+      return Cell(args[0]);
     default:
       return null;
   }
@@ -245,6 +261,18 @@ export function emitSurfaceForm(node, h) {
       for (let i = 1; i < node.args.length; i++) result = array(sym("||"), result, node.args[i]);
       return result;
     }
+    case "Express":
+      return sym(`${node.cell.value}:value`);
+    case "Obj": {
+      const objPairs = node.pairs.map(p => {
+        const pair = array(sym(p.key), p.value);
+        pair._kernel = true;
+        return pair;
+      });
+      return array(sym("object"), ...objPairs);
+    }
+    case "Cell":
+      return array(sym("object"), array(sym("value"), node.value));
     default:
       throw new Error(`Unknown surface AST node type: ${node.type}`);
   }

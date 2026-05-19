@@ -1071,43 +1071,7 @@ export function registerSurfaceMacros(macroEnv) {
 
 	// --- obj ---
 	// (obj :name "Duncan" :age 42) → (object (name "Duncan") (age 42))
-	macroEnv.set("obj", (...args) => {
-		const pairs = [];
-		for (let i = 0; i < args.length; i += 2) {
-			if (!isKeyword(args[i])) {
-				throw new Error(
-					`obj: expected keyword at position ${i}, got ${args[i]?.type ?? "nothing"}`,
-				);
-			}
-			if (i + 1 >= args.length) {
-				throw new Error(`obj: keyword :${args[i].value} has no value`);
-			}
-			pairs.push(kernelArray(sym(args[i].value), args[i + 1]));
-		}
-		return array(sym("object"), ...pairs);
-	});
-
-	// --- cell ---
-	// (cell value) → (object (value value))
-	macroEnv.set("cell", (...args) => {
-		if (args.length !== 1) {
-			throw new Error("cell requires exactly 1 argument: (cell value)");
-		}
-		return array(sym("object"), array(sym("value"), args[0]));
-	});
-
-	// --- express ---
-	// (express c) → c:value
-	macroEnv.set("express", (...args) => {
-		if (args.length !== 1) {
-			throw new Error("express requires exactly 1 argument: (express cell)");
-		}
-		const cell = args[0];
-		if (cell.type !== "atom") {
-			throw new Error("express: argument must be a symbol");
-		}
-		return sym(`${cell.value}:value`);
-	});
+	// DD-37 M22: obj, cell, express moved to classifier.js (batch 7).
 
 	// DD-37 M22: swap!, reset!, set!, set-symbol! moved to classifier.js (batch 1).
 

@@ -60,3 +60,8 @@ export function Fn(paramList, bodyForms) {
 // Batch 6: logical n-ary
 export function And(args) { return { type: "And", args }; }
 export function Or(args) { return { type: "Or", args }; }
+
+// Batch 7: small surface forms
+export function Express(cell) { return { type: "Express", cell }; }
+export function Obj(pairs) { return { type: "Obj", pairs }; }
+export function Cell(value) { return { type: "Cell", value }; }
