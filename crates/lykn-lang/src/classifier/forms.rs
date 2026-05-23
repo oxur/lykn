@@ -152,6 +152,12 @@ pub fn classify_form_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
                 // Strict-mode rejection: kernel-only forms without prefix.
                 // Diagnostic is specialized per form-class.
                 if dispatch::is_kernel_only_form(head_name) {
+                    // Per DD-58 refinement log 2026-05-17 (quote/quasiquote
+                    // correction), the kernel-only set is exhaustively
+                    // {const, let, var, function, function*}. The two
+                    // arms below cover the set; the fallback `_` arm is
+                    // retained for forward-compatibility but is currently
+                    // unreachable given the matches!() in is_kernel_only_form.
                     let msg = match head_name {
                         "const" | "let" | "var" => format!(
                             "'{head_name}' is a kernel-only form; use 'bind' for surface binding, \
@@ -163,7 +169,7 @@ pub fn classify_form_strict(expr: &SExpr) -> Result<SurfaceForm, Diagnostic> {
                              kernel form explicitly"
                         ),
                         _ => format!(
-                            "'{head_name}' is a kernel-only form with no surface alternative; \
+                            "'{head_name}' is a kernel-only form; \
                              use '(kernel:{head_name} ...)' to access it explicitly"
                         ),
                     };
@@ -5500,14 +5506,33 @@ mod tests {
         );
     }
 
+    // Per DD-58 refinement log 2026-05-17 quote/quasiquote correction:
+    // quote and quasiquote are flavor (b) passthrough, NOT kernel-only.
+    // The reader macros 'expr and `expr produce them from surface source;
+    // they must classify cleanly under strict mode, not be rejected.
+    // (The pre-correction test asserting "no surface alternative"
+    // diagnostic for quote is inverted here — quote must pass strict.)
     #[test]
-    fn test_strict_mode_diagnostic_quote_class() {
+    fn test_strict_mode_quote_passes_as_surface_form() {
         let expr = list(vec![atom("quote"), atom("x")]);
-        let diag = super::classify_form_strict(&expr).unwrap_err();
+        let result = super::classify_form_strict(&expr);
         assert!(
-            diag.message.contains("no surface alternative"),
-            "quote should note no surface alternative, got: {}",
-            diag.message
+            result.is_ok(),
+            "quote must pass strict mode (it is flavor (b) passthrough \
+             per DD-58 refinement log 2026-05-17 correction); got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_strict_mode_quasiquote_passes_as_surface_form() {
+        let expr = list(vec![atom("quasiquote"), atom("x")]);
+        let result = super::classify_form_strict(&expr);
+        assert!(
+            result.is_ok(),
+            "quasiquote must pass strict mode (it is flavor (b) passthrough \
+             per DD-58 refinement log 2026-05-17 correction); got: {:?}",
+            result
         );
     }
 

@@ -170,6 +170,13 @@ pub fn is_surface_form_strict(name: &str) -> bool {
             | "async"
             // Dynamic import
             | "dynamic-import"
+            // Macro / quoting — produced by reader macros 'expr and `expr.
+            // unquote / unquote-splicing are reader-emitted from ,expr / ,@expr
+            // but are only meaningful inside quasiquote; at top level they
+            // fall through to FunctionCall path (same as lax mode).
+            // (DD-58 refinement log 2026-05-17 quote/quasiquote correction)
+            | "quote"
+            | "quasiquote"
             // ── Flavor (c) — Rich, namesake-sharing ──
             | "if"
             | "try"
@@ -181,11 +188,13 @@ pub fn is_surface_form_strict(name: &str) -> bool {
 }
 
 /// DD-58 kernel-only forms — reachable only via `kernel:` escape.
-/// Per DD-58 §"Kernel-only namespace" (2026-05-17 design decisions).
+/// Per DD-58 §"Kernel-only namespace" (2026-05-17 design decisions, with
+/// 2026-05-17 quote/quasiquote correction moving those two forms to
+/// flavor (b) passthrough — see DD-58 refinement log).
 pub fn is_kernel_only_form(name: &str) -> bool {
     matches!(
         name,
-        "function" | "function*" | "const" | "let" | "var" | "quote" | "quasiquote"
+        "function" | "function*" | "const" | "let" | "var"
     )
 }
 
